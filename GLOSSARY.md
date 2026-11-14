@@ -12,6 +12,10 @@ _Avoid_: Bootcamp, class, tutorial
 One video inside a Course.
 _Avoid_: Episode, clip, lecture
 
+**Section**:
+A named group of Lessons within a Course, in the order the Course presents them.
+_Avoid_: Module, chapter, part
+
 **Practice area**:
 Where the learner types and runs code while following a Lesson.
 _Avoid_: Sandbox, playground, workspace
