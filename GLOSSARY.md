@@ -8,6 +8,10 @@ Learning a coding course by following the instructor step by step, without ever 
 A downloaded folder of Lessons.
 _Avoid_: Bootcamp, class, tutorial
 
+**Courses root**:
+A folder the learner names as holding their Courses, possibly nested inside category folders.
+_Avoid_: Library, collection
+
 **Lesson**:
 One video inside a Course.
 _Avoid_: Episode, clip, lecture
