@@ -5,7 +5,7 @@ Learning a coding course by following the instructor step by step, without ever 
 ## Language
 
 **Course**:
-A downloaded folder of lessons plus the code that accompanies them.
+A downloaded folder of Lessons.
 _Avoid_: Bootcamp, class, tutorial
 
 **Lesson**:
@@ -15,6 +15,10 @@ _Avoid_: Episode, clip, lecture
 **Section**:
 A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
+
+**Resource**:
+A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along.
+_Avoid_: Material, attachment
 
 **Practice area**:
 Where the learner types and runs code while following a Lesson.
