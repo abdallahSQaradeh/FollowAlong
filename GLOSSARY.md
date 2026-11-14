@@ -20,6 +20,10 @@ _Avoid_: Episode, clip, lecture
 A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
 
+**Progress**:
+How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done.
+_Avoid_: History, completion
+
 **Resource**:
 A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along.
 _Avoid_: Material, attachment
