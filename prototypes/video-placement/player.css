@@ -1,0 +1,23 @@
+/* PROTOTYPE — throwaway */
+html,body{margin:0;height:100%;background:#000;color:#ccc;font:12px var(--vscode-font-family, system-ui);overflow:hidden}
+.wrap{display:flex;flex-direction:column;height:100%}
+.wrap.strip{flex-direction:row}
+.stage{flex:1;min-width:0;min-height:0;position:relative;overflow:hidden;background:#000}
+video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;transform-origin:0 0}
+/* Overlay catches mouse input over the picture. Leaves the native control bar clickable when not zoomed. */
+.overlay{position:absolute;left:0;top:0;right:0;bottom:48px;cursor:crosshair}
+body.zoomed .overlay{bottom:0;cursor:grab}
+body.zoomed.area .overlay,body.area .overlay{cursor:crosshair}
+body.panning .overlay{cursor:grabbing}
+.sel{position:absolute;display:none;border:2px solid #2aa198;background:rgba(42,161,152,.15);pointer-events:none}
+.tools{position:absolute;top:4px;right:4px;display:flex;gap:2px;align-items:center;opacity:.55;transition:opacity .15s}
+.tools:hover{opacity:1}
+.tools button,.side button{background:#222;color:#ddd;border:1px solid #555;border-radius:3px;padding:2px 7px;cursor:pointer;font:inherit}
+body.area .tools [data-a=area]{background:#2aa198;color:#000}
+.tools .zl{background:#268bd2;color:#fff;padding:2px 6px;border-radius:3px;font-weight:600}
+.badge{position:absolute;top:4px;left:4px;background:#b58900;color:#000;padding:2px 6px;border-radius:3px;font-weight:600;opacity:.85;pointer-events:none}
+.meta{position:absolute;bottom:52px;left:4px;right:4px;background:rgba(0,0,0,.6);padding:3px 6px;border-radius:3px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.zoomed .meta{bottom:4px}
+.side{display:none}
+.strip .side{display:block;width:220px;padding:6px 10px;border-left:1px solid #333}
+.strip .meta{display:none}

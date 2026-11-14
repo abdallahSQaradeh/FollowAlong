@@ -1,0 +1,149 @@
+{
+  "name": "followalong-prototype-video-placement",
+  "displayName": "PROTOTYPE: FollowAlong video placement (throwaway)",
+  "description": "Throwaway prototype for the wayfinder ticket 'Where the video sits'. Not production code.",
+  "version": "0.0.0",
+  "private": true,
+  "publisher": "prototype",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "faProtoPanel",
+          "title": "Lesson (B: panel)",
+          "icon": "$(play)"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "faProtoAux",
+          "title": "Lesson (C: secondary sidebar)",
+          "icon": "$(play)"
+        }
+      ]
+    },
+    "views": {
+      "faProtoPanel": [
+        {
+          "type": "webview",
+          "id": "faProto.panelView",
+          "name": "Lesson"
+        }
+      ],
+      "faProtoAux": [
+        {
+          "type": "webview",
+          "id": "faProto.auxView",
+          "name": "Lesson"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "faProto.next",
+        "title": "FollowAlong Prototype: Next variant"
+      },
+      {
+        "command": "faProto.prev",
+        "title": "FollowAlong Prototype: Previous variant"
+      },
+      {
+        "command": "faProto.pick",
+        "title": "FollowAlong Prototype: Pick variant…"
+      },
+      {
+        "command": "faProto.pickVideo",
+        "title": "FollowAlong Prototype: Pick Lesson video…"
+      },
+      {
+        "command": "faProto.togglePlay",
+        "title": "FollowAlong Prototype: Play/Pause"
+      },
+      {
+        "command": "faProto.back",
+        "title": "FollowAlong Prototype: Back 5s"
+      },
+      {
+        "command": "faProto.forward",
+        "title": "FollowAlong Prototype: Forward 5s"
+      },
+      {
+        "command": "faProto.collapse",
+        "title": "FollowAlong Prototype: Collapse/expand video"
+      },
+      {
+        "command": "faProto.zoomIn",
+        "title": "FollowAlong Prototype: Zoom in"
+      },
+      {
+        "command": "faProto.zoomOut",
+        "title": "FollowAlong Prototype: Zoom out"
+      },
+      {
+        "command": "faProto.zoomReset",
+        "title": "FollowAlong Prototype: Reset zoom"
+      },
+      {
+        "command": "faProto.zoomArea",
+        "title": "FollowAlong Prototype: Zoom to area…"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "faProto.togglePlay",
+        "key": "ctrl+alt+space",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.back",
+        "key": "ctrl+alt+left",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.forward",
+        "key": "ctrl+alt+right",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.collapse",
+        "key": "ctrl+' v",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.zoomIn",
+        "key": "ctrl+' =",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.zoomOut",
+        "key": "ctrl+' -",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.zoomReset",
+        "key": "ctrl+' 0",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.zoomArea",
+        "key": "ctrl+' z",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "faProto.next",
+        "key": "ctrl+' ]"
+      },
+      {
+        "command": "faProto.prev",
+        "key": "ctrl+' ["
+      }
+    ]
+  }
+}
