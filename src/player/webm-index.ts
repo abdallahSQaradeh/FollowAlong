@@ -49,8 +49,11 @@ function readVint(
   keepMarker: boolean,
 ): { value: number; length: number; allOnes: boolean } | undefined {
   const first = bytes[at];
-  if (first === undefined || first === 0) {
+  if (first === undefined) {
     return undefined;
+  }
+  if (first === 0) {
+    throw new WebmIndexError('an element header longer than 8 bytes (not WebM, or damaged)');
   }
   const length = Math.clz32(first) - 23;
   if (at + length > bytes.length) {
@@ -90,14 +93,19 @@ function readUint(bytes: Uint8Array, from: number, to: number): number {
   return value;
 }
 
-/** Thrown for a file this reader cannot follow; the player then just cannot re-stream it. */
-export class WebmIndexError extends Error {
+/** A file this reader cannot follow. The index then marks itself `broken` and stops reading. */
+class WebmIndexError extends Error {
   override readonly name = 'WebmIndexError';
 }
 
 export class WebmIndex {
   /** Every byte before the first Cluster, once that Cluster has been seen. */
   init: Uint8Array | undefined;
+  /**
+   * Set when the file has a structure this reader cannot follow. Playback is not affected (the
+   * bytes still go to MediaSource); only re-streaming from a Cluster is then impossible.
+   */
+  broken = false;
   private readonly clusterStarts: ClusterStart[] = [];
   private timecodeScale = 1_000_000;
 
@@ -112,32 +120,47 @@ export class WebmIndex {
   private clusterOffset = 0;
   private readonly initParts: Uint8Array[] = [];
 
-  /** Cluster starts seen so far, in file order. */
+  /** Cluster starts seen so far, sorted by file offset (and so by time). */
   get clusters(): readonly ClusterStart[] {
     return this.clusterStarts;
   }
 
   /** The last Cluster that starts at or before `time`, if any has been seen. */
   clusterAt(time: number): ClusterStart | undefined {
-    let found: ClusterStart | undefined;
-    for (const cluster of this.clusterStarts) {
-      if (cluster.time <= time && (found === undefined || cluster.time >= found.time)) {
-        found = cluster;
-      }
-    }
-    return found;
+    return this.clusterStarts.findLast((cluster) => cluster.time <= time);
   }
 
-  /** The next bytes come from file offset `offset`, the start of a Cluster seen before. */
+  /** The Cluster after `cluster` in the file, if it has been seen. */
+  clusterAfter(cluster: ClusterStart): ClusterStart | undefined {
+    return this.clusterStarts.find((next) => next.offset > cluster.offset);
+  }
+
+  /** The next bytes come from file offset `offset`: 0, or the start of a Cluster seen before. */
   restartAt(offset: number): void {
     this.pending = new Uint8Array(0);
     this.offset = offset;
     this.skip = 0;
-    this.where = 'segment';
+    this.where = offset === 0 ? 'top' : 'segment';
+    this.initParts.length = 0;
   }
 
   /** Reads the next bytes of the file (contiguous with what came before, or with `restartAt`). */
   feed(chunk: Uint8Array): void {
+    if (this.broken) {
+      return;
+    }
+    try {
+      this.read(chunk);
+    } catch (error) {
+      if (!(error instanceof WebmIndexError)) {
+        throw error;
+      }
+      this.broken = true;
+      this.pending = new Uint8Array(0);
+    }
+  }
+
+  private read(chunk: Uint8Array): void {
     if (this.init === undefined) {
       this.initParts.push(chunk);
     }
@@ -175,7 +198,7 @@ export class WebmIndex {
       return undefined;
     }
     const payloadAt = at + header.length;
-    if (this.where === 'cluster' && header.size === undefined && segmentChildren.has(header.id)) {
+    if (this.where === 'cluster' && segmentChildren.has(header.id)) {
       // A Cluster of unknown size ends where the next level-1 element starts.
       this.where = 'segment';
     }
@@ -214,10 +237,7 @@ export class WebmIndex {
       if (timecode === undefined) {
         return undefined;
       }
-      this.clusterStarts.push({
-        offset: this.clusterOffset,
-        time: (timecode * this.timecodeScale) / 1e9,
-      });
+      this.addCluster({ offset: this.clusterOffset, time: (timecode * this.timecodeScale) / 1e9 });
       return payloadAt + (header.size ?? 0);
     }
     return this.pass(header, payloadAt);
@@ -242,10 +262,15 @@ export class WebmIndex {
     this.clusterOffset = position;
     this.clusterEnd =
       header.size === undefined ? Number.POSITIVE_INFINITY : this.offset + payloadAt + header.size;
-    // Drop a Cluster seen again after a re-stream: its first sighting is already indexed.
-    const seen = this.clusterStarts.findIndex((cluster) => cluster.offset === position);
-    if (seen !== -1) {
-      this.clusterStarts.splice(seen, 1);
+  }
+
+  /** Indexes a Cluster once, keeping the list sorted by offset; a re-stream sees Clusters again. */
+  private addCluster(cluster: ClusterStart): void {
+    const after = this.clusterStarts.findIndex((known) => known.offset >= cluster.offset);
+    if (after === -1) {
+      this.clusterStarts.push(cluster);
+    } else if (this.clusterStarts[after]?.offset !== cluster.offset) {
+      this.clusterStarts.splice(after, 0, cluster);
     }
   }
 

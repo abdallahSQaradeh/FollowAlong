@@ -87,18 +87,24 @@ export function createNodeFileSystem(): FileSystem {
           dirname(path),
           `.${basename(path)}.${String(process.pid)}-${String(temporaryCounter)}.tmp`,
         );
-        const file = await open(temporary, 'w');
         try {
-          await file.writeFile(content, 'utf8');
-          // On disk before the rename, so a crash cannot leave an empty file under the real name.
-          await file.sync();
-        } finally {
-          await file.close();
+          const file = await open(temporary, 'w');
+          try {
+            await file.writeFile(content, 'utf8');
+            // On disk before the rename, so a crash cannot leave an empty file under the real name.
+            await file.sync();
+          } finally {
+            await file.close();
+          }
+        } catch (error) {
+          // A full disk, say: leave no half-written temp file behind, and report the first error.
+          await rm(temporary, { force: true }).catch(() => undefined);
+          throw error;
         }
         try {
           await renameOver(temporary, path);
         } catch (error) {
-          await rm(temporary, { force: true });
+          await rm(temporary, { force: true }).catch(() => undefined);
           // Still EPERM/EACCES after the retries: the file cannot be replaced (a read-only
           // attribute, another owner), so the data has to go elsewhere, like a read-only Course.
           throw error;

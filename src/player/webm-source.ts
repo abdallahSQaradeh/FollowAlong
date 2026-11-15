@@ -81,6 +81,8 @@ export class WebmSource {
   private stream = new AbortController();
   /** Whether a stream is still reading the file (it stops at the end, or on a re-stream). */
   private streaming = false;
+  /** File offset the running stream started at (0, or a Cluster start). */
+  private streamFrom = 0;
   /** File offset up to which the running stream has appended (bytes after it are not buffered). */
   private appendedTo = 0;
   /** Re-streams run one after another; only the latest seek's matters. */
@@ -131,44 +133,64 @@ export class WebmSource {
   }
 
   private onSeeking(): void {
-    const time = this.video.currentTime;
     const buffer = this.buffer;
-    if (buffer === undefined || isBuffered(buffer.buffered, time)) {
+    if (buffer === undefined) {
       return;
     }
-    const from = this.index.clusterAt(time);
-    if (from === undefined) {
-      return;
-    }
-    // The target's Cluster ends where the next one starts; until the stream has appended past
-    // that, the target is ahead of the stream, which reaches it by itself (dropping what is
-    // behind it when the buffer is full).
-    const next = this.index.clusters.find((cluster) => cluster.offset > from.offset);
-    const appended = next === undefined ? !this.streaming : next.offset <= this.appendedTo;
-    if (this.streaming && !appended) {
-      return;
-    }
-    // Behind the stream, and no longer buffered: stream again from that Cluster.
+    // Every seek supersedes a re-stream that has not started yet.
     this.latestSeek += 1;
+    const time = this.video.currentTime;
+    if (isBuffered(buffer.buffered, time)) {
+      return;
+    }
+    const offset = this.restreamOffset(time, buffer);
+    if (offset === undefined) {
+      return;
+    }
     const seek = this.latestSeek;
-    this.stream.abort();
-    this.streaming = false;
     this.restreams = this.restreams
-      .then(() => this.restream(from.offset, seek))
+      .then(() => this.restream(offset, seek))
       .catch((error: unknown) => {
         this.fail(error);
       });
   }
 
-  /** Drops what is buffered and streams again from the Cluster at `offset`. */
+  /** Where to stream from to reach `time`, or `undefined` when the running stream gets there. */
+  private restreamOffset(time: number, buffer: SourceBuffer): number | undefined {
+    if (this.index.broken) {
+      // No Cluster offsets: only the start of the file is a known place to stream from. A target
+      // behind what is buffered was dropped and needs it; one ahead is on the stream's way.
+      const last = rangesOf(buffer.buffered).at(-1);
+      return this.streaming && (last === undefined || time >= last[0]) ? undefined : 0;
+    }
+    const from = this.index.clusterAt(time) ?? this.index.clusters[0];
+    if (from === undefined) {
+      // Nothing indexed yet: the stream from the start of the file is still on its way.
+      return this.streaming ? undefined : 0;
+    }
+    const next = this.index.clusterAfter(from);
+    // The running stream is inside the target's Cluster: it appends the target next. Otherwise
+    // the target is behind the stream (dropped) or in a Cluster known from an earlier stream
+    // ahead of it, and a Range request from that Cluster gets there directly.
+    const inside =
+      this.streaming &&
+      from.offset >= this.streamFrom &&
+      from.offset <= this.appendedTo &&
+      (next === undefined || next.offset > this.appendedTo);
+    return inside ? undefined : from.offset;
+  }
+
+  /** Drops what is buffered and streams again from byte `offset` (0, or a Cluster start). */
   private async restream(offset: number, seek: number): Promise<void> {
     const buffer = this.buffer;
     const init = this.index.init;
     const signal = this.lifetime.signal;
-    const superseded = () => seek !== this.latestSeek;
-    if (buffer === undefined || init === undefined || superseded()) {
+    if (buffer === undefined || seek !== this.latestSeek || (offset > 0 && init === undefined)) {
       return;
     }
+    // Committed from here on: the running stream stops and the buffer is replaced.
+    this.stream.abort();
+    this.streaming = false;
     await this.idle(buffer, signal);
     if (this.mediaSource.readyState === 'open') {
       buffer.abort();
@@ -176,23 +198,23 @@ export class WebmSource {
     const ranges = rangesOf(buffer.buffered);
     const end = ranges[ranges.length - 1]?.[1];
     if (end !== undefined) {
+      await this.idle(buffer, signal);
       buffer.remove(0, end);
       await once(buffer, 'updateend', signal);
     }
-    if (superseded()) {
-      return;
-    }
-    // MediaSource needs the init segment again before media from the middle of the file.
-    buffer.appendBuffer(new Uint8Array(init));
-    await once(buffer, 'updateend', signal);
-    if (superseded()) {
-      return;
+    if (offset > 0 && init !== undefined) {
+      // MediaSource needs the init segment again before media from the middle of the file.
+      await this.idle(buffer, signal);
+      buffer.appendBuffer(new Uint8Array(init));
+      await once(buffer, 'updateend', signal);
     }
     this.index.restartAt(offset);
     // Not awaited: the next re-stream must not wait for this one to reach the end of the file.
     this.run(offset).catch((error: unknown) => {
       this.fail(error);
     });
+    // A seek made while this one was being set up may need a re-stream of its own.
+    this.onSeeking();
   }
 
   /** Streams the file from byte `offset` (0, or a Cluster start) to its end. */
@@ -205,6 +227,7 @@ export class WebmSource {
     this.stream = controller;
     const signal = AbortSignal.any([controller.signal, this.lifetime.signal]);
     this.streaming = true;
+    this.streamFrom = offset;
     this.appendedTo = offset;
     try {
       const response = await fetch(this.uri, {
@@ -229,9 +252,10 @@ export class WebmSource {
           bytes = bytes.subarray(passed);
         }
         if (bytes.length > 0) {
-          this.index.feed(bytes);
           for (let at = 0; at < bytes.length; at += tuning.appendBytes) {
             const piece = bytes.slice(at, at + tuning.appendBytes);
+            // The index only knows what is appended, so it never runs ahead of the buffer.
+            this.index.feed(piece);
             await this.append(buffer, piece, signal);
             this.appendedTo += piece.length;
             this.landPendingSeek(buffer);
@@ -280,6 +304,8 @@ export class WebmSource {
         if (this.bufferedSeconds(buffer) >= tuning.quotaSeconds) {
           throw new DOMException('the test quota is full', 'QuotaExceededError');
         }
+        // Every buffer operation first waits for the previous one, whoever started it.
+        await this.idle(buffer, signal);
         buffer.appendBuffer(bytes);
         await once(buffer, 'updateend', signal);
         return;
@@ -303,14 +329,19 @@ export class WebmSource {
   private async makeRoom(buffer: SourceBuffer, signal: AbortSignal): Promise<void> {
     const time = this.video.currentTime;
     const ranges = rangesOf(buffer.buffered);
-    const waiting = !isBuffered(buffer.buffered, time);
+    const playing = rangesOf(buffer.buffered).find(([start, end]) => start <= time && time < end);
+    // Waiting for media, or about to: less than a second left to play before the stream's next
+    // append, which only fits once something goes.
+    const waiting = playing === undefined || playing[1] - time < 1;
     const keepFrom = waiting ? time : time - tuning.keepBehindSeconds;
     const first = ranges[0];
     const ahead = waiting ? ranges.find(([start]) => start > time) : undefined;
     if (first !== undefined && first[0] < keepFrom) {
+      await this.idle(buffer, signal);
       buffer.remove(first[0], keepFrom);
       await once(buffer, 'updateend', signal);
     } else if (ahead !== undefined) {
+      await this.idle(buffer, signal);
       buffer.remove(ahead[0], ahead[1]);
       await once(buffer, 'updateend', signal);
     } else {

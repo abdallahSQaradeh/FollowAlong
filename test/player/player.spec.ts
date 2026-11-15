@@ -206,6 +206,38 @@ test.describe('the player', () => {
       .toBe(true);
   });
 
+  test('re-streams again after a second seek back into media evicted after a re-stream', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page, {
+      tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+    });
+    await player.post(load({ videoUri: media.long, startAt: 6, autoplay: false }));
+    await expect.poll(async () => (await player.video()).currentTime).toBeCloseTo(6, 1);
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.currentTime = 1;
+      void video.play();
+    });
+    // Played on far enough that 0:02 was dropped again.
+    await expect.poll(async () => (await player.video()).currentTime).toBeGreaterThan(4.2);
+    expect((await player.video()).buffered.some(([from]) => from <= 2.2)).toBe(false);
+
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.currentTime = 2.2;
+      void video.play();
+    });
+
+    await expect
+      .poll(
+        async () =>
+          (await player.events()).some(
+            (event) => event.type === 'timeUpdate' && event.position > 2.6 && event.position < 3.9,
+          ),
+        { message: 'the playhead moves on from 0:02.2', timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
   test('plays on after two quick seeks back', async ({ page }) => {
     const player = await openPlayer(page, {
       tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
@@ -213,8 +245,10 @@ test.describe('the player', () => {
     await player.post(load({ videoUri: media.long, startAt: 6, autoplay: false }));
     await expect.poll(async () => (await player.video()).currentTime).toBeCloseTo(6, 1);
 
-    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+    // Two separate seeks, the second while the first one's re-stream is under way.
+    await page.locator('video').evaluate(async (video: HTMLVideoElement) => {
       video.currentTime = 3;
+      await new Promise((resolve) => setTimeout(resolve, 30));
       video.currentTime = 1;
       void video.play();
     });
