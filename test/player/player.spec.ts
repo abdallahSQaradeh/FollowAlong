@@ -172,6 +172,47 @@ test.describe('the player', () => {
     expect((await player.events()).map((event) => event.type)).not.toContain('error');
   });
 
+  test('reaches a start position past a full buffer with nothing behind it to drop', async ({
+    page,
+  }) => {
+    // The buffer fills with 0:00–0:03, all within keepBehindSeconds (30 s) of the 0:06 target.
+    const player = await openPlayer(page, { tuning: { appendBytes: 4096, quotaSeconds: 3 } });
+
+    await player.post(load({ videoUri: media.long, startAt: 6 }));
+
+    await player.waitForEvent({ type: 'played', lessonId });
+    await expect
+      .poll(async () =>
+        (await player.events()).some(
+          (event) => event.type === 'timeUpdate' && event.position > 6.3,
+        ),
+      )
+      .toBe(true);
+  });
+
+  test('plays on after two quick seeks back', async ({ page }) => {
+    const player = await openPlayer(page, {
+      tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+    });
+    await player.post(load({ videoUri: media.long, startAt: 6, autoplay: false }));
+    await expect.poll(async () => (await player.video()).currentTime).toBeCloseTo(6, 1);
+
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.currentTime = 3;
+      video.currentTime = 1;
+      void video.play();
+    });
+
+    await expect
+      .poll(async () =>
+        (await player.events()).some(
+          (event) => event.type === 'timeUpdate' && event.position > 1.6 && event.position < 4,
+        ),
+      )
+      .toBe(true);
+    expect((await player.events()).map((event) => event.type)).not.toContain('error');
+  });
+
   test('reports an error, instead of stalling, when re-streaming fails', async ({ page }) => {
     const player = await openPlayer(page, {
       tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },

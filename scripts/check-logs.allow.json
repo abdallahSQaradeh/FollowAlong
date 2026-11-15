@@ -10,6 +10,11 @@
       "pattern": "^\\(Use `Code --trace-deprecation \\.\\.\\.` to show where the warning was created\\)$",
       "reason": "Electron's hint line printed after a VS Code-internal deprecation. The deprecation line itself is still checked, so a new one is still caught.",
       "logs": ["test-smoke"]
+    },
+    {
+      "pattern": "^\\(Use `exe --trace-deprecation \\.\\.\\.` to show where the warning was created\\)$",
+      "reason": "The same hint line as the entry above, as Linux names the binary ('exe'). It follows the allowlisted [AgentHost:stderr] url.parse() line when VS Code's agent host prints it during the smoke run (seen in CI on Ubuntu). The deprecation line itself is still checked.",
+      "logs": ["test-smoke"]
     }
   ]
 }

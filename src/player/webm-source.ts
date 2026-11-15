@@ -293,11 +293,25 @@ export class WebmSource {
   }
 
   /** Drops media well behind the playhead, or waits for the playhead to move on. */
+  /**
+   * Frees room in a full buffer. While the Lesson plays, only media more than keepBehindSeconds
+   * behind the playhead goes. While the playhead waits for media the stream has not reached yet
+   * (a start position or a forward seek past it), nothing buffered can play before the target:
+   * everything behind the playhead goes, then anything ahead of it, so the stream can always go
+   * on appending toward the target instead of waiting for a playhead that cannot move.
+   */
   private async makeRoom(buffer: SourceBuffer, signal: AbortSignal): Promise<void> {
-    const keepFrom = this.video.currentTime - tuning.keepBehindSeconds;
-    const start = rangesOf(buffer.buffered)[0]?.[0];
-    if (start !== undefined && start < keepFrom) {
-      buffer.remove(start, keepFrom);
+    const time = this.video.currentTime;
+    const ranges = rangesOf(buffer.buffered);
+    const waiting = !isBuffered(buffer.buffered, time);
+    const keepFrom = waiting ? time : time - tuning.keepBehindSeconds;
+    const first = ranges[0];
+    const ahead = waiting ? ranges.find(([start]) => start > time) : undefined;
+    if (first !== undefined && first[0] < keepFrom) {
+      buffer.remove(first[0], keepFrom);
+      await once(buffer, 'updateend', signal);
+    } else if (ahead !== undefined) {
+      buffer.remove(ahead[0], ahead[1]);
       await once(buffer, 'updateend', signal);
     } else {
       // Wait for the playhead to move: by playing, or by a seek (a start position is applied
