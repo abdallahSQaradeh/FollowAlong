@@ -6,18 +6,48 @@
   "private": true,
   "publisher": "followalong",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abdallahSQaradeh/FollowAlong.git"
+  },
+  "categories": [
+    "Education"
+  ],
   "engines": {
     "vscode": "^1.146.0",
     "node": ">=22.22.1"
   },
+  "main": "./out/extension.js",
+  "files": [
+    "out/extension.js",
+    "out/player/player.js",
+    "out/player/player.css"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "followalong.openCourse",
+        "title": "Open Course…",
+        "category": "FollowAlong"
+      }
+    ]
+  },
   "scripts": {
     "prepare": "husky",
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node scripts/run-logged.mjs test -- vitest run",
-    "test:player": "node scripts/run-logged.mjs test:player -- playwright test --trace off --pass-with-no-tests",
+    "test:player": "node scripts/run-logged.mjs test:player -- playwright test --trace off",
     "test:smoke": "node scripts/run-logged.mjs test:smoke -- node scripts/run-smoke.mjs",
     "check-logs": "node scripts/check-logs.mjs",
     "verify:fast": "npm run format:check && npm run lint && npm run typecheck && npm run test",

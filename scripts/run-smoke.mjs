@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runTests } from '@vscode/test-electron';
 
+import { build } from './build.mjs';
 import { readJson } from './lib/json.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,6 +48,8 @@ const compile = spawnSync(
 if (compile.status !== 0) {
   process.exit(compile.status ?? 1);
 }
+// VS Code loads the extension from package.json "main", the bundle in out/.
+await build();
 
 const workspace = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
 try {
