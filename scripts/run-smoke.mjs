@@ -61,6 +61,10 @@ try {
     launchArgs: [
       workspace,
       '--disable-extensions',
+      // A built-in extension (not affected by --disable-extensions) that polls a web service at
+      // startup through VS Code's proxy agent, which calls the deprecated url.parse() in the
+      // extension host (DEP0169, traced in CI). The smoke test needs none of it.
+      '--disable-extension=TypeScriptTeam.jsts-chat-features',
       '--disable-gpu',
       '--disable-workspace-trust',
       '--skip-welcome',
