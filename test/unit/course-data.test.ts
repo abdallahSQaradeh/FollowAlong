@@ -152,4 +152,15 @@ describe('Course data storage', () => {
 
     expect(isHidden(join(course, '.followalong'))).toBe(true);
   });
+
+  it('falls back to the extension storage when .followalong is a file, not a folder', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { '.followalong': 'not a folder', 'intro.webm': 'v' });
+
+    await openCourseData(course, h.ports).write(notesFile, notes);
+
+    expect(await h.listFiles(course)).toEqual(['.followalong', 'intro.webm']);
+    expect(await openCourseData(course, h.ports).read(notesFile)).toEqual(notes);
+    expect(h.ui.messages).toEqual([]);
+  });
 });

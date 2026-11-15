@@ -3,7 +3,7 @@
  * Seam 1 tests. Failures become a FileSystemError whose `reason` is the read-only check.
  */
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -87,23 +87,36 @@ export function createNodeFileSystem(): FileSystem {
           dirname(path),
           `.${basename(path)}.${String(process.pid)}-${String(temporaryCounter)}.tmp`,
         );
-        await writeFile(temporary, content, 'utf8');
+        const file = await open(temporary, 'w');
+        try {
+          await file.writeFile(content, 'utf8');
+          // On disk before the rename, so a crash cannot leave an empty file under the real name.
+          await file.sync();
+        } finally {
+          await file.close();
+        }
         try {
           await renameOver(temporary, path);
         } catch (error) {
           await rm(temporary, { force: true });
-          // The folder took the temp file, so it is writable: this failure is not "read-only".
-          throw new FileSystemError(
-            'other',
-            path,
-            error instanceof Error ? error.message : String(error),
-          );
+          // Still EPERM/EACCES after the retries: the file cannot be replaced (a read-only
+          // attribute, another owner), so the data has to go elsewhere, like a read-only Course.
+          throw error;
         }
       }),
 
     makeDirectory: (path, options) =>
       wrap(path, async () => {
-        await mkdir(path, { recursive: true });
+        try {
+          await mkdir(path, { recursive: true });
+        } catch (error) {
+          const code = error instanceof Error && 'code' in error ? error.code : undefined;
+          if (code === 'EEXIST' || code === 'ENOTDIR') {
+            // A file is in the way: no folder can be made at this path.
+            throw new FileSystemError('readOnly', path, `${path} exists and is not a folder.`);
+          }
+          throw error;
+        }
         // Also for a folder that already existed: it may have been made without the attribute.
         if (options.hidden && process.platform === 'win32') {
           // Node has no API for the Windows hidden attribute; attrib.exe ships with Windows.

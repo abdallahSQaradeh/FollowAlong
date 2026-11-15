@@ -27,3 +27,11 @@ extension. `npm run package` (`scripts/package.mjs`) makes a production build an
   project, so the player and the Playwright specs share it with the Node code. ESLint keeps the
   runtimes apart instead: `src/core` may not use `window`, `document`, `navigator` or
   `localStorage`, and `src/player` may not import Node built-ins, `vscode`, the core or adapters.
+
+## Workspace trust
+
+`package.json` declares `capabilities.untrustedWorkspaces.supported: true` and
+`virtualWorkspaces: false`. FollowAlong never runs or reads workspace code and writes nothing into
+the workspace. The Practice area is often a freshly downloaded, untrusted folder, and VS Code would
+otherwise disable FollowAlong in it. FollowAlong reads local Course files from disk, so virtual
+workspaces are not supported. Source: orchestrator answer, spec #12 "Decisions during build".

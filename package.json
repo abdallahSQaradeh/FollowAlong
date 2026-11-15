@@ -23,6 +23,12 @@
     "out/player/player.js",
     "out/player/player.css"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "commands": [
       {
