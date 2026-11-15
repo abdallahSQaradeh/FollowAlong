@@ -159,6 +159,35 @@ describe('opening a Course', () => {
     expect(h.player.sent).toHaveLength(2);
   });
 
+  it('says to press play when VS Code does not let the Lesson start by itself', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { '01 Intro.webm': 'video' });
+    await h.core.openCourse(course);
+    h.player.ready();
+
+    h.player.emit({ type: 'paused', lessonId: '01 Intro.webm', byUser: false });
+
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'info',
+        text: 'VS Code did not let “01 Intro” start by itself. Press play in the player to start it.',
+      },
+    ]);
+  });
+
+  it('says nothing about pauses once the Lesson has played', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { '01 Intro.webm': 'video' });
+    await h.core.openCourse(course);
+    h.player.ready();
+
+    h.player.emit({ type: 'played', lessonId: '01 Intro.webm' });
+    h.player.emit({ type: 'paused', lessonId: '01 Intro.webm', byUser: false });
+    h.player.emit({ type: 'paused', lessonId: '01 Intro.webm', byUser: true });
+
+    expect(h.ui.messages).toEqual([]);
+  });
+
   it('shows an error when the player cannot play the Lesson', async () => {
     const h = await createHarness();
     const course = await h.folder('course', { '01 Intro.webm': 'video' });

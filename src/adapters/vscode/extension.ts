@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 
 import { createFollowAlong } from '../../core/follow-along.js';
+import type { PlayerEvent } from '../../protocol/player-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
@@ -16,7 +17,16 @@ export const commands = {
   openCourse: 'followalong.openCourse',
 } as const;
 
-export function activate(context: vscode.ExtensionContext): void {
+/**
+ * What `activate` returns when VS Code runs the extension's tests (`ExtensionMode.Test`): the
+ * player events the extension received, so the smoke test can see the real page play a Lesson.
+ * In normal use `activate` returns nothing.
+ */
+export interface TestHooks {
+  readonly playerEvents: readonly PlayerEvent[];
+}
+
+export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
@@ -45,6 +55,13 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     });
 
+  let testHooks: TestHooks | undefined;
+  if (context.extensionMode === vscode.ExtensionMode.Test) {
+    const playerEvents: PlayerEvent[] = [];
+    context.subscriptions.push(player.onEvent((event) => playerEvents.push(event)));
+    testHooks = { playerEvents };
+  }
+
   context.subscriptions.push(
     channel,
     player,
@@ -71,6 +88,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
+  return testHooks;
 }
 
 export function deactivate(): void {

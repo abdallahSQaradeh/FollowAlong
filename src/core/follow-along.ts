@@ -68,6 +68,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let current: Lesson | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
+  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
+  let awaitingAutoplay = false;
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -82,6 +84,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay: true,
     };
     player.send(command);
+    awaitingAutoplay = command.autoplay;
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -106,10 +109,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           });
         }
         break;
-      case 'timeUpdate':
-      case 'played':
       case 'paused':
+        // A pause before the Lesson ever played, not by the learner: VS Code refused autoplay.
+        // Without a word the learner would face a stopped video and not know why.
+        if (event.lessonId === current?.id) {
+          if (awaitingAutoplay && !event.byUser) {
+            ui.showMessage({
+              severity: 'info',
+              text: `VS Code did not let “${current.title}” start by itself. Press play in the player to start it.`,
+            });
+          }
+          awaitingAutoplay = false;
+        }
+        break;
+      case 'played':
       case 'ended':
+        if (event.lessonId === current?.id) {
+          awaitingAutoplay = false;
+        }
+        break;
+      case 'timeUpdate':
         break;
     }
   }

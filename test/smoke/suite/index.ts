@@ -7,8 +7,24 @@ import * as vscode from 'vscode';
 /**
  * Thin VS Code smoke test, run inside a real VS Code by @vscode/test-electron (scripts/run-smoke.mjs).
  * It checks only what Seam 1 and Seam 2 cannot: that VS Code loads and activates the extension,
- * registers its commands, and shows the player in an editor group beside the code.
+ * registers its commands, shows the player in an editor group beside the code, and that the real
+ * page plays the Lesson there (asWebviewUri through the CSP, localResourceRoots, Electron's
+ * autoplay policy).
  */
+
+/** The part of a player event this test reads (src/protocol/player-messages.ts). */
+interface SeenEvent {
+  readonly type: string;
+  readonly lessonId?: string;
+  readonly byUser?: boolean;
+  readonly position?: number;
+  readonly message?: string;
+}
+
+/** What `activate` returns in ExtensionMode.Test (src/adapters/vscode/extension.ts). */
+interface TestHooks {
+  readonly playerEvents: readonly SeenEvent[];
+}
 export async function run(): Promise<void> {
   // The suite runs inside the extension host, where Node prints a warning without saying who
   // caused it. Print its stack on one line, so the check-logs finding itself shows the caller.
@@ -16,10 +32,13 @@ export async function run(): Promise<void> {
     const stack = (warning.stack ?? warning.message).split(/\r?\n\s*/).join(' <- ');
     say(`the extension host printed a warning: ${stack}`);
   });
-  const extension = vscode.extensions.getExtension('followalong.followalong');
+  const extension = vscode.extensions.getExtension<TestHooks | undefined>(
+    'followalong.followalong',
+  );
   assert.ok(extension, 'VS Code did not load the FollowAlong extension from the development path');
 
-  await extension.activate();
+  const hooks = await extension.activate();
+  assert.ok(hooks, 'activate() returned no test hooks in ExtensionMode.Test');
   assert.equal(extension.isActive, true, 'the extension did not activate');
   say('the FollowAlong extension activates');
 
@@ -32,6 +51,36 @@ export async function run(): Promise<void> {
 
   await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
+
+  say(await theLessonStarts(hooks.playerEvents));
+}
+
+/** Waits for the real player page to play the Lesson, or to report that autoplay was refused. */
+async function theLessonStarts(events: readonly SeenEvent[]): Promise<string> {
+  const lessonId = 'lesson.webm';
+  const outcome = await waitFor(
+    'the player to play the Lesson or to report a refused autoplay',
+    () =>
+      events.find(
+        (event) =>
+          event.lessonId === lessonId &&
+          (event.type === 'played' ||
+            event.type === 'error' ||
+            (event.type === 'paused' && event.byUser === false)),
+      ),
+    20_000,
+  );
+  assert.notEqual(outcome.type, 'error', `the player failed: ${outcome.message ?? ''}`);
+  if (outcome.type === 'paused') {
+    return 'the Lesson loaded, and VS Code refused autoplay (paused {byUser: false})';
+  }
+  const progress = await waitFor('the playhead to move', () =>
+    events.find(
+      (event) =>
+        event.type === 'timeUpdate' && event.lessonId === lessonId && (event.position ?? 0) > 0.2,
+    ),
+  );
+  return `the Lesson plays in VS Code (played, then timeUpdate at ${String(progress.position)} s)`;
 }
 
 async function opensACourseBesideTheCode(extensionPath: string): Promise<void> {
