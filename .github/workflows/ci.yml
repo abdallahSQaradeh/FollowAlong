@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, 'integration/**']
+  push:
+    branches: [main, 'integration/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: '0'
+  FORCE_COLOR: '1'
+
+jobs:
+  ubuntu:
+    name: ubuntu (verify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Cache VS Code for the smoke test
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      - name: npm run verify (format, lint, types, unit, player, smoke under xvfb, check-logs)
+        run: npm run verify
+
+      - name: check-logs (also after a failed step)
+        if: always()
+        run: npm run check-logs
+
+      - name: Upload .logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: logs-ubuntu
+          path: .logs/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  windows:
+    name: windows (typecheck, unit, smoke, package)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache VS Code for the smoke test
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+      - run: npm run typecheck
+
+      - run: npm run test
+
+      - run: npm run test:smoke
+
+      - name: check-logs
+        if: always()
+        run: npm run check-logs
+
+      - name: Package the .vsix (once a package script exists)
+        run: npm run package --if-present
+
+      - name: Upload .vsix
+        uses: actions/upload-artifact@v5
+        with:
+          name: followalong-vsix
+          path: '*.vsix'
+          if-no-files-found: ignore
+
+      - name: Upload .logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: logs-windows
+          path: .logs/
+          include-hidden-files: true
+          if-no-files-found: ignore
