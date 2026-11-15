@@ -1,5 +1,9 @@
 # FollowAlong
 
+## Coding standards and gates
+
+Read `CODING_STANDARDS.md` before writing code. Hooks format, lint and type-check every edit, and block stopping while `npm run verify:fast` or `npm run check-logs` is red. Fix the cause; never bypass or loosen a gate.
+
 ## Agent skills
 
 ### Issue tracker
