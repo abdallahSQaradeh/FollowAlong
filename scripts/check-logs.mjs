@@ -23,16 +23,20 @@ const minReasonLength = 15;
 
 /** @typedef {{ kind: string, pattern: RegExp }} Rule */
 /** @type {Rule[]} */
+// The most specific rule comes first, so a finding is labelled by what it really is.
 const rules = [
-  { kind: 'warning', pattern: /\bwarn(ing)?s?\b/i },
-  { kind: 'deprecation', pattern: /deprecat/i },
-  { kind: 'unhandled rejection or error', pattern: /unhandled\s*(promise\s*)?(rejection|error)/i },
   // Vitest prints console.warn and console.error from a test as "stderr | <file> > <test>".
   { kind: 'console.warn/console.error from a test', pattern: /^stderr \| / },
   // test/player/fixtures.ts tags browser console warnings, errors and page errors.
   { kind: 'browser console output', pattern: /^\[browser (console\.\w+|pageerror)\]/ },
-  { kind: 'experimental notice', pattern: /experimental/i },
   { kind: 'Node process notice', pattern: /\(node:\d+\)/ },
+  { kind: 'deprecation', pattern: /deprecat/i },
+  { kind: 'unhandled rejection or error', pattern: /unhandled\s*(promise\s*)?(rejection|error)/i },
+  { kind: 'experimental notice', pattern: /experimental/i },
+  // "warning" anywhere, "WARN" as a log level, a line starting with "warn", or Vite's "(!)" notice.
+  // A bare "warn" inside a name (console.warn, a test called "warns …") is not a warning.
+  { kind: 'warning', pattern: /\bwarnings?\b|^\s*warn\b|^\s*\(!\)/i },
+  { kind: 'warning', pattern: /\bWARN\b/ },
 ];
 
 /** @typedef {{ pattern: RegExp, source: string, reason: string, logs: string[] | undefined, used: number }} AllowEntry */
@@ -63,12 +67,12 @@ for (const [script, file] of latest) {
       return;
     }
     findings.push(
-      `.logs/${file}:${String(index + 1)}: [${rule.kind}] ${line.trim().slice(0, 300)}`,
+      `${shownPath(file)}:${String(index + 1)}: [${rule.kind}] ${line.trim().slice(0, 300)}`,
     );
   });
 }
 
-const scanned = [...latest.values()].map((file) => `.logs/${file}`);
+const scanned = [...latest.values()].map(shownPath);
 console.log(
   `check-logs: scanned ${String(scanned.length)} log(s): ${scanned.join(', ') || 'none'}`,
 );
@@ -92,6 +96,17 @@ if (findings.length > maxPrinted) {
   console.error(`  … and ${String(findings.length - maxPrinted)} more.`);
 }
 process.exit(1);
+
+/**
+ * A log's path as shown in findings: relative to the repository when it is inside it.
+ * @param {string} file
+ * @returns {string}
+ */
+function shownPath(file) {
+  const path = join(logsDir, file);
+  const fromRoot = relative(root, path);
+  return (fromRoot.startsWith('..') ? path : fromRoot).replace(/\\/g, '/');
+}
 
 /**
  * @param {string} name
