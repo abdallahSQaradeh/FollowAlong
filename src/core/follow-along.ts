@@ -5,7 +5,7 @@
 import { basename, extname, join } from 'node:path';
 
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
-import type { Disposable, FileSystem, Ports } from './ports.js';
+import { FileSystemError, type Disposable, type FileSystem, type Ports } from './ports.js';
 
 export interface FollowAlong {
   /** Opens a Course folder and plays its first Lesson beside the code. */
@@ -120,7 +120,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   return {
     async openCourse(course) {
-      const lesson = await findFirstLesson(fileSystem, course);
+      let lesson: Lesson | undefined;
+      try {
+        lesson = await findFirstLesson(fileSystem, course);
+      } catch (error) {
+        if (error instanceof FileSystemError && error.reason === 'notFound') {
+          ui.showMessage({
+            severity: 'error',
+            text: `FollowAlong cannot open “${basename(course)}”: the folder is missing.`,
+          });
+          return;
+        }
+        throw error;
+      }
       if (lesson === undefined) {
         ui.showMessage({
           severity: 'warning',
