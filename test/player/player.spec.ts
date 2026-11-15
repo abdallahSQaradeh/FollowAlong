@@ -79,6 +79,22 @@ test.describe('the player', () => {
     await player.waitForEvent({ type: 'paused', lessonId, byUser: true });
   });
 
+  test('reports the Lesson’s length as soon as it is known, before it plays', async ({ page }) => {
+    const player = await openPlayer(page);
+
+    await player.post(load({ autoplay: false }));
+
+    await expect
+      .poll(async () =>
+        (await player.events()).find((event) => event.type === 'timeUpdate' && event.duration > 0),
+      )
+      .toMatchObject({ type: 'timeUpdate', lessonId, position: 0 });
+    const known = (await player.events()).find(
+      (event) => event.type === 'timeUpdate' && event.duration > 0,
+    );
+    expect(known?.type === 'timeUpdate' ? known.duration : 0).toBeCloseTo(webmDuration, 1);
+  });
+
   test('loads paused at the start position when autoplay is off', async ({ page }) => {
     const player = await openPlayer(page);
 

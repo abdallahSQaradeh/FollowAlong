@@ -34,5 +34,7 @@ Two deliberate additions to the spec's shapes:
 
 - **`error`** is posted once per Lesson, whether the stream or the media element failed first.
   After it the player posts nothing more for that Lesson and pauses it.
-- **`timeUpdate.duration`** is 0 while a MediaSource stream's length is not yet known, so both
-  numbers are always finite.
+- **`timeUpdate`** is posted on the media element's `timeupdate`, and also once the Lesson's
+  length becomes known (`durationchange`). The extension therefore has the length before the
+  Lesson plays, even when autoplay is refused. `timeUpdate.duration` is 0 while a MediaSource
+  stream's length is not yet known, so both numbers are always finite.

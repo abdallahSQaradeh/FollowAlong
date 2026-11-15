@@ -127,10 +127,17 @@ function reportMediaEvents(media: HTMLVideoElement): void {
       }
     });
   };
-  on('timeupdate', ({ lessonId }) => {
+  const reportTime = ({ lessonId }: Lesson) => {
     // A MediaSource stream reports NaN or Infinity until the end of the stream is known.
     const duration = Number.isFinite(media.duration) ? media.duration : 0;
     post({ type: 'timeUpdate', lessonId, position: media.currentTime, duration });
+  };
+  on('timeupdate', reportTime);
+  // Also when the length becomes known, so the extension has it before the Lesson plays.
+  on('durationchange', (lesson) => {
+    if (Number.isFinite(media.duration) && media.duration > 0) {
+      reportTime(lesson);
+    }
   });
   // `playing`, not `play`: `play` fires before any media is ready, even for a file that fails.
   on('playing', (lesson) => {

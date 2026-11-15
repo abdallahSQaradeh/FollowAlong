@@ -18,6 +18,7 @@ interface SeenEvent {
   readonly lessonId?: string;
   readonly byUser?: boolean;
   readonly position?: number;
+  readonly duration?: number;
   readonly message?: string;
 }
 
@@ -72,7 +73,19 @@ async function theLessonStarts(events: readonly SeenEvent[]): Promise<string> {
   );
   assert.notEqual(outcome.type, 'error', `the player failed: ${outcome.message ?? ''}`);
   if (outcome.type === 'paused') {
-    return 'the Lesson loaded, and VS Code refused autoplay (paused {byUser: false})';
+    // The media still has to come through asWebviewUri, the CSP and localResourceRoots: the
+    // player reports the Lesson's length once MediaSource has read the file.
+    const loaded = await waitFor('the player to report the Lesson’s length', () =>
+      events.find(
+        (event) =>
+          event.type === 'timeUpdate' && event.lessonId === lessonId && (event.duration ?? 0) > 0,
+      ),
+    );
+    assert.ok(
+      !events.some((event) => event.type === 'error'),
+      'the player reported an error after loading',
+    );
+    return `VS Code refused autoplay (paused {byUser: false}); the Lesson loaded (length ${String(loaded.duration)} s)`;
   }
   const progress = await waitFor('the playhead to move', () =>
     events.find(
