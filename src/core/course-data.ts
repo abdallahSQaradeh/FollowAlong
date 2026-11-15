@@ -10,7 +10,7 @@
  * The folder is created on the first write, so opening a Course leaves it untouched.
  */
 import { createHash } from 'node:crypto';
-import { basename, join, resolve } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { FileSystemError, type Ports } from './ports.js';
 
@@ -41,17 +41,15 @@ function fallbackFolder(course: string, storageFolder: string): string {
   return join(storageFolder, 'courses', `${name}-${hash}`);
 }
 
-function isReadOnly(error: unknown): boolean {
-  return error instanceof FileSystemError && error.reason === 'readOnly';
-}
-
-export function openCourseData(folder: string, ports: CourseDataPorts): CourseData {
+/** `course` is the Course folder's absolute path, which also keys the fallback storage. */
+export function openCourseData(course: string, ports: CourseDataPorts): CourseData {
   const { fileSystem, storage, logger } = ports;
-  const course = resolve(folder);
   const inCourse = join(course, courseDataFolderName);
   const fallback = fallbackFolder(course, storage.folder);
   /** Where writes go, decided by the first write. */
   let target: string | undefined;
+  /** Folders already created (and hidden) by this store, so later writes skip that step. */
+  const prepared = new Set<string>();
 
   async function readFrom(location: string, file: CourseDataFile<unknown>): Promise<unknown> {
     const path = join(location, file.name);
@@ -59,7 +57,7 @@ export function openCourseData(folder: string, ports: CourseDataPorts): CourseDa
     try {
       text = await fileSystem.readText(path);
     } catch (error) {
-      if (error instanceof FileSystemError && error.reason === 'notFound') {
+      if (FileSystemError.is(error, 'notFound')) {
         return undefined;
       }
       throw error;
@@ -98,8 +96,11 @@ export function openCourseData(folder: string, ports: CourseDataPorts): CourseDa
     return value;
   }
 
-  async function writeTo(location: string, hidden: boolean, name: string, content: string) {
-    await fileSystem.makeDirectory(location, { hidden });
+  async function writeTo(location: string, name: string, content: string) {
+    if (!prepared.has(location)) {
+      await fileSystem.makeDirectory(location, { hidden: location === inCourse });
+      prepared.add(location);
+    }
     await fileSystem.writeText(join(location, name), content);
   }
 
@@ -113,7 +114,8 @@ export function openCourseData(folder: string, ports: CourseDataPorts): CourseDa
 
   return {
     async read<T>(file: CourseDataFile<T>): Promise<T | undefined> {
-      const locations = target === undefined ? [inCourse, fallback] : [target];
+      // After a fall back, the fallback copy is the newer one; .followalong may still hold the rest.
+      const locations = target === fallback ? [fallback, inCourse] : [inCourse, fallback];
       for (const location of locations) {
         const value = await readFrom(location, file);
         if (value !== undefined) {
@@ -127,17 +129,17 @@ export function openCourseData(folder: string, ports: CourseDataPorts): CourseDa
       const content = `${JSON.stringify({ version: file.version, data: value }, null, 2)}\n`;
       if (target !== fallback) {
         try {
-          await writeTo(inCourse, true, file.name, content);
+          await writeTo(inCourse, file.name, content);
           target = inCourse;
           return undefined;
         } catch (error) {
-          if (!isReadOnly(error)) {
+          if (!FileSystemError.is(error, 'readOnly')) {
             throw error;
           }
           useFallback();
         }
       }
-      await writeTo(fallback, false, file.name, content);
+      await writeTo(fallback, file.name, content);
     },
   };
 }

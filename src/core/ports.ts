@@ -55,6 +55,11 @@ export class FileSystemError extends Error {
   ) {
     super(message);
   }
+
+  /** Whether `error` is a FileSystemError for this `reason`. */
+  static is(error: unknown, reason: FileSystemErrorReason): error is FileSystemError {
+    return error instanceof FileSystemError && error.reason === reason;
+  }
 }
 
 /** Every method rejects with a {@link FileSystemError}. */

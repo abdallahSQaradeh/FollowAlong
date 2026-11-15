@@ -45,6 +45,27 @@ async function wrap<T>(path: string, action: () => Promise<T>): Promise<T> {
 
 let temporaryCounter = 0;
 
+/**
+ * On Windows, replacing a file another process has open for a moment (an antivirus scan, a second
+ * VS Code window writing the same Course data) fails with EPERM, EACCES or EBUSY. Retry briefly.
+ */
+async function renameOver(from: string, to: string): Promise<void> {
+  const delaysMs = [20, 50, 100, 200, 400];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error ? error.code : undefined;
+      const delay = delaysMs[attempt];
+      if (delay === undefined || !(code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 export function createNodeFileSystem(): FileSystem {
   return {
     readDirectory: (path) =>
@@ -66,19 +87,25 @@ export function createNodeFileSystem(): FileSystem {
           dirname(path),
           `.${basename(path)}.${String(process.pid)}-${String(temporaryCounter)}.tmp`,
         );
+        await writeFile(temporary, content, 'utf8');
         try {
-          await writeFile(temporary, content, 'utf8');
-          await rename(temporary, path);
+          await renameOver(temporary, path);
         } catch (error) {
           await rm(temporary, { force: true });
-          throw error;
+          // The folder took the temp file, so it is writable: this failure is not "read-only".
+          throw new FileSystemError(
+            'other',
+            path,
+            error instanceof Error ? error.message : String(error),
+          );
         }
       }),
 
     makeDirectory: (path, options) =>
       wrap(path, async () => {
-        const created = await mkdir(path, { recursive: true });
-        if (options.hidden && created !== undefined && process.platform === 'win32') {
+        await mkdir(path, { recursive: true });
+        // Also for a folder that already existed: it may have been made without the attribute.
+        if (options.hidden && process.platform === 'win32') {
           // Node has no API for the Windows hidden attribute; attrib.exe ships with Windows.
           await run('attrib', ['+H', path], { windowsHide: true });
         }

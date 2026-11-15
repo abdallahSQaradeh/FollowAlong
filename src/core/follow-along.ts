@@ -29,8 +29,7 @@ const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 
  */
 async function findFirstLesson(
   fileSystem: FileSystem,
-  course: string,
-  folder = course,
+  folder: string,
   prefix = '',
 ): Promise<Lesson | undefined> {
   const entries = [...(await fileSystem.readDirectory(folder))].sort((a, b) =>
@@ -52,7 +51,6 @@ async function findFirstLesson(
     }
     const found = await findFirstLesson(
       fileSystem,
-      course,
       join(folder, entry.name),
       `${prefix}${entry.name}/`,
     );
@@ -66,8 +64,8 @@ async function findFirstLesson(
 export function createFollowAlong(ports: Ports): FollowAlong {
   const { player, fileSystem, storage, ui, logger } = ports;
 
-  /** The Lesson the player should show, with the Course it belongs to. */
-  let current: { readonly course: string; readonly lesson: Lesson } | undefined;
+  /** The Lesson the player should show. */
+  let current: Lesson | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
 
@@ -77,8 +75,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
     const command: PlayerCommand = {
       type: 'load',
-      lessonId: current.lesson.id,
-      videoUri: player.resourceUri(current.lesson.path),
+      lessonId: current.id,
+      videoUri: player.resourceUri(current.path),
       container: 'webm',
       startAt: 0,
       autoplay: true,
@@ -101,10 +99,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           level: 'error',
           message: `Player error in ${event.lessonId}: ${event.message}`,
         });
-        if (event.lessonId === current?.lesson.id) {
+        if (event.lessonId === current?.id) {
           ui.showMessage({
             severity: 'error',
-            text: `FollowAlong could not play “${current.lesson.title}”: ${event.message}`,
+            text: `FollowAlong could not play “${current.title}”: ${event.message}`,
           });
         }
         break;
@@ -124,7 +122,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       try {
         lesson = await findFirstLesson(fileSystem, course);
       } catch (error) {
-        if (error instanceof FileSystemError && error.reason === 'notFound') {
+        if (FileSystemError.is(error, 'notFound')) {
           ui.showMessage({
             severity: 'error',
             text: `FollowAlong cannot open “${basename(course)}”: the folder is missing.`,
@@ -140,7 +138,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      current = { course, lesson };
+      current = lesson;
       logger.log({ level: 'info', message: `Opened Course ${course}; playing ${lesson.id}` });
       const shown = player.show({ title: lesson.title, resourceRoots: [course, storage.folder] });
       if (shown === 'created') {

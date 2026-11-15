@@ -1,8 +1,9 @@
 # A headless core behind ports, with a ready handshake for the player
 
 The FollowAlong core (`src/core/`) never imports `vscode`. It is built from one `Ports` record
-(`src/core/ports.ts`): Player, File system, Storage, Clock, Converter, Config, UI sink and Logger,
-the list in spec #12. Thin adapters implement them: `src/adapters/node/` for what is plain Node
+(`src/core/ports.ts`): Player, File system, Storage, Clock, Converter, Config and UI sink (the list
+in spec #12), plus the Logger port that CODING_STANDARDS.md added (`src/core/logger.ts`). Thin
+adapters implement them: `src/adapters/node/` for what is plain Node
 (file system, clock, converter) and `src/adapters/vscode/` for what needs the VS Code API (webview
 panel, mementos, settings, messages, output channel). Seam 1 tests build the same core from fakes
 plus the real Node file system adapter, so every decision is tested without VS Code.

@@ -84,7 +84,8 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
   }
 }
 
-function report(media: HTMLVideoElement): void {
+/** Forwards what the media element does to the extension, as protocol events. */
+function reportMediaEvents(media: HTMLVideoElement): void {
   const lessonId = () => current?.lessonId;
   const on = (type: keyof HTMLMediaElementEventMap, handler: (id: string) => void) => {
     media.addEventListener(type, () => {
@@ -115,7 +116,7 @@ function report(media: HTMLVideoElement): void {
 }
 
 const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
-report(video);
+reportMediaEvents(video);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   const command = parsePlayerCommand(event.data);
   if (command !== undefined) {

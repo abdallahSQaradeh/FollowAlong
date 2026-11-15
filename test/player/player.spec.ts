@@ -1,7 +1,21 @@
+import type { PlayerCommand } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
 import { media, openPlayer, webmDuration } from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
+
+/** A `load` of the WebM fixture that autoplays from the start, unless overridden. */
+function load(overrides: Partial<Extract<PlayerCommand, { type: 'load' }>> = {}): PlayerCommand {
+  return {
+    type: 'load',
+    lessonId,
+    videoUri: media.webm,
+    container: 'webm',
+    startAt: 0,
+    autoplay: true,
+    ...overrides,
+  };
+}
 
 test.describe('the player', () => {
   test('reports ready, saying AAC plays where it does', async ({ page }) => {
@@ -19,14 +33,7 @@ test.describe('the player', () => {
   test('plays a WebM Lesson through MediaSource, with sound', async ({ page }) => {
     const player = await openPlayer(page);
 
-    await player.post({
-      type: 'load',
-      lessonId,
-      videoUri: media.webm,
-      container: 'webm',
-      startAt: 0,
-      autoplay: true,
-    });
+    await player.post(load());
     await player.waitForEvent({ type: 'played', lessonId });
     await expect.poll(async () => (await player.video()).currentTime).toBeGreaterThan(0.5);
 
@@ -46,14 +53,7 @@ test.describe('the player', () => {
 
   test('pauses and plays on command', async ({ page }) => {
     const player = await openPlayer(page);
-    await player.post({
-      type: 'load',
-      lessonId,
-      videoUri: media.webm,
-      container: 'webm',
-      startAt: 0,
-      autoplay: true,
-    });
+    await player.post(load());
     await player.waitForEvent({ type: 'played', lessonId });
 
     await player.post({ type: 'pause' });
@@ -68,14 +68,7 @@ test.describe('the player', () => {
 
   test('reports a pause the learner made as theirs', async ({ page }) => {
     const player = await openPlayer(page);
-    await player.post({
-      type: 'load',
-      lessonId,
-      videoUri: media.webm,
-      container: 'webm',
-      startAt: 0,
-      autoplay: true,
-    });
+    await player.post(load());
     await player.waitForEvent({ type: 'played', lessonId });
 
     // The native control bar pauses the element directly, as this does.
@@ -89,14 +82,7 @@ test.describe('the player', () => {
   test('loads paused at the start position when autoplay is off', async ({ page }) => {
     const player = await openPlayer(page);
 
-    await player.post({
-      type: 'load',
-      lessonId,
-      videoUri: media.webm,
-      container: 'webm',
-      startAt: 1.5,
-      autoplay: false,
-    });
+    await player.post(load({ startAt: 1.5, autoplay: false }));
 
     await expect.poll(async () => (await player.video()).currentTime).toBeCloseTo(1.5, 1);
     expect((await player.video()).paused).toBe(true);
@@ -106,14 +92,7 @@ test.describe('the player', () => {
   test('reports the end of the Lesson', async ({ page }) => {
     const player = await openPlayer(page);
 
-    await player.post({
-      type: 'load',
-      lessonId,
-      videoUri: media.webm,
-      container: 'webm',
-      startAt: webmDuration - 0.5,
-      autoplay: true,
-    });
+    await player.post(load({ startAt: webmDuration - 0.5 }));
 
     await player.waitForEvent({ type: 'ended', lessonId });
     expect((await player.video()).ended).toBe(true);
@@ -123,14 +102,7 @@ test.describe('the player', () => {
   test('reports an error when the Lesson is not a playable WebM', async ({ page }) => {
     const player = await openPlayer(page);
 
-    await player.post({
-      type: 'load',
-      lessonId,
-      videoUri: media.notAVideo,
-      container: 'webm',
-      startAt: 0,
-      autoplay: false,
-    });
+    await player.post(load({ videoUri: media.notAVideo, autoplay: false }));
 
     await player.waitForEvent({ type: 'error', lessonId });
   });

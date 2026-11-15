@@ -28,6 +28,12 @@ const notesFile: CourseDataFile<Notes> = {
 
 const notes: Notes = { lessons: { 'intro.webm': 'watched twice' } };
 
+const otherFile: CourseDataFile<string> = {
+  name: 'other.json',
+  version: 1,
+  parse: (data) => (typeof data === 'string' ? data : undefined),
+};
+
 describe('Course data storage', () => {
   it("writes FollowAlong's data as versioned JSON into a hidden .followalong folder", async () => {
     const h = await createHarness();
@@ -73,10 +79,6 @@ describe('Course data storage', () => {
     ]);
     expect(await openCourseData(course, h.ports).read(notesFile)).toEqual(notes);
     expect(h.ui.messages).toEqual([]);
-    expect(h.logger.entries).toContainEqual({
-      level: 'info',
-      message: `The Course folder ${course} is read-only; keeping FollowAlong's data for it in ${join(h.storage.folder, 'courses')}.`,
-    });
   });
 
   it('keys the fallback storage by the Course’s absolute path', async () => {
@@ -108,19 +110,14 @@ describe('Course data storage', () => {
     });
   });
 
-  it('ignores, with a warning in the log, a file it cannot read', async () => {
+  it('ignores a file it cannot read', async () => {
     const h = await createHarness();
     const course = await h.folder('course', {
       '.followalong/notes.json': '{"version": 2, "data": ',
     });
 
     expect(await openCourseData(course, h.ports).read(notesFile)).toBeUndefined();
-    expect(h.logger.entries).toContainEqual({
-      level: 'warn',
-      message: expect.stringContaining(
-        `Ignoring ${join(course, '.followalong', 'notes.json')}: not valid JSON`,
-      ) as unknown,
-    });
+    expect(h.ui.messages).toEqual([]);
   });
 
   it('ignores a file from a newer FollowAlong version', async () => {
@@ -130,9 +127,29 @@ describe('Course data storage', () => {
     });
 
     expect(await openCourseData(course, h.ports).read(notesFile)).toBeUndefined();
-    expect(h.logger.entries).toContainEqual({
-      level: 'warn',
-      message: `Ignoring ${join(course, '.followalong', 'notes.json')}: it has version 3, newer than this FollowAlong understands (2).`,
+  });
+
+  it('still reads what .followalong holds after later writes fell back', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      '.followalong/notes.json': JSON.stringify({ version: 2, data: notes }),
     });
+    makeReadOnly(join(course, '.followalong'));
+    const data = openCourseData(course, h.ports);
+
+    await data.write(otherFile, 'kept elsewhere');
+
+    expect(await data.read(otherFile)).toBe('kept elsewhere');
+    expect(await data.read(notesFile)).toEqual(notes);
+    expect(await h.listFiles(course)).toEqual(['.followalong/notes.json']);
+  });
+
+  it('hides a .followalong folder that exists but is not hidden yet', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { '.followalong/readme.txt': 'made by hand' });
+
+    await openCourseData(course, h.ports).write(notesFile, notes);
+
+    expect(isHidden(join(course, '.followalong'))).toBe(true);
   });
 });

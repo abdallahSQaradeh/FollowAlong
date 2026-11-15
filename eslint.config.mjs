@@ -70,7 +70,8 @@ export default defineConfig(
           patterns: [
             {
               group: ['**/adapters/**', '**/vscode/**', '**/player/**'],
-              message: 'src/core must not reach into adapters. Depend on a port instead.',
+              message:
+                'src/core must not reach into adapters or the player. Depend on a port or src/protocol instead.',
             },
           ],
         },

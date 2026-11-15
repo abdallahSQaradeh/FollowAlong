@@ -31,7 +31,7 @@ export async function run(): Promise<void> {
   say('its commands are registered');
 
   await opensACourseBesideTheCode(extension.extensionPath);
-  say('a Course opens in an editor group beside the code, and the workspace is unchanged');
+  say('a Course opens in an editor group beside the code, and the open folder is unchanged');
 }
 
 async function opensACourseBesideTheCode(extensionPath: string): Promise<void> {

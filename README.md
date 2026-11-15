@@ -11,7 +11,7 @@ never needs a Focus change. The spec is GitHub issue #12.
 ## Use
 
 Run **FollowAlong: Open Course…** and pick a Course folder. Its first WebM Lesson plays in an editor
-group beside your code; your workspace stays your Practice area and is never changed.
+group beside your code. The folder you have open in VS Code stays your Practice area and is never changed.
 
 ## Develop
 

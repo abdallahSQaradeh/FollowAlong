@@ -5,14 +5,21 @@ for a Course. Each file is `{ "version": n, "data": … }` (pretty-printed JSON)
 file is a `CourseDataFile<T>` with its current version and a `parse(data, version)` that also
 migrates older versions; a file that is not valid JSON, not in that envelope, from a newer version,
 or that `parse` rejects is ignored with a warning in the log. Writes go through the File system
-port's `writeText`, which writes a temp file and renames it over the target.
+port's `writeText`, which writes a temp file and renames it over the target. A rename that fails
+with `EPERM`/`EACCES`/`EBUSY` is retried for about 0.8 s (on Windows a file another process has open
+for a moment cannot be replaced), and a rename failure is never reported as `readOnly`: the folder
+just accepted the temp file.
 
 Where the files go is decided by the first write: FollowAlong creates the hidden `.followalong`
-folder in the Course (`attrib +H` on Windows) and writes there. If that fails because the Course is
-not writable (the File system port reports `readOnly` for `EACCES`, `EPERM`, `EROFS`), it logs one
-info line and uses `<extension storage>/courses/<folder name>-<first 16 hex of sha256(absolute
-path)>/` instead, for that write and the rest of the session. Reads look in `.followalong` first,
-then in the fallback folder.
+folder in the Course and writes there. `attrib +H` runs on Windows for that folder once per opened
+store, also when the folder already existed. If creating the folder or writing the temp file fails
+because the Course is not writable (the File system port reports `readOnly` for `EACCES`, `EPERM`,
+`EROFS`), it logs one info line. From then on, for the rest of the session, it uses
+`<extension storage>/courses/<folder name>-<first 16 hex of sha256(absolute path)>/`. The folder
+name has characters other than letters, digits, space, `.`, `_` and `-` replaced, and is cut to
+60 characters. Reads look in `.followalong` first, then in the fallback folder. After a fall back,
+the order flips, so this session's newer fallback copy wins and files only in `.followalong` stay
+readable.
 
 ## Considered options
 
@@ -29,6 +36,7 @@ then in the fallback folder.
 
 - The fallback key is the absolute path as given. The Course picker must pass the same spelling of
   a path each time (Windows paths are case-insensitive).
-- A Course that becomes read-only after FollowAlong wrote to it keeps its old `.followalong` files;
-  reads still prefer them over newer fallback files. A later ticket that writes often (Progress)
-  should decide whether to merge the two.
+- A Course that becomes read-only after FollowAlong wrote to it keeps its old `.followalong` files.
+  In a later session, reads prefer them over the newer fallback files until a write falls back
+  again. The Progress tickets, which write often and merge per Lesson (story 85), should decide
+  whether to merge the two copies.
