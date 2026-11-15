@@ -1,0 +1,4 @@
+{
+  "$comment": "Log lines scripts/check-logs.mjs accepts. Each entry: pattern (regex), reason (why it cannot be fixed, at least 15 characters), optional logs (e.g. [\"test-smoke\"]).",
+  "entries": []
+}

@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowJs": false,
+    "checkJs": false,
+    "outDir": "out/smoke",
+    "rootDir": "test/smoke",
+    "incremental": false,
+    "tsBuildInfoFile": null
+  },
+  "include": ["test/smoke/suite"]
+}
