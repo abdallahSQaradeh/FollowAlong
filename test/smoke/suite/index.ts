@@ -10,6 +10,11 @@ import * as vscode from 'vscode';
  * registers its commands, and shows the player in an editor group beside the code.
  */
 export async function run(): Promise<void> {
+  // The suite runs inside the extension host, where Node prints a warning without saying who
+  // caused it; print the stack, so a warning check-logs flags can be traced from the CI log.
+  process.on('warning', (warning) => {
+    say(`the extension host printed a warning: ${warning.stack ?? warning.message}`);
+  });
   const extension = vscode.extensions.getExtension('followalong.followalong');
   assert.ok(extension, 'VS Code did not load the FollowAlong extension from the development path');
 
