@@ -24,8 +24,18 @@ function post(event: PlayerEvent): void {
   host.postMessage(event);
 }
 
-/** The Lesson in the media element, and how to stop streaming it. */
-let current: { readonly lessonId: string; readonly stop: AbortController } | undefined;
+interface Lesson {
+  readonly lessonId: string;
+  /** Stops streaming this Lesson. */
+  readonly stop: AbortController;
+  /** Set once `error` was posted: nothing else is reported for this Lesson. */
+  failed: boolean;
+  /** Whether `played` was posted since the last pause, so a recovered stall is not a new play. */
+  playing: boolean;
+}
+
+/** The Lesson in the media element. */
+let current: Lesson | undefined;
 /** Set while a `pause` command is being carried out, so its pause is not reported as the learner's. */
 let pauseRequested = false;
 
@@ -33,14 +43,32 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Reports the Lesson's one `error`, and silences it from then on. */
+function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
+  if (lesson.failed || lesson !== current) {
+    return;
+  }
+  lesson.failed = true;
+  lesson.stop.abort();
+  post({ type: 'error', lessonId: lesson.lessonId, message });
+  media.pause();
+}
+
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
-  const stop = new AbortController();
-  const lesson = { lessonId: command.lessonId, stop };
+  // A pause command whose `pause` event the new load cancels must not mark the next pause.
+  pauseRequested = false;
+  const lesson: Lesson = {
+    lessonId: command.lessonId,
+    stop: new AbortController(),
+    failed: false,
+    playing: false,
+  };
   current = lesson;
-  playWebm(media, command.videoUri, stop.signal).catch((error: unknown) => {
-    if (!stop.signal.aborted) {
-      post({ type: 'error', lessonId: lesson.lessonId, message: describe(error) });
+  const { signal } = lesson.stop;
+  playWebm(media, command.videoUri, signal).catch((error: unknown) => {
+    if (!signal.aborted) {
+      fail(lesson, describe(error), media);
     }
   });
   if (command.startAt > 0) {
@@ -49,7 +77,7 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
       () => {
         media.currentTime = command.startAt;
       },
-      { once: true, signal: stop.signal },
+      { once: true, signal },
     );
   }
   if (command.autoplay) {
@@ -58,11 +86,18 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
 }
 
 function play(media: HTMLVideoElement): void {
+  const lesson = current;
   media.play().catch((error: unknown) => {
-    // A new load interrupts a pending play() (AbortError): nothing to report then. Otherwise
-    // (autoplay refused, say) the Lesson simply stays paused, as the extension is told.
-    if (current !== undefined && !(error instanceof DOMException && error.name === 'AbortError')) {
-      post({ type: 'paused', lessonId: current.lessonId, byUser: false });
+    // Autoplay refused: the Lesson stays paused, and the extension is told. Other rejections
+    // come from a new load (AbortError) or a failed Lesson, which reports its own `error`.
+    if (
+      lesson !== undefined &&
+      lesson === current &&
+      !lesson.failed &&
+      error instanceof DOMException &&
+      error.name === 'NotAllowedError'
+    ) {
+      post({ type: 'paused', lessonId: lesson.lessonId, byUser: false });
     }
   });
 }
@@ -86,32 +121,37 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
 
 /** Forwards what the media element does to the extension, as protocol events. */
 function reportMediaEvents(media: HTMLVideoElement): void {
-  const lessonId = () => current?.lessonId;
-  const on = (type: keyof HTMLMediaElementEventMap, handler: (id: string) => void) => {
+  /** Runs `handler` for the current Lesson, unless it has failed. */
+  const on = (type: keyof HTMLMediaElementEventMap, handler: (lesson: Lesson) => void) => {
     media.addEventListener(type, () => {
-      const id = lessonId();
-      if (id !== undefined) {
-        handler(id);
+      if (current !== undefined && !current.failed) {
+        handler(current);
       }
     });
   };
-  on('timeupdate', (id) => {
+  on('timeupdate', ({ lessonId }) => {
     // A MediaSource stream reports NaN or Infinity until the end of the stream is known.
     const duration = Number.isFinite(media.duration) ? media.duration : 0;
-    post({ type: 'timeUpdate', lessonId: id, position: media.currentTime, duration });
+    post({ type: 'timeUpdate', lessonId, position: media.currentTime, duration });
   });
-  on('play', (id) => {
-    post({ type: 'played', lessonId: id });
+  // `playing`, not `play`: `play` fires before any media is ready, even for a file that fails.
+  on('playing', (lesson) => {
+    if (!lesson.playing) {
+      lesson.playing = true;
+      post({ type: 'played', lessonId: lesson.lessonId });
+    }
   });
-  on('pause', (id) => {
-    post({ type: 'paused', lessonId: id, byUser: !pauseRequested && !media.ended });
+  on('pause', (lesson) => {
+    lesson.playing = false;
+    post({ type: 'paused', lessonId: lesson.lessonId, byUser: !pauseRequested && !media.ended });
     pauseRequested = false;
   });
-  on('ended', (id) => {
-    post({ type: 'ended', lessonId: id });
+  on('ended', (lesson) => {
+    lesson.playing = false;
+    post({ type: 'ended', lessonId: lesson.lessonId });
   });
-  on('error', (id) => {
-    post({ type: 'error', lessonId: id, message: media.error?.message ?? 'the video failed' });
+  on('error', (lesson) => {
+    fail(lesson, media.error?.message ?? 'the video failed', media);
   });
 }
 

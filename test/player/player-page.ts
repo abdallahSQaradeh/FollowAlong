@@ -20,6 +20,8 @@ export const media = {
   webm: `${origin}/media/lesson.webm`,
   /** A text file with a .webm name, as a broken download would be. */
   notAVideo: `${origin}/media/not-a-video.webm`,
+  /** A download that stopped before its first byte. */
+  empty: `${origin}/media/empty.webm`,
 } as const;
 export const webmDuration = 3;
 
@@ -37,6 +39,8 @@ export interface PlayerOptions {
 
 export interface PlayerHarness {
   post(command: PlayerCommand): Promise<void>;
+  /** Posts several commands in one go, so the page receives them back to back. */
+  postAll(commands: readonly PlayerCommand[]): Promise<void>;
   events(): Promise<PlayerEvent[]>;
   /** Waits until the player has sent an event matching `expected` (a partial event). */
   waitForEvent(expected: Partial<PlayerEvent>): Promise<void>;
@@ -71,6 +75,8 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         contentType: 'video/webm',
         body: readFileSync(join(root, 'test', 'fixtures', 'media', 'lesson.webm')),
       });
+    } else if (path === '/media/empty.webm') {
+      await route.fulfill({ contentType: 'video/webm', body: '' });
     } else if (path === '/media/not-a-video.webm') {
       await route.fulfill({ contentType: 'video/webm', body: 'this download was cut short' });
     } else {
@@ -102,6 +108,13 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       await page.evaluate((message) => {
         window.postMessage(message, '*');
       }, command);
+    },
+    async postAll(commands) {
+      await page.evaluate((messages) => {
+        for (const message of messages) {
+          window.postMessage(message, '*');
+        }
+      }, commands);
     },
     events,
     async waitForEvent(expected) {

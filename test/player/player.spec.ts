@@ -99,13 +99,41 @@ test.describe('the player', () => {
     expect(await player.events()).toContainEqual({ type: 'paused', lessonId, byUser: false });
   });
 
-  test('reports an error when the Lesson is not a playable WebM', async ({ page }) => {
+  test('reports a learner pause as theirs after a pause command and a new load', async ({
+    page,
+  }) => {
     const player = await openPlayer(page);
+    await player.post(load());
+    await player.waitForEvent({ type: 'played', lessonId });
 
-    await player.post(load({ videoUri: media.notAVideo, autoplay: false }));
+    // Both arrive before the media element fires `pause`; the load cancels that event.
+    await player.postAll([{ type: 'pause' }, load({ lessonId: 'next.webm' })]);
+    await player.waitForEvent({ type: 'played', lessonId: 'next.webm' });
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.pause();
+    });
 
-    await player.waitForEvent({ type: 'error', lessonId });
+    await player.waitForEvent({ type: 'paused', lessonId: 'next.webm', byUser: true });
   });
+
+  for (const [what, videoUri] of [
+    ['not a playable WebM', media.notAVideo],
+    ['an empty download', media.empty],
+  ] as const) {
+    test(`reports one error, and nothing after it, when the Lesson is ${what}`, async ({
+      page,
+    }) => {
+      const player = await openPlayer(page);
+
+      await player.post(load({ videoUri }));
+      await player.waitForEvent({ type: 'error', lessonId });
+      await page.waitForTimeout(500);
+
+      const events = (await player.events()).filter((event) => event.type !== 'ready');
+      expect(events.map((event) => event.type)).toEqual(['error']);
+      expect((await player.video()).paused).toBe(true);
+    });
+  }
 
   test('ignores messages that are not protocol commands', async ({ page }) => {
     const player = await openPlayer(page);
