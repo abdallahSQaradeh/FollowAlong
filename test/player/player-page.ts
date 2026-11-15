@@ -1,0 +1,140 @@
+/**
+ * Seam 2 harness: loads the real player page (renderPlayerHtml with the built out/player bundle)
+ * in Chromium at a fake webview origin, stands in for VS Code's `acquireVsCodeApi`, serves the
+ * media fixtures, and lets a test post protocol commands and read the events the player sent.
+ */
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+import type { Page } from '@playwright/test';
+
+import { renderPlayerHtml } from '../../src/player/page.js';
+import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
+import { expect } from './fixtures.js';
+
+const root = resolve(__dirname, '..', '..');
+/** Stands in for the webview's resource origin (`webview.cspSource`). */
+export const origin = 'https://webview.followalong.test';
+export const media = {
+  /** 3 s, VP8 + Vorbis (scripts/make-media-fixtures.mjs). */
+  webm: `${origin}/media/lesson.webm`,
+  /** A text file with a .webm name, as a broken download would be. */
+  notAVideo: `${origin}/media/not-a-video.webm`,
+} as const;
+export const webmDuration = 3;
+
+declare global {
+  interface Window {
+    /** Every message the player posted to the extension, in order. */
+    followalongSent?: unknown[];
+  }
+}
+
+export interface PlayerOptions {
+  /** Forces the AAC capability the page reports (stock Chromium's own answer otherwise). */
+  readonly aac?: boolean;
+}
+
+export interface PlayerHarness {
+  post(command: PlayerCommand): Promise<void>;
+  events(): Promise<PlayerEvent[]>;
+  /** Waits until the player has sent an event matching `expected` (a partial event). */
+  waitForEvent(expected: Partial<PlayerEvent>): Promise<void>;
+  video(): Promise<VideoState>;
+}
+
+export interface VideoState {
+  readonly paused: boolean;
+  readonly muted: boolean;
+  readonly volume: number;
+  readonly ended: boolean;
+  readonly currentTime: number;
+  readonly duration: number;
+  readonly currentSrc: string;
+  readonly audioBytesDecoded: number;
+  readonly videoBytesDecoded: number;
+}
+
+export async function openPlayer(page: Page, options: PlayerOptions = {}): Promise<PlayerHarness> {
+  const html = renderPlayerHtml({
+    cspSource: origin,
+    nonce: 'c2VhbTItbm9uY2U',
+    script: readFileSync(join(root, 'out', 'player', 'player.js'), 'utf8'),
+    style: readFileSync(join(root, 'out', 'player', 'player.css'), 'utf8'),
+  });
+  await page.route(`${origin}/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/') {
+      await route.fulfill({ contentType: 'text/html', body: html });
+    } else if (path === '/media/lesson.webm') {
+      await route.fulfill({
+        contentType: 'video/webm',
+        body: readFileSync(join(root, 'test', 'fixtures', 'media', 'lesson.webm')),
+      });
+    } else if (path === '/media/not-a-video.webm') {
+      await route.fulfill({ contentType: 'video/webm', body: 'this download was cut short' });
+    } else {
+      await route.fulfill({ status: 404, body: 'not found' });
+    }
+  });
+  await page.addInitScript(
+    ({ aac }: { aac: boolean | undefined }) => {
+      const sent: unknown[] = [];
+      window.followalongSent = sent;
+      Object.defineProperty(window, 'acquireVsCodeApi', {
+        value: () => ({ postMessage: (message: unknown) => sent.push(message) }),
+      });
+      if (aac !== undefined) {
+        const original = HTMLMediaElement.prototype.canPlayType.bind(
+          document.createElement('video'),
+        );
+        HTMLMediaElement.prototype.canPlayType = (type: string) =>
+          type.includes('mp4a') ? (aac ? 'probably' : '') : original(type);
+      }
+    },
+    { aac: options.aac },
+  );
+  await page.goto(`${origin}/`);
+
+  const events = () => page.evaluate(() => (window.followalongSent ?? []) as PlayerEvent[]);
+  return {
+    async post(command) {
+      await page.evaluate((message) => {
+        window.postMessage(message, '*');
+      }, command);
+    },
+    events,
+    async waitForEvent(expected) {
+      await expect
+        .poll(async () => (await events()).some((event) => matches(event, expected)), {
+          message: `the player sends ${JSON.stringify(expected)}`,
+          timeout: 10_000,
+        })
+        .toBe(true);
+    },
+    video: () =>
+      page.locator('video').evaluate((element: HTMLVideoElement): VideoState => {
+        const decoded = element as HTMLVideoElement & {
+          webkitAudioDecodedByteCount: number;
+          webkitVideoDecodedByteCount: number;
+        };
+        return {
+          paused: element.paused,
+          muted: element.muted,
+          volume: element.volume,
+          ended: element.ended,
+          currentTime: element.currentTime,
+          duration: element.duration,
+          currentSrc: element.currentSrc,
+          audioBytesDecoded: decoded.webkitAudioDecodedByteCount,
+          videoBytesDecoded: decoded.webkitVideoDecodedByteCount,
+        };
+      }),
+  };
+}
+
+function matches(event: PlayerEvent, expected: Partial<PlayerEvent>): boolean {
+  return Object.entries(expected).every(
+    ([key, value]) => (event as unknown as Record<string, unknown>)[key] === value,
+  );
+}
