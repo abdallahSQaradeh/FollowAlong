@@ -1,0 +1,15 @@
+{
+  "$comment": "Log lines scripts/check-logs.mjs accepts. Each entry: pattern (regex), reason (why it cannot be fixed, at least 15 characters), optional logs (e.g. [\"test-smoke\"]).",
+  "entries": [
+    {
+      "pattern": "\\[AgentHost:stderr\\] \\(node:\\d+\\) \\[DEP0169\\] DeprecationWarning: `url\\.parse\\(\\)`",
+      "reason": "VS Code 1.146.0's own AgentHost process calls url.parse() (seen in the Windows smoke run). It is VS Code's code, not FollowAlong's, and the smoke test pins that version.",
+      "logs": ["test-smoke"]
+    },
+    {
+      "pattern": "^\\(Use `Code --trace-deprecation \\.\\.\\.` to show where the warning was created\\)$",
+      "reason": "Electron's hint line printed after a VS Code-internal deprecation. The deprecation line itself is still checked, so a new one is still caught.",
+      "logs": ["test-smoke"]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+node_modules/
+out/
+.logs/
+.claude/logs/
+.vscode-test/
+test-results/
+playwright-report/
+coverage/
+*.vsix
+*.tsbuildinfo

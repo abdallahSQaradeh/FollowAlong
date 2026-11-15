@@ -1,0 +1,43 @@
+{
+  "name": "followalong",
+  "displayName": "FollowAlong",
+  "description": "Follow a local coding Course step by step without leaving VS Code.",
+  "version": "0.0.0",
+  "private": true,
+  "publisher": "followalong",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.146.0",
+    "node": ">=22.22.1"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node scripts/run-logged.mjs test -- vitest run",
+    "test:player": "node scripts/run-logged.mjs test:player -- playwright test --trace off --pass-with-no-tests",
+    "test:smoke": "node scripts/run-logged.mjs test:smoke -- node scripts/run-smoke.mjs",
+    "check-logs": "node scripts/check-logs.mjs",
+    "verify:fast": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "verify": "npm run verify:fast && npm run test:player && npm run test:smoke && npm run check-logs"
+  },
+  "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.5",
+    "@types/vscode": "1.146.0",
+    "@vscode/test-electron": "3.1.0",
+    "eslint": "10.15.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.14.0",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.1",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}

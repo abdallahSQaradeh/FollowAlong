@@ -1,0 +1,10 @@
+node_modules/
+out/
+.logs/
+.claude/logs/
+.claude/skills/
+.vscode-test/
+test-results/
+playwright-report/
+coverage/
+package-lock.json
