@@ -5,10 +5,13 @@ for a Course. Each file is `{ "version": n, "data": … }` (pretty-printed JSON)
 file is a `CourseDataFile<T>` with its current version and a `parse(data, version)` that also
 migrates older versions; a file that is not valid JSON, not in that envelope, from a newer version,
 or that `parse` rejects is ignored with a warning in the log. Writes go through the File system
-port's `writeText`, which writes a temp file and renames it over the target. A rename that fails
-with `EPERM`/`EACCES`/`EBUSY` is retried for about 0.8 s (on Windows a file another process has open
-for a moment cannot be replaced), and a rename failure is never reported as `readOnly`: the folder
-just accepted the temp file.
+port's `writeText`, which writes a temp file and renames it over the target. The temp file is synced
+to disk before the rename, so a crash cannot leave an empty file under the real name. A rename
+that fails with `EPERM`/`EACCES`/`EBUSY` is retried for about 0.8 s, because on Windows a file
+another process has open for a moment cannot be replaced. A rename still refused with
+`EPERM`/`EACCES` after that (a read-only attribute on the file, another owner) counts as
+`readOnly`: the data then goes to the fallback (story 107) instead of failing the command. A
+`.followalong` that exists as a file also counts as `readOnly`.
 
 Where the files go is decided by the first write: FollowAlong creates the hidden `.followalong`
 folder in the Course and writes there. `attrib +H` runs on Windows for that folder once per opened

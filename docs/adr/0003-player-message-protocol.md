@@ -17,7 +17,22 @@ Two deliberate additions to the spec's shapes:
   webview cannot fetch, would otherwise fail silently; the core logs it and shows the learner one
   message.
 
-Event meanings: `played` is the media element's `play` event; `paused.byUser` is false for a
-pause the extension asked for, for the end of the Lesson (Chromium fires `pause` before `ended`)
-and for a refused autoplay; `timeUpdate.duration` is 0 while a MediaSource stream's length is not
-yet known, so both numbers are always finite.
+## Event meanings
+
+- **`played`** is posted on the media element's first `playing` event after a load or a pause.
+  `play` fires before any media is ready, even for a file that then fails. A stall that recovers
+  is not a new `played`.
+- **`paused.byUser`** is false when:
+  - the extension asked for the pause, including a `pause` whose event a following `load`
+    cancelled (the flag is reset on `load`);
+  - the Lesson ended (Chromium fires `pause` before `ended`);
+  - autoplay was refused (`play()` rejected with `NotAllowedError`).
+
+  A `paused {byUser: false}` before the Lesson ever played, after a `load` with `autoplay`, means
+  VS Code refused autoplay. The core then shows an info message ("Press play in the player to
+  start it"), so the learner is not left facing a silently stopped video.
+
+- **`error`** is posted once per Lesson, whether the stream or the media element failed first.
+  After it the player posts nothing more for that Lesson and pauses it.
+- **`timeUpdate.duration`** is 0 while a MediaSource stream's length is not yet known, so both
+  numbers are always finite.
