@@ -135,6 +135,60 @@ test.describe('the player', () => {
     });
   }
 
+  test('re-streams and plays on after a seek back into media it evicted', async ({ page }) => {
+    // A 3 s quota makes the 8 s fixture behave like a Lesson larger than Chromium's MSE quota.
+    const player = await openPlayer(page, {
+      tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+    });
+    await player.post(load({ videoUri: media.long, startAt: 6, autoplay: false }));
+    // The playhead sits at 0:06 with media to play; filling the buffer dropped the start.
+    await expect
+      .poll(async () => {
+        const video = await player.video();
+        return video.buffered.some(
+          ([from, to]) => from <= video.currentTime && to > video.currentTime + 0.5,
+        );
+      })
+      .toBe(true);
+    expect((await player.video()).currentTime).toBeCloseTo(6, 1);
+    expect((await player.video()).buffered.some(([from]) => from < 2)).toBe(false);
+
+    // The learner drags the seek bar back to 0:01 and plays.
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.currentTime = 1;
+      void video.play();
+    });
+
+    await player.waitForEvent({ type: 'played', lessonId });
+    await expect
+      .poll(
+        async () =>
+          (await player.events()).some(
+            (event) => event.type === 'timeUpdate' && event.position > 1.6 && event.position < 4,
+          ),
+        { message: 'the playhead moves on from 0:01', timeout: 10_000 },
+      )
+      .toBe(true);
+    expect((await player.events()).map((event) => event.type)).not.toContain('error');
+  });
+
+  test('reports an error, instead of stalling, when re-streaming fails', async ({ page }) => {
+    const player = await openPlayer(page, {
+      tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+      brokenRanges: true,
+    });
+    await player.post(load({ videoUri: media.long, startAt: 6, autoplay: false }));
+    await expect.poll(async () => (await player.video()).currentTime).toBeCloseTo(6, 1);
+
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.currentTime = 1;
+      // The player pauses the failed Lesson, which interrupts this play().
+      video.play().catch(() => undefined);
+    });
+
+    await player.waitForEvent({ type: 'error', lessonId });
+  });
+
   test('ignores messages that are not protocol commands', async ({ page }) => {
     const player = await openPlayer(page);
 

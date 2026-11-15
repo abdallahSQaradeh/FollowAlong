@@ -7,7 +7,7 @@ import {
   type PlayerCommand,
   type PlayerEvent,
 } from '../protocol/player-messages.js';
-import { playWebm } from './webm-source.js';
+import { WebmSource } from './webm-source.js';
 
 declare global {
   /** Provided by VS Code inside a webview (and by the Seam 2 harness in Playwright). */
@@ -39,10 +39,6 @@ let current: Lesson | undefined;
 /** Set while a `pause` command is being carried out, so its pause is not reported as the learner's. */
 let pauseRequested = false;
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /** Reports the Lesson's one `error`, and silences it from then on. */
 function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
   if (lesson.failed || lesson !== current) {
@@ -66,11 +62,13 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
   };
   current = lesson;
   const { signal } = lesson.stop;
-  playWebm(media, command.videoUri, signal).catch((error: unknown) => {
-    if (!signal.aborted) {
-      fail(lesson, describe(error), media);
-    }
+  const source = new WebmSource(media, command.videoUri, (message) => {
+    fail(lesson, message, media);
   });
+  signal.addEventListener('abort', () => {
+    source.dispose();
+  });
+  source.start();
   if (command.startAt > 0) {
     media.addEventListener(
       'loadedmetadata',
