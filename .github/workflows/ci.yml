@@ -37,7 +37,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb
 
       - name: Cache Playwright Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -46,7 +46,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Cache VS Code for the smoke test
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .vscode-test
           key: vscode-${{ runner.os }}-${{ hashFiles('package.json') }}
@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload .logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: logs-ubuntu
           path: .logs/
@@ -82,7 +82,7 @@ jobs:
       - run: npm ci
 
       - name: Cache VS Code for the smoke test
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .vscode-test
           key: vscode-${{ runner.os }}-${{ hashFiles('package.json') }}
@@ -101,7 +101,7 @@ jobs:
         run: npm run package --if-present
 
       - name: Upload .vsix
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: followalong-vsix
           path: '*.vsix'
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload .logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: logs-windows
           path: .logs/
