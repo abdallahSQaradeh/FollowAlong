@@ -169,6 +169,20 @@ describe('the one-time terminal prompt', () => {
   });
 });
 
+describe('after the learner presses a button on the question', () => {
+  it.each(['accept', 'decline'] as const)(
+    'hands keyboard focus back to the editor or terminal after %s',
+    async (pressed) => {
+      const h = await createHarness();
+      await openLesson(h);
+      const before = h.ui.focusReturns;
+      await answer(h, pressed);
+
+      expect(h.ui.focusReturns).toBe(before + 1);
+    },
+  );
+});
+
 describe('the keys the prompt is about', () => {
   it('are exactly the commands the manifest binds to a one-press key, not a chord', () => {
     const manifest = JSON.parse(

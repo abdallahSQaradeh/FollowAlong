@@ -20,6 +20,9 @@ answer. These are the choices it leaves open.
   asked again in that window, however many Lessons open. The next window (a new activation of the
   extension) asks again. Opening more Lessons while the question is open does not stack questions.
   _Source: orchestrator answer to #24 (PR #78)._
+- **Focus goes back.** Pressing a button in the notification takes keyboard focus, so the core calls
+  `ui.returnFocus()` (ADR 0009) after a button press, so the learner is back in the code or the
+  terminal they came from. Closing the notification without a button does not call it.
 - **Where it asks.** Every time a Lesson is shown in the player, not only for the first Course: the
   first Lesson that opens is the first time, and an answer ends it for every Course and window.
 - **User settings only.** A new `TerminalSettings` port (it extends the port list of ADR 0002, as the Logger port did; `Config` is scoped to `followalong.*`,

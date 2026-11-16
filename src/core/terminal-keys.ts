@@ -65,6 +65,8 @@ export function createTerminalKeysOffer(
     if (answer === undefined) {
       return;
     }
+    // Pressing a button in the notification takes keyboard focus: back to where the learner was.
+    ui.returnFocus();
     // Remembered before the setting is written: a failed write is told once, not at every Lesson.
     await storage.global.set(terminalAnswerKey, answer);
     if (answer === 'decline') {
