@@ -38,7 +38,9 @@ describe('attaching a Resource from the chord', () => {
   it('asks for a file and attaches it to the Loaded Lesson', async () => {
     const { h, notes } = await playingFirstLesson();
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachToLoadedLesson();
+    await h.ui.fileDialogShown();
     expect(h.ui.fileDialogOpen).toBe(true);
     h.ui.answerFileDialog(notes);
     await attached;
@@ -52,7 +54,9 @@ describe('attaching a Resource from the chord', () => {
     h.core.nextLesson();
     h.player.ready();
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachToLoadedLesson();
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(notes);
     await attached;
 
@@ -63,8 +67,10 @@ describe('attaching a Resource from the chord', () => {
   it('keeps the Lesson that was playing when the chord was pressed, if another starts meanwhile', async () => {
     const { h, notes } = await playingFirstLesson();
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachToLoadedLesson();
     h.core.nextLesson();
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(notes);
     await attached;
 
@@ -76,8 +82,10 @@ describe('attaching a Resource from the chord', () => {
     const { h, notes } = await playingFirstLesson();
     const other = await h.folder('other', { '01 One.webm': 'v' });
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachToLoadedLesson();
     await h.core.openCourse(other);
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(notes);
     await attached;
 
@@ -95,8 +103,10 @@ describe('attaching a Resource from the chord', () => {
     const { h, notes } = await playingFirstLesson();
     h.player.clearSent();
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachToLoadedLesson();
     expect(h.player.sent).toEqual([]);
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(notes);
     await attached;
 
@@ -106,12 +116,16 @@ describe('attaching a Resource from the chord', () => {
   it('hands focus back to the code once the dialog closes, with or without a file', async () => {
     const { h, notes } = await playingFirstLesson();
 
+    h.ui.willChoose('File…');
     const first = h.core.attachToLoadedLesson();
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(notes);
     await first;
     expect(h.ui.focusReturns).toBe(1);
 
+    h.ui.willChoose('File…');
     const second = h.core.attachToLoadedLesson();
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(undefined);
     await second;
     expect(h.ui.focusReturns).toBe(2);
@@ -121,6 +135,7 @@ describe('attaching a Resource from the chord', () => {
   it('tells the learner to open a Lesson first when none is loaded, and opens no dialog', async () => {
     const h = await createHarness();
 
+    h.ui.willChoose('File…');
     await h.core.attachToLoadedLesson();
 
     expect(h.ui.fileDialogs).toBe(0);
@@ -135,7 +150,9 @@ describe('attaching a Resource from the chord', () => {
     await mkdir(join(file, '..'), { recursive: true });
     await writeFile(file, '{ not json');
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachToLoadedLesson();
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(notes);
     await attached;
 

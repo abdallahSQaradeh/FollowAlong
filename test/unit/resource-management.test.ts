@@ -179,6 +179,7 @@ describe('relinking a Resource', () => {
     expect(resourceNodes(h, 'intro.webm')).toEqual([
       {
         kind: 'resource',
+        type: 'file',
         id: before.id,
         label: 'moved-notes.md',
         path: join(course, 'moved-notes.md'),

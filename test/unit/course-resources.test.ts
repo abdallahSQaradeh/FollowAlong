@@ -124,6 +124,7 @@ describe('attaching a file Resource to the whole Course', () => {
   it('attaches nothing, and opens no dialog, with no Course open', async () => {
     const h = await createHarness();
 
+    h.ui.willChoose('File…');
     await h.core.attachCourseResource();
 
     expect(h.ui.fileDialogs).toBe(0);
@@ -136,7 +137,9 @@ describe('attaching to the Course from the tree’s “+” without a file yet',
     const course = await h.folder('Course', { '01 One.webm': 'v', 'cheat.md': '# cheat' });
     await h.core.openCourse(course);
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachCourseResource();
+    await h.ui.fileDialogShown();
     expect(h.ui.fileDialogOpen).toBe(true);
     h.ui.answerFileDialog(join(course, 'cheat.md'));
     await attached;
@@ -150,8 +153,10 @@ describe('attaching to the Course from the tree’s “+” without a file yet',
     const other = await h.folder('Other', { '01 One.webm': 'v' });
     await h.core.openCourse(first);
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachCourseResource();
     await h.core.openCourse(other);
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(join(first, 'cheat.md'));
     await attached;
 
@@ -169,7 +174,9 @@ describe('attaching to the Course from the tree’s “+” without a file yet',
     const course = await h.folder('Course', { '01 One.webm': 'v' });
     await h.core.openCourse(course);
 
+    h.ui.willChoose('File…');
     const attached = h.core.attachCourseResource();
+    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(undefined);
     await attached;
 
