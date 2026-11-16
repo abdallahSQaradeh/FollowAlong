@@ -769,6 +769,13 @@ export interface Harness {
     /** VS Code opens a new empty window: no folder, no workspace file, its own workspace state. */
     readonly emptyWindow?: boolean;
   }): void;
+  /**
+   * The extension is the Windows x64 build: it ships an ffmpeg at the returned path. `present`
+   * says whether the file is really there, as it is in a whole .vsix, or was removed (a virus
+   * scanner, a half-finished update). Without this call there is no bundled ffmpeg, as on Linux
+   * and macOS.
+   */
+  shipBundledFfmpeg(options: { readonly present: boolean }): Promise<string>;
 }
 
 export async function createHarness(): Promise<Harness> {
@@ -858,6 +865,7 @@ export async function createHarness(): Promise<Harness> {
     writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
   };
+  let bundledFfmpeg: string | undefined;
   const portsFor = (windowPlayer: FakePlayer): Ports => ({
     player: windowPlayer,
     fileSystem,
@@ -868,6 +876,10 @@ export async function createHarness(): Promise<Harness> {
     ui,
     logger,
     terminalSettings,
+    // Read when asked, so a test can ship the ffmpeg after the core exists.
+    get bundledFfmpeg() {
+      return bundledFfmpeg;
+    },
   });
   const cores: FollowAlong[] = [];
   onTestFinished(async () => {
@@ -985,6 +997,15 @@ export async function createHarness(): Promise<Harness> {
         }
         await Promise.allSettled([...inFlight]);
       }
+    },
+    async shipBundledFfmpeg({ present }) {
+      const path = join(root, 'extension', 'bin', 'ffmpeg.exe');
+      if (present) {
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, 'ffmpeg');
+      }
+      bundledFfmpeg = path;
+      return path;
     },
     restart(options) {
       harness.core.dispose();

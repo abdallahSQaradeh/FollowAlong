@@ -28,7 +28,13 @@
     "out/pdf/pdf-viewer.js",
     "out/pdf/pdf.worker.js",
     "media/followalong.svg",
-    "THIRD_PARTY_NOTICES.txt"
+    "THIRD_PARTY_NOTICES.txt",
+    "bin/ffmpeg.exe",
+    "bin/FFMPEG-LICENSE-LGPL-2.1.txt",
+    "bin/LAME-LICENSE-LGPL.txt",
+    "bin/FFMPEG-BUILD.txt",
+    "scripts/build-ffmpeg.mjs",
+    "scripts/bundled-ffmpeg.json"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -413,7 +419,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "The ffmpeg program FollowAlong uses to prepare the sound of MP4 Lessons, which VS Code cannot play (their sound is AAC). Leave it empty to use `ffmpeg` on your PATH. Only user settings can set it, never a workspace."
+          "markdownDescription": "The ffmpeg program FollowAlong uses to prepare the sound of MP4 Lessons, which VS Code cannot play (their sound is AAC). Leave it empty to use the ffmpeg that comes with FollowAlong (Windows x64), or `ffmpeg` on your PATH on other systems. Only user settings can set it, never a workspace."
         }
       }
     }
