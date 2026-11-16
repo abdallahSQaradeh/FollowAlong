@@ -25,8 +25,9 @@ asserts on the messages the player really receives.
 
 ## Consequences
 
-- A new Course needs a new webview, because `localResourceRoots` is fixed when a webview is created:
-  the panel adapter disposes the old panel when the roots change.
+- A new Course needs other `localResourceRoots`. Revised by ADR 0022: the panel adapter keeps the
+  open panel and gives it the new roots, and VS Code reloads its page (so `show` answers `created`
+  and the page posts `ready`). It no longer disposes the panel.
 - The Converter port is defined now but nothing calls it; until the sound tickets bundle ffmpeg,
   the extension passes a converter that rejects every request.
 - When VS Code runs the extension's tests (`ExtensionMode.Test`), `activate` returns the player

@@ -22,9 +22,8 @@ These are the details the spec leaves open:
   from 0:00 until the Progress tickets add saved positions and the _Start from beginning_ button.
   If another Course was opened while the picker was open, the pick is ignored, because a Lesson id
   is only unique inside its Course (CP1 note) and the learner chose from a list that is gone.
-- **No Course open.** The core shows a message that says to run _Open Course…_ and opens no
-  picker. Story 35 (the key opens the Course picker instead) needs that picker and belongs to #33,
-  which replaces the message.
+- **No Course open.** The key opens the Course picker instead (story 35, #33, ADR 0022). Until
+  #33 the core showed a message that said to run _Open Course…_.
 - **The chord.** `ctrl+' l` (`cmd+' l` on macOS, best effort) when `editorTextFocus ||
 terminalFocus`, as the spec lists, so it also works in the integrated terminal, where
   `terminal.integrated.allowChords` is on by default.

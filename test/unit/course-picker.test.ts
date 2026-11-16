@@ -225,4 +225,18 @@ describe('the Course picker', () => {
 
     expect(await h.listFiles(learning)).toEqual(before);
   });
+
+  it('lists a Course once when one Courses root is inside another', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/React Basics/01 Hello.webm': 'v',
+      'Node Course/01 Welcome.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning, join(learning, 'Web')]);
+
+    void h.core.pickCourse();
+    await settle();
+
+    expect(rows(h.ui.picker)).toEqual(['Node Course', 'React Basics', 'Add Courses root…']);
+  });
 });
