@@ -11,7 +11,7 @@ import { buildCoursePicker } from './course-picker.js';
 import { scanCourses } from './course-scanner.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
 import { buildLessonPicker } from './lesson-picker.js';
-import { buildLessonTree } from './lesson-tree.js';
+import { buildLessonTree, type LessonTreeModel } from './lesson-tree.js';
 import {
   createLoadedLesson,
   noLessonText,
@@ -118,6 +118,38 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let resourceStore: ResourceStore | undefined;
   /** The open Course's Progress. */
   let progress: ProgressRecorder | undefined;
+  /** What the Lesson tree shows now (as JSON), so a redraw that would change nothing is skipped. */
+  let shownTree: string | undefined;
+
+  /** Replaces the Lesson tree in the UI. */
+  function drawTree(model: LessonTreeModel): void {
+    shownTree = JSON.stringify(model);
+    ui.showLessonTree(model);
+  }
+
+  /**
+   * Draws the tree of the open Course with `store`'s Resources and what Progress knows now, not yet
+   * saved included. Does nothing when the learner would see the same tree.
+   */
+  function drawTreeWith(store: ResourceStore | undefined): void {
+    if (openedCourse === undefined || progress === undefined || store === undefined) {
+      return;
+    }
+    const model = buildLessonTree(
+      openedCourse,
+      store.current(),
+      progress.current(),
+      store.missing(),
+    );
+    if (JSON.stringify(model) !== shownTree) {
+      drawTree(model);
+    }
+  }
+
+  /** Draws the open Course's tree again (ADR 0044). */
+  function refreshTree(): void {
+    drawTreeWith(resourceStore);
+  }
 
   /** The Lesson the player holds, and the playback commands. */
   const loaded = createLoadedLesson(ports, {
@@ -126,6 +158,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     nextClicked: (next) => {
       playLesson(next.id);
     },
+    progressChanged: refreshTree,
   });
 
   /**
@@ -171,7 +204,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (openedCourse?.folder !== course.folder) {
       return false;
     }
-    ui.showLessonTree(buildLessonTree(openedCourse, store.current(), store.missing()));
+    drawTreeWith(store);
     return true;
   }
 
@@ -314,7 +347,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       progress = recorder;
       if (first === undefined || recorder === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
-        ui.showLessonTree({ message: text, nodes: [] });
+        drawTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
         // The player still shows the Lesson it had, but this Course has none to offer: the
         // commands and the status bar items follow the Course the learner opened.
@@ -323,7 +356,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       await storage.workspace.set(openCourseKey, folder);
-      ui.showLessonTree(buildLessonTree(course, store.current(), store.missing()));
+      drawTree(buildLessonTree(course, store.current(), recorder.current(), store.missing()));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
@@ -358,6 +391,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return;
     }
     void loaded.leave();
+    // The Lesson left shows where the learner left it, which is saved with it.
+    refreshTree();
     const saved = progress?.current();
     play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
   }
