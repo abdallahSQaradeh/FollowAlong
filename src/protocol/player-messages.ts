@@ -84,6 +84,14 @@ export type PlayerEvent =
    */
   | { readonly type: 'zoomChanged'; readonly level: number };
 
+/**
+ * How a zoom level reads wherever it is shown (the player's toolbar, the status bar item): to one
+ * decimal, without a trailing `.0`: `1×`, `1.3×`, `2.4×` (ADR 0037).
+ */
+export function zoomLabel(level: number): string {
+  return `${String(Number(level.toFixed(1)))}×`;
+}
+
 type Fields = Readonly<Record<string, unknown>>;
 
 function isFields(value: unknown): value is Fields {

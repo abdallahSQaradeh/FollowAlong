@@ -200,3 +200,90 @@ test.describe('a click while zoomed', () => {
     await player.waitForEvent({ type: 'played', lessonId });
   });
 });
+
+test.describe('the zoom toolbar', () => {
+  function toolbar(page: Page) {
+    return page.getByRole('toolbar', { name: 'Zoom' });
+  }
+
+  function level(page: Page) {
+    return toolbar(page).getByLabel('Zoom level');
+  }
+
+  test('shows the level, 1× until the learner zooms', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    await expect(level(page)).toHaveText('1×');
+
+    await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
+
+    await expect(level(page)).toHaveText('4×');
+  });
+
+  test('＋ and − zoom in and out around the middle, 1.25× a press, from 1× up to 8×', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const zoomIn = toolbar(page).getByRole('button', { name: 'Zoom in' });
+    const zoomOut = toolbar(page).getByRole('button', { name: 'Zoom out' });
+
+    await zoomIn.click();
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+    await expect(level(page)).toHaveText('1.3×');
+    expectArea(await shownArea(page), { left: 0.1, top: 0.1, width: 0.8, height: 0.8 });
+
+    await zoomOut.click();
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    await expect(level(page)).toHaveText('1×');
+    await zoomOut.click();
+    await expect(level(page)).toHaveText('1×');
+
+    for (let press = 0; press < 12; press += 1) {
+      await zoomIn.click();
+    }
+    await expect(level(page)).toHaveText('8×');
+    await player.waitForEvent({ type: 'zoomChanged', level: 8 });
+  });
+
+  test('reset shows the whole picture again', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    await toolbar(page).getByRole('button', { name: 'Reset zoom' }).click();
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    expect((await player.video()).controls).toBe(true);
+  });
+
+  test('area mode lasts until the next box, which zooms', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const area = toolbar(page).getByRole('button', { name: 'Zoom to an area' });
+
+    await area.click();
+    await expect(area).toHaveAttribute('aria-pressed', 'true');
+    await area.click();
+    await expect(area).toHaveAttribute('aria-pressed', 'false');
+    await area.click();
+
+    await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+    await expect(area).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('buttons neither play nor pause, and hand focus back after each press', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    for (const name of ['Zoom in', 'Zoom out', 'Zoom to an area', 'Reset zoom']) {
+      await toolbar(page).getByRole('button', { name }).click();
+    }
+
+    await expect.poll(() => interactions(player)).toBe(4);
+    await page.waitForTimeout(600);
+    expect(await interactions(player)).toBe(4);
+    expect((await player.video()).paused).toBe(true);
+  });
+});

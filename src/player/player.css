@@ -88,3 +88,73 @@ video {
 .zoom-box[hidden] {
   display: none;
 }
+
+/*
+ * The zoom toolbar (story 61): the level, −, +, area mode and reset, in the top right corner. It
+ * shows while the pointer is over the player, as the native control bar does, and in area mode.
+ */
+.zoom-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding: 2px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font:
+    600 13px/1 system-ui,
+    sans-serif;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+body:hover .zoom-tools,
+.zoom-tools:focus-within,
+.area-mode .zoom-tools {
+  opacity: 1;
+}
+
+.zoom-level {
+  min-width: 3.2em;
+  padding: 0 4px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoom-tools button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.zoom-tools button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.zoom-tools button[aria-pressed='true'] {
+  background: #2aa198;
+  color: #000;
+}
+
+.zoom-tools svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* In area mode the next drag draws a box. */
+.area-mode .overlay {
+  cursor: crosshair;
+}

@@ -21,6 +21,9 @@ export const wholePicture: ZoomView = { level: 1, left: 0, top: 0 };
 /** The closest the learner can zoom in (from the prototype: further is only blur). */
 export const maxZoomLevel = 8;
 
+/** How much one press of ＋ or − zooms in or out (from the prototype). */
+export const zoomStep = 1.25;
+
 /** A box on the player, in fractions of the player's width and height. */
 export interface Box {
   readonly x: number;
@@ -49,6 +52,12 @@ export function zoomToBox(view: ZoomView, box: Box): ZoomView {
   const centreX = view.left + (box.x + box.width / 2) / view.level;
   const centreY = view.top + (box.y + box.height / 2) / view.level;
   return centredView(view.level / Math.max(box.width, box.height), centreX, centreY);
+}
+
+/** The view `factor` times closer (below 1: further), around the middle of what is shown now. */
+export function zoomBy(view: ZoomView, factor: number): ZoomView {
+  const span = 1 / view.level;
+  return centredView(view.level * factor, view.left + span / 2, view.top + span / 2);
 }
 
 /** Whether `value` is a view the player can show; stored state comes back as plain data. */

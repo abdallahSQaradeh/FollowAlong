@@ -4,13 +4,14 @@
  */
 import {
   parsePlayerCommand,
+  zoomLabel,
   type AboutLesson,
   type PlayerCommand,
   type PlayerEvent,
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
-import { wholePicture, zoomToBox, zoomTransform, type ZoomView } from './zoom.js';
+import { wholePicture, zoomBy, zoomStep, zoomToBox, zoomTransform, type ZoomView } from './zoom.js';
 
 declare global {
   /** Provided by VS Code inside a webview (and by the Seam 2 harness in Playwright). */
@@ -430,6 +431,15 @@ const smallestBox = 12;
 
 /** What part of the picture the player shows now (ADR 0037). */
 let zoom: ZoomView = wholePicture;
+/** Set by the toolbar's area button: the next drag draws a box, whatever the zoom (ADR 0037). */
+let areaMode = false;
+
+function setAreaMode(on: boolean): void {
+  areaMode = on;
+  areaButton.setAttribute('aria-pressed', String(on));
+  document.body.classList.toggle('area-mode', on);
+}
+
 /** Set when a drag on the picture ended: the `click` the browser fires after it is not a click. */
 let dragEnded = false;
 
@@ -443,6 +453,7 @@ function showZoom(view: ZoomView, media: HTMLVideoElement): void {
   const zoomed = view.level > 1;
   media.controls = !zoomed;
   document.body.classList.toggle('zoomed', zoomed);
+  zoomLevel.textContent = zoomLabel(view.level);
   if (view.level !== before) {
     post({ type: 'zoomChanged', level: view.level });
   }
@@ -504,6 +515,10 @@ function zoomGestures(media: HTMLVideoElement, overlay: HTMLElement, box: HTMLEl
     const area = rectangle(start, event.clientX, event.clientY);
     const stage = overlay.parentElement?.getBoundingClientRect();
     if (zoomIn && stage !== undefined && area.width >= smallestBox && area.height >= smallestBox) {
+      // Until #47 a plain drag also draws a box, so area mode only ends with it.
+      if (areaMode) {
+        setAreaMode(false);
+      }
       showZoom(
         zoomToBox(zoom, {
           x: (area.x - stage.x) / stage.width,
@@ -524,14 +539,42 @@ function zoomGestures(media: HTMLVideoElement, overlay: HTMLElement, box: HTMLEl
   });
 }
 
+/** The toolbar's buttons (story 61). Their presses hand focus back like any click (ADR 0009). */
+function zoomToolbar(media: HTMLVideoElement): void {
+  const actions: Readonly<Record<string, () => void>> = {
+    in: () => {
+      showZoom(zoomBy(zoom, zoomStep), media);
+    },
+    out: () => {
+      showZoom(zoomBy(zoom, 1 / zoomStep), media);
+    },
+    area: () => {
+      setAreaMode(!areaMode);
+    },
+    reset: () => {
+      showZoom(wholePicture, media);
+    },
+  };
+  for (const button of document.querySelectorAll<HTMLElement>('.zoom-tools [data-zoom]')) {
+    const action = actions[button.dataset.zoom ?? ''];
+    button.addEventListener('click', () => {
+      action?.();
+    });
+  }
+}
+
 const overlay = document.querySelector<HTMLElement>('.overlay');
 if (overlay === null) {
   throw new Error('The player page has no overlay.');
 }
 const zoomBox = document.querySelector<HTMLElement>('.zoom-box');
-if (zoomBox === null) {
-  throw new Error('The player page has no zoom box.');
+const zoomLevelOutput = document.querySelector<HTMLElement>('.zoom-level');
+const areaModeButton = document.querySelector<HTMLElement>('.zoom-tools [data-zoom="area"]');
+if (zoomBox === null || zoomLevelOutput === null || areaModeButton === null) {
+  throw new Error('The player page has no zoom box or zoom toolbar.');
 }
+const zoomLevel: HTMLElement = zoomLevelOutput;
+const areaButton: HTMLElement = areaModeButton;
 
 nextOverlay.addEventListener('click', () => {
   if (current !== undefined && !current.failed) {
@@ -542,6 +585,7 @@ const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
 reportMediaEvents(video);
 reportInteractions(video, overlay);
 zoomGestures(video, overlay, zoomBox);
+zoomToolbar(video);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   const command = parsePlayerCommand(event.data);
   if (command !== undefined) {
