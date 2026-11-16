@@ -5,26 +5,21 @@ import { describe, expect, it } from 'vitest';
 import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
 import { createHarness } from './harness.js';
 
-/**
- * The tree as the learner reads it: Lessons by file name without its extension, Sections as
- * `label: [children]`. Only the first test below looks at the whole file name.
- */
+/** The tree as the learner reads it: Lessons by their titles, Sections as `label: [children]`. */
 function outline(nodes: readonly LessonTreeNode[] | undefined): unknown[] {
   return (nodes ?? []).map((node) =>
-    node.kind === 'section'
-      ? { [node.label]: outline(node.children) }
-      : node.label.replace(/\.(mp4|webm)$/i, ''),
+    node.kind === 'section' ? { [node.label]: outline(node.children) } : node.label,
   );
 }
 
 describe('the Lesson tree of an opened Course', () => {
-  it('lists every .mp4 and .webm Lesson, titled by its raw file name', async () => {
+  it('lists every .mp4 and .webm Lesson, titled by its cleaned file name', async () => {
     const h = await createHarness();
     const course = await h.folder('Course', { 'intro.mp4': 'v', 'setup.webm': 'v' });
 
     await h.core.openCourse(course);
 
-    expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['intro.mp4', 'setup.webm']);
+    expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['intro', 'setup']);
   });
 
   it('shows a subfolder that holds videos as a Section', async () => {
@@ -38,8 +33,8 @@ describe('the Lesson tree of an opened Course', () => {
     await h.core.openCourse(course);
 
     expect(outline(h.ui.lessonTree?.nodes)).toEqual([
-      { 'Section 1': ['01 Welcome', '02 Setup'] },
-      { 'Section 2': ['03 Tools'] },
+      { 'Section 1': ['Welcome', 'Setup'] },
+      { 'Section 2': ['Tools'] },
     ]);
   });
 
@@ -135,7 +130,7 @@ describe('the Lesson tree of an opened Course', () => {
       'slides.pdf': 'x',
       'page.html': 'x',
       'lesson.srt': 'x',
-      'notes.txt': 'x',
+      'notes.txt': 'Some notes\nand more notes\n',
       'code.zip': 'x',
       'Resources/handout.pdf': 'x',
       'Resources/links.html': 'x',
@@ -183,7 +178,7 @@ describe('the Lesson tree of an opened Course', () => {
     h.core.playLesson('Section 2/03 Setup.webm');
 
     expect(h.player.shown.at(-1)).toEqual({
-      title: '03 Setup.webm',
+      title: 'Setup',
       resourceRoots: [course, h.storage.folder],
     });
     expect(h.player.sent.at(-1)).toEqual({

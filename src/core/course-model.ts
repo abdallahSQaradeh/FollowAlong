@@ -5,6 +5,7 @@
 import { extname, join } from 'node:path';
 
 import type { Container } from '../protocol/player-messages.js';
+import { cleanFileName, titlesFromLists } from './lesson-titles.js';
 
 /** What the model reads of a folder: its file names and its subfolders. */
 export interface FolderListing {
@@ -13,6 +14,11 @@ export interface FolderListing {
   readonly path: string;
   readonly files: readonly string[];
   readonly folders: readonly FolderListing[];
+  /**
+   * The text of the `.txt` files the model may take for the Course's title list, by file name:
+   * only the Course folder and its wrapper folders are read.
+   */
+  readonly textFiles?: Readonly<Record<string, string>>;
 }
 
 export interface Lesson {
@@ -39,6 +45,11 @@ export interface Section extends Outline {
 export interface Course extends Outline {
   /** Absolute path of the Course folder. */
   readonly folder: string;
+}
+
+/** Whether the file is a Lesson: an `.mp4` or `.webm`, in any letter case. */
+export function isLessonFile(fileName: string): boolean {
+  return containerOf(fileName) !== undefined;
 }
 
 function containerOf(fileName: string): Container | undefined {
@@ -78,7 +89,7 @@ function withoutWrappers({ lessons, sections }: Outline): Outline {
     : { lessons, sections };
 }
 
-function outlineOf(listing: FolderListing, idPrefix: string): Outline {
+function outlineOf(listing: FolderListing, idPrefix: string, courseName: string): Outline {
   const lessons = listing.files
     .flatMap((file): Lesson[] => {
       const container = containerOf(file);
@@ -88,7 +99,7 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
             {
               id: `${idPrefix}${file}`,
               path: join(listing.path, file),
-              title: file,
+              title: cleanFileName(file, courseName),
               container,
             },
           ];
@@ -99,7 +110,7 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
     .sort((a, b) => naturalOrder(a.name, b.name))
     .flatMap((folder): Section[] => {
       const id = `${idPrefix}${folder.name}/`;
-      const inside = outlineOf(folder, id);
+      const inside = outlineOf(folder, id, courseName);
       return inside.lessons.length === 0 && inside.sections.length === 0
         ? []
         : [{ id, name: folder.name, ...withoutWrappers(inside) }];
@@ -107,8 +118,49 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
   return { lessons, sections };
 }
 
+/**
+ * The `.txt` files that can be the Course's title list, in natural order of their names: those
+ * of the Course folder and of the wrapper folders collapsed into it, outermost first.
+ */
+function titleListTexts(listing: FolderListing): string[] {
+  const own = Object.entries(listing.textFiles ?? {})
+    .sort(([a], [b]) => naturalOrder(a, b))
+    .map(([, text]) => text);
+  const [only, ...others] = listing.folders
+    .filter((folder) => !isSkippedFolder(folder.name))
+    .filter(holdsLessons);
+  return !listing.files.some(isLessonFile) && only !== undefined && others.length === 0
+    ? [...own, ...titleListTexts(only)]
+    : own;
+}
+
+/** Whether the folder holds a Lesson at any depth (hidden folders and `node_modules` aside). */
+function holdsLessons(listing: FolderListing): boolean {
+  return (
+    listing.files.some(isLessonFile) ||
+    listing.folders.some((folder) => !isSkippedFolder(folder.name) && holdsLessons(folder))
+  );
+}
+
+function withTitles({ lessons, sections }: Outline, titles: ReadonlyMap<string, string>): Outline {
+  return {
+    lessons: lessons.map((lesson) => ({ ...lesson, title: titles.get(lesson.id) ?? lesson.title })),
+    sections: sections.map((section) => ({ ...section, ...withTitles(section, titles) })),
+  };
+}
+
 export function buildCourse(listing: FolderListing): Course {
-  return { folder: listing.path, ...withoutWrappers(outlineOf(listing, '')) };
+  const outline = withoutWrappers(outlineOf(listing, '', listing.name));
+  const lessons = lessonsInOrder(outline);
+  const listed = titlesFromLists(titleListTexts(listing), lessons.length);
+  const titled =
+    listed === undefined
+      ? outline
+      : withTitles(
+          outline,
+          new Map(lessons.map((lesson, index) => [lesson.id, listed[index] ?? lesson.title])),
+        );
+  return { folder: listing.path, ...titled };
 }
 
 /** Every Lesson of the Course in play order: a folder's own Lessons, then its Sections'. */
