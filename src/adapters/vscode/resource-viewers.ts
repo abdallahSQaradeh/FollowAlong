@@ -22,9 +22,28 @@ export const previewViewType = 'followalong.preview';
 /** The view type of the PDF viewer tab. */
 export const pdfViewType = 'followalong.pdf';
 
-/** Whether a tab's webview is one of FollowAlong's Resource tabs. */
+/** The view type of VS Code's built-in Simple Browser tab, where URL Resources open (ADR 0048). */
+const simpleBrowserViewType = 'simpleBrowser.view';
+
+/** Whether a tab's webview is one of FollowAlong's Resource tabs, or a Simple Browser. */
 export function isResourceViewType(viewType: string): boolean {
-  return viewType.endsWith(previewViewType) || viewType.endsWith(pdfViewType);
+  return (
+    viewType.endsWith(previewViewType) ||
+    viewType.endsWith(pdfViewType) ||
+    viewType.endsWith(simpleBrowserViewType)
+  );
+}
+
+/**
+ * Opens `url` in Simple Browser, in the editor group `column` and without taking focus, through
+ * the command its built-in extension offers for other extensions (ADR 0048). It is never shell
+ * run: the address goes to the command as a `Uri`.
+ */
+export async function openInSimpleBrowser(url: string, column: vscode.ViewColumn): Promise<void> {
+  await vscode.commands.executeCommand('simpleBrowser.api.open', vscode.Uri.parse(url, true), {
+    viewColumn: column,
+    preserveFocus: true,
+  });
 }
 
 /** Opens `path` in VS Code's own editor for it (text, or an image preview), beside the code. */

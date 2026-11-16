@@ -21,7 +21,15 @@ import {
 } from './loaded-lesson.js';
 import type { StatusBarCommand } from './status-bar.js';
 import { openResources, type ResourceStore } from './resource-store.js';
-import { resourcePath, resourceTarget, type ResourceRecord } from './resources.js';
+import {
+  attachChoice,
+  checkWebUrl,
+  resourceName,
+  resourcePath,
+  resourceTarget,
+  urlLabel,
+  type ResourceRecord,
+} from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
@@ -259,9 +267,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /**
    * Every attach route (a Lesson from its "+" or the chord, the whole Course from its "+"), once
-   * it has fixed what the file goes to and that Course: asks for the file when none is given yet,
-   * then attaches it. A closed dialog attaches nothing. A Resource of another kind than a file
-   * (a URL, #55) joins here, so the Course "+" and the Lesson "+" stay one path.
+   * it has fixed what the Resource goes to and that Course: asks whether it is a file or a URL and
+   * for which one, when none is given yet, then attaches it. A closed choice, dialog or box attaches
+   * nothing. A file given up front (by a drop or a test) skips the choice.
    */
   async function attachTo(
     course: Course,
@@ -269,6 +277,20 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     target: AttachTarget,
     absolutePath?: string,
   ): Promise<void> {
+    const where =
+      target.kind === 'course'
+        ? 'the Course'
+        : `“${lessonsInOrder(course).find((lesson) => lesson.id === target.lessonId)?.title ?? target.lessonId}”`;
+    if (absolutePath === undefined) {
+      const choice = await ui.pick(attachChoice(target.kind));
+      if (choice === undefined) {
+        return;
+      }
+      if (choice === 'url') {
+        await attachUrlTo(course, store, target, where);
+        return;
+      }
+    }
     const path =
       absolutePath ??
       (await ui.pickFile({
@@ -281,20 +303,82 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (path === undefined) {
       return;
     }
-    if (target.kind === 'course') {
-      const made = await store.attachToCourse(path);
-      showResourceChange(course, store, {
-        made,
-        said: `attached “${basename(path)}” to the Course`,
+    const made =
+      target.kind === 'course'
+        ? await store.attachToCourse(path)
+        : await store.attach(target.lessonId, path);
+    showResourceChange(course, store, { made, said: `attached “${basename(path)}” to ${where}` });
+  }
+
+  /** The “URL…” half of {@link attachTo}: asks for the address, checks it, and attaches it. */
+  async function attachUrlTo(
+    course: Course,
+    store: ResourceStore,
+    target: AttachTarget,
+    where: string,
+  ): Promise<void> {
+    const typed = await ui.askText({
+      title:
+        target.kind === 'course' ? 'Attach a URL to this Course' : 'Attach a URL to this Lesson',
+      prompt: 'The address of a web page, to open in Simple Browser beside the code.',
+      placeholder: 'https://…',
+      validate: (text) => {
+        const checked = checkWebUrl(text);
+        return checked.ok ? undefined : checked.problem;
+      },
+    });
+    if (typed === undefined) {
+      return;
+    }
+    // The box checks as the learner types; the core does not rely on it (ADR 0047).
+    const checked = checkWebUrl(typed);
+    if (!checked.ok) {
+      logger.log({ level: 'warn', message: `Not attaching a URL: ${checked.problem}` });
+      ui.showMessage({
+        severity: 'warning',
+        text: `FollowAlong did not attach it. ${checked.problem}`,
       });
       return;
     }
-    const made = await store.attach(target.lessonId, path);
-    const lesson = lessonsInOrder(course).find((candidate) => candidate.id === target.lessonId);
+    const made =
+      target.kind === 'course'
+        ? await store.attachUrlToCourse(checked.url)
+        : await store.attachUrl(target.lessonId, checked.url);
     showResourceChange(course, store, {
       made,
-      said: `attached “${basename(path)}” to “${lesson?.title ?? target.lessonId}”`,
+      said: `attached “${urlLabel(checked.url)}” to ${where}`,
     });
+  }
+
+  /**
+   * Opens a URL Resource in Simple Browser. The address is checked again here, not only when it was
+   * attached: `resources.json` is a file on disk that anything could have written (ADR 0047).
+   */
+  async function openUrl(stored: string): Promise<void> {
+    const checked = checkWebUrl(stored);
+    if (!checked.ok) {
+      logger.log({
+        level: 'warn',
+        message: `Not opening a URL Resource: ${checked.problem} (${stored.slice(0, 80)})`,
+      });
+      ui.showMessage({
+        severity: 'warning',
+        text: `FollowAlong did not open this Resource. ${checked.problem} Detach it in the Lesson tree.`,
+      });
+      return;
+    }
+    try {
+      await ui.openResource({ kind: 'url', url: checked.url });
+    } catch (error) {
+      logger.log({
+        level: 'warn',
+        message: `Could not open ${checked.url}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      ui.showMessage({
+        severity: 'error',
+        text: `FollowAlong could not open “${urlLabel(checked.url)}” in Simple Browser.`,
+      });
+    }
   }
 
   /**
@@ -605,7 +689,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const made = await store.detach(resourceId);
       showResourceChange(course, store, {
         made,
-        said: `detached “${basename(resourcePath(course.folder, record))}”`,
+        said: `detached “${resourceName(course.folder, record)}”`,
       });
     },
     async relinkResource(resourceId, absolutePath) {
@@ -614,6 +698,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const { course, store, record } = found;
+      if (record.kind === 'url') {
+        // Relink points a Resource at another file; a URL has none (ADR 0047).
+        logger.log({ level: 'info', message: `Not relinking ${resourceId}: it is a URL.` });
+        ui.showMessage({
+          severity: 'info',
+          text: 'A URL can’t be relinked. Detach it and attach the new address instead.',
+        });
+        return;
+      }
       const previousName = basename(resourcePath(course.folder, record));
       const path =
         absolutePath ??
@@ -643,6 +736,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const { course, store, record } = found;
+      if (record.kind === 'url') {
+        await openUrl(record.url);
+        return;
+      }
       const path = resourcePath(course.folder, record);
       // Looked at now, not when the Course opened: the file may have gone, or come back, since.
       if (await store.checkFiles()) {
