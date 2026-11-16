@@ -328,11 +328,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const inOrder = lessonsInOrder(course);
       const first = inOrder[0];
       const recorder = first === undefined ? undefined : await openProgress(folder, ports);
-      openedCourse = course;
-      courseData = data;
-      resources = stored;
-      progress = recorder;
       if (first === undefined || recorder === undefined) {
+        openedCourse = course;
+        courseData = data;
+        resources = stored;
+        progress = recorder;
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         ui.showLessonTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
@@ -342,10 +342,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         loaded.unload(hadLesson);
         return;
       }
+      // Stored before the Course counts as open: if this fails, the Course that was open still is,
+      // with its tree, and no click plays this Course's Lesson by matching its id (ADR 0041).
       await storage.workspace.set(openCourseKey, folder);
+      openedCourse = course;
+      courseData = data;
+      resources = stored;
+      progress = recorder;
       ui.showLessonTree(buildLessonTree(course, resources));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
-      await recordOpened(storage.global, folder);
+      await rememberRecent(folder);
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
       if (last === undefined) {
@@ -357,6 +363,18 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
     } finally {
       switching = false;
+    }
+  }
+
+  /** Puts the Course first in Recent; Recent is a convenience, so a failure is only logged. */
+  async function rememberRecent(folder: string): Promise<void> {
+    try {
+      await recordOpened(storage.global, folder);
+    } catch (error) {
+      logger.log({
+        level: 'warn',
+        message: `Could not remember ${folder} as a Recent Course: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   }
 

@@ -567,3 +567,72 @@ describe('while another Course is opening', () => {
     expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: '01 Intro.webm' }]);
   });
 });
+
+describe('a Course that cannot be stored as open', () => {
+  it('leaves the Course that was open as it was: its tree, and its Lessons by id', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Learning', {
+      'First/01 Intro.webm': 'v',
+      'First/02 Setup.webm': 'v',
+      'Second/01 Intro.webm': 'v',
+    });
+    h.config.set('coursesRoots', [root]);
+    await h.core.openCourse(join(root, 'First'));
+    h.player.ready();
+    const treeBefore = h.ui.lessonTree;
+    h.player.clearSent();
+    h.failNextWrite('workspace', 'disk full');
+
+    await expect(h.core.openCourse(join(root, 'Second'))).rejects.toThrow('disk full');
+    h.core.playLesson('01 Intro.webm');
+
+    expect(h.ui.lessonTree).toBe(treeBefore);
+    expect(h.player.sent).toMatchObject([
+      {
+        type: 'load',
+        lessonId: '01 Intro.webm',
+        videoUri: h.player.resourceUri(join(root, 'First', '01 Intro.webm')),
+      },
+    ]);
+  });
+
+  it('does not list the Course as recent, and the next open works', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Learning', {
+      'First/01 Intro.webm': 'v',
+      'Second/01 Intro.webm': 'v',
+    });
+    h.config.set('coursesRoots', [root]);
+    await h.core.openCourse(join(root, 'First'));
+    h.failNextWrite('workspace', 'disk full');
+    await expect(h.core.openCourse(join(root, 'Second'))).rejects.toThrow('disk full');
+
+    await h.core.openCourse(join(root, 'Second'));
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual([
+      '── Recent Courses',
+      'Second — (open)',
+      'First',
+      'Add Courses root…',
+    ]);
+  });
+});
+
+describe('Recent that cannot be stored', () => {
+  it('does not stop the Course from opening, and says nothing to the learner', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Learning', { 'First/01 Intro.webm': 'v' });
+    h.failNextWrite('global', 'disk full');
+
+    await h.core.openCourse(join(root, 'First'));
+    h.player.ready();
+
+    expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: '01 Intro.webm' }]);
+    expect(h.ui.messages).toEqual([]);
+    expect(
+      h.logger.entries.filter((entry) => entry.level === 'warn').map((entry) => entry.message),
+    ).toEqual([`Could not remember ${join(root, 'First')} as a Recent Course: disk full`]);
+  });
+});

@@ -176,6 +176,11 @@ class MemoryStore implements KeyValueStore {
   }
 
   set(key: string, value: unknown): Promise<void> {
+    if (this.failure !== undefined) {
+      const failure = this.failure;
+      this.failure = undefined;
+      return Promise.reject(new Error(failure));
+    }
     this.values.set(key, structuredClone(value));
     const gate = this.gate;
     if (gate !== undefined) {
@@ -184,6 +189,13 @@ class MemoryStore implements KeyValueStore {
       return gate.released;
     }
     return this.settlesLater ? new Promise((resolve) => setImmediate(resolve)) : Promise.resolve();
+  }
+
+  private failure: string | undefined;
+
+  /** Makes the next `set` fail, and store nothing, as a full or locked disk does. */
+  failNextSet(reason: string): void {
+    this.failure = reason;
   }
 
   private gate: { readonly reach: () => void; readonly released: Promise<void> } | undefined;
@@ -480,6 +492,8 @@ export interface Harness {
    * `release` is called; `reached` settles once the write has started.
    */
   holdWorkspaceWrite(): { readonly reached: Promise<void>; release(): void };
+  /** Makes the next write to the workspace state or the global storage fail, storing nothing. */
+  failNextWrite(store: 'workspace' | 'global', reason: string): void;
   /** Undoes {@link Harness.makeUnreadable}: the path reads as usual again. */
   makeReadable(path: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
@@ -509,8 +523,9 @@ export async function createHarness(): Promise<Harness> {
   const logger = new RecordingLogger();
   const terminalSettings = new FakeTerminalSettings();
   const workspace = new MemoryStore(true);
+  const globalStore = new MemoryStore();
   const storage: Storage = {
-    global: new MemoryStore(),
+    global: globalStore,
     workspace,
     folder: join(root, 'extension-storage'),
   };
@@ -600,6 +615,9 @@ export async function createHarness(): Promise<Harness> {
     },
     holdWorkspaceWrite() {
       return workspace.holdNextSet();
+    },
+    failNextWrite(store, reason) {
+      (store === 'workspace' ? workspace : globalStore).failNextSet(reason);
     },
     holdReads(folder) {
       let release = (): void => undefined;
