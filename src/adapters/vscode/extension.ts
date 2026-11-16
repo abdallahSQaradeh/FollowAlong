@@ -9,7 +9,7 @@ import { isStatusBarCommand } from '../../core/status-bar.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { createSystemClock } from '../node/clock.js';
-import { createUnavailableConverter } from '../node/converter.js';
+import { createFfmpegConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
 import type { LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
@@ -94,7 +94,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     fileSystem: createNodeFileSystem(),
     storage: createStorage(context),
     clock: createSystemClock(),
-    converter: createUnavailableConverter(),
+    converter: createFfmpegConverter(),
     config: createConfig(),
     ui: createUiSink(
       lessonTree,

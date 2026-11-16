@@ -282,6 +282,12 @@
           "default": 0,
           "minimum": 0,
           "markdownDescription": "Seconds the video jumps back when you resume a paused Lesson by hand, so you rehear the last words. `0` resumes where it stopped. Automatic resumes never jump back."
+        },
+        "followalong.ffmpegPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "The ffmpeg program FollowAlong uses to prepare the sound of MP4 Lessons, which VS Code cannot play (their sound is AAC). Leave it empty to use `ffmpeg` on your PATH. Only user settings can set it, never a workspace."
         }
       }
     }
