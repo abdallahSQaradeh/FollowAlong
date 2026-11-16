@@ -150,4 +150,4 @@ with a nonce CSP and no remote content, which only fetches the URIs the core sen
 - A read-only Course keeps its Resources in the extension storage, keyed by its absolute path
   (ADR 0005), so they do not follow a Course folder that is moved or renamed; the Course then shows
   under its new path without them. This picker lists Courses by their current path only; #35's
-  _Locate…_ is where a moved Course is re-pointed.
+  _Locate…_ is where a moved Course is re-pointed (ADR 0042).

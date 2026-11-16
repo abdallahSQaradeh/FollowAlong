@@ -5,7 +5,16 @@
  */
 import * as vscode from 'vscode';
 
-import type { QuickPickModel } from '../../core/quick-pick.js';
+import type { QuickPickButtonModel, QuickPickModel } from '../../core/quick-pick.js';
+
+/**
+ * What the smoke test can see of the quick picks, so it never guesses how long the scan takes or
+ * where the focus is: how many were shown, and the label of the active item of the latest.
+ */
+export const quickPickStats: { shown: number; active: string | undefined } = {
+  shown: 0,
+  active: undefined,
+};
 
 type IntentItem<Intent> = vscode.QuickPickItem & { readonly intent?: Intent };
 
@@ -15,12 +24,21 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
     quickPick.title = model.title;
     quickPick.placeholder = model.placeholder;
     quickPick.matchOnDescription = model.matchOnDescription;
+    /** What pressing each button asks for: a VS Code button carries no data of ours. */
+    const buttonIntents = new Map<vscode.QuickInputButton, Intent>();
+    const buttonsOf = (buttons: readonly QuickPickButtonModel<Intent>[]) =>
+      buttons.map((button): vscode.QuickInputButton => {
+        const drawn = { iconPath: new vscode.ThemeIcon(button.icon), tooltip: button.label };
+        buttonIntents.set(drawn, button.intent);
+        return drawn;
+      });
     quickPick.items = model.entries.map((entry): IntentItem<Intent> =>
       entry.kind === 'separator'
         ? { label: entry.label, kind: vscode.QuickPickItemKind.Separator }
         : {
             label: entry.label,
             ...(entry.description === undefined ? {} : { description: entry.description }),
+            ...(entry.buttons === undefined ? {} : { buttons: buttonsOf(entry.buttons) }),
             intent: entry.intent,
           },
     );
@@ -40,9 +58,19 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
         answer(picked.intent);
       }
     });
+    quickPick.onDidTriggerItemButton(({ button }) => {
+      if (buttonIntents.has(button)) {
+        answer(buttonIntents.get(button));
+      }
+    });
     quickPick.onDidHide(() => {
       answer(undefined);
     });
+    quickPick.onDidChangeActive((active) => {
+      quickPickStats.active = active[0]?.label;
+    });
+    quickPickStats.shown += 1;
+    quickPickStats.active = undefined;
     quickPick.show();
   });
 }

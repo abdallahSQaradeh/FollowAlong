@@ -31,7 +31,7 @@ export interface CoursesRoots {
  * Windows, with an upper-case drive letter. `undefined` for a path that is not a full path, which
  * could otherwise resolve against whatever folder or drive VS Code runs in.
  */
-function normalisedRoot(path: string): string | undefined {
+export function normalisedRoot(path: string): string | undefined {
   if (!isFullPath(path)) {
     return undefined;
   }
@@ -53,8 +53,16 @@ export function isFullPath(path: string, flavour: PathFlavour = hostFlavour): bo
 }
 
 /** What two spellings of one folder share, for comparing roots. */
-function keyOf(normalised: string): string {
+export function keyOf(normalised: string): string {
   return caseInsensitive ? normalised.toLowerCase() : normalised;
+}
+
+/**
+ * Whether two paths name one folder, however each is spelled: resolved, with the drive letter
+ * upper-cased, and on Windows without regard to letter case.
+ */
+export function sameFolder(a: string, b: string): boolean {
+  return keyOf(normalisedRoot(a) ?? a) === keyOf(normalisedRoot(b) ?? b);
 }
 
 /** The setting's entries that are text, as written. */

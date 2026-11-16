@@ -6,7 +6,7 @@
 import { dirname, join, posix, relative, sep, win32 } from 'node:path';
 
 import { isLessonFile, isSkippedFolder, naturalOrder } from './course-model.js';
-import { hostFlavour, type PathFlavour } from './courses-roots.js';
+import { hostFlavour, keyOf, type PathFlavour } from './courses-roots.js';
 import { type DirectoryEntry, FileSystemError, type Ports } from './ports.js';
 
 type ScanPorts = Pick<Ports, 'fileSystem' | 'logger'>;
@@ -42,20 +42,25 @@ interface FoundCourse {
 /**
  * Walks each Courses root at any depth, with no depth limit. The first folder on a branch that
  * directly holds a Lesson file is a Course, and the walk does not go below it: its subfolders are
- * its Sections. So is a known Course, a folder holding `.followalong`, when a Lesson is anywhere
- * below it. A folder that holds only a zip has no Lesson and is not a Course. A Course is named
+ * its Sections. So is a known Course, a folder holding `.followalong` or one of `knownFolders`
+ * (the Recent Courses, ADR 0041), when a Lesson is anywhere below it. A folder that holds only a zip has no Lesson and is not a Course. A Course is named
  * after the outermost single-child wrapper around it, never after its Courses root, and filed
  * under the folders between the root and that name. Hidden folders (a leading `.`, so `.git` and
  * `.followalong` too), `node_modules`, `$RECYCLE.BIN` and `System Volume Information` are not
  * walked. A subfolder that cannot be read is logged and left out, and the walk carries on. A
  * Course under two roots is listed once, as the root named first files it.
  */
-export async function scanCourses(ports: ScanPorts, roots: readonly string[]): Promise<CourseScan> {
+export async function scanCourses(
+  ports: ScanPorts,
+  roots: readonly string[],
+  knownFolders: readonly string[] = [],
+): Promise<CourseScan> {
+  const known = new Set(knownFolders.map(keyOf));
   const found = new Map<string, ScannedCourse>();
   const unreadableRoots: string[] = [];
   for (const root of roots) {
     try {
-      for (const course of await walk(ports, root, true)) {
+      for (const course of await walk(ports, known, root, true)) {
         if (!found.has(course.folder)) {
           found.set(course.folder, scannedCourse(root, course));
         }
@@ -135,6 +140,7 @@ function walkedSubfolders(folder: string, entries: readonly DirectoryEntry[]): s
  */
 async function walk(
   ports: ScanPorts,
+  known: ReadonlySet<string>,
   folder: string,
   isRoot: boolean,
 ): Promise<readonly FoundCourse[]> {
@@ -142,7 +148,10 @@ async function walk(
   if (entries.some(isLesson)) {
     return [{ folder, nameFolder: folder }];
   }
-  if (entries.some((entry) => entry.kind === 'directory' && entry.name === courseDataFolder)) {
+  if (
+    known.has(keyOf(folder)) ||
+    entries.some((entry) => entry.kind === 'directory' && entry.name === courseDataFolder)
+  ) {
     // A known Course. Whether or not it holds a Lesson, nothing below it is another Course.
     return (await holdsLessonBelow(ports, folder, entries)) ? [{ folder, nameFolder: folder }] : [];
   }
@@ -150,7 +159,7 @@ async function walk(
   let allRead = true;
   for (const subfolder of walkedSubfolders(folder, entries)) {
     try {
-      courses.push(...(await walk(ports, subfolder, false)));
+      courses.push(...(await walk(ports, known, subfolder, false)));
     } catch (error) {
       skipUnreadable(ports, subfolder, error);
       allRead = false;
