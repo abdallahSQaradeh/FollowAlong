@@ -102,6 +102,8 @@ export interface TestHooks {
   activeQuickPickItem(): string | undefined;
   /** The spot the player is in, and whether VS Code shows it; none while no player is open. */
   playerSpot(): PlayerPlace | undefined;
+  /** Whether the quick pick shown last still shows its busy indicator: the core is still scanning. */
+  quickPickBusy(): boolean;
 }
 
 /** Saves Progress when the window closes; set while the extension is active. */
@@ -172,6 +174,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       quickPicksShown: () => quickPickStats.shown,
       activeQuickPickItem: () => quickPickStats.active,
       playerSpot: () => player.place,
+      quickPickBusy: () => quickPickStats.busy,
     };
   }
 

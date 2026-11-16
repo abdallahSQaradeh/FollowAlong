@@ -28,6 +28,7 @@ import {
   FileSystem,
   FolderDialog,
   KeyValueStore,
+  LivePicker,
   PlayerPort,
   PlayerShowOptions,
   PlayerShowResult,
@@ -344,7 +345,13 @@ export class RecordingUi implements UiSink {
   /** Every quick pick the core opened, in order. */
   readonly pickers: QuickPickModel<unknown>[] = [];
   private answer: ((intent: unknown) => void) | undefined;
+  private reject: ((reason: Error) => void) | undefined;
+  /** What the open quick pick lists now: the model it opened with, or the last update. */
+  private shownModel: QuickPickModel<unknown> | undefined;
+  private toolbarHandler: ((intent: unknown) => void) | undefined;
+  private scriptedLabel: string | undefined;
   private readonly pickerWaiters: (() => void)[] = [];
+  private readonly openWaiters: (() => void)[] = [];
   /** How many times the core asked to hand keyboard focus back to the Practice area. */
   focusReturns = 0;
   /** Every folder dialog the core opened, in order. */
@@ -393,43 +400,110 @@ export class RecordingUi implements UiSink {
   }
 
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
+    return this.openPicker(model, () => undefined).answer;
+  }
+
+  openPicker<Intent>(
+    model: QuickPickModel<Intent>,
+    onToolbarButton: (intent: Intent) => void,
+  ): LivePicker<Intent> {
     this.pickers.push(model);
+    this.shownModel = model;
+    this.toolbarHandler = onToolbarButton as (intent: unknown) => void;
     const scripted = this.scriptedChoices.shift();
-    if (scripted !== undefined) {
-      const item = model.entries.find((entry) => entry.kind === 'item' && entry.label === scripted);
-      if (item?.kind !== 'item') {
-        return Promise.reject(
-          new Error(`No item “${scripted}” in the quick pick “${model.title}”`),
-        );
-      }
-      return Promise.resolve(item.intent);
-    }
-    const shown = new Promise<Intent | undefined>((resolve) => {
+    const answer = new Promise<Intent | undefined>((resolve, reject) => {
       this.answer = (intent) => {
         resolve(intent as Intent | undefined);
       };
+      this.reject = reject;
     });
-    for (const waiter of this.pickerWaiters.splice(0)) {
+    // A scripted pick waits, as the learner would, until the list holds the item (or is complete).
+    this.scriptedLabel = scripted;
+    this.afterModel();
+    return {
+      answer,
+      update: (next) => {
+        this.shownModel = next;
+        this.afterModel();
+      },
+    };
+  }
+
+  /** Runs the scripted pick against the model now shown, and wakes whoever waits for the picker. */
+  private afterModel(): void {
+    const model = this.shownModel;
+    if (this.answer === undefined || model === undefined) {
+      return;
+    }
+    const label = this.scriptedLabel;
+    if (label !== undefined) {
+      const item = model.entries.find((entry) => entry.kind === 'item' && entry.label === label);
+      if (item?.kind === 'item') {
+        this.scriptedLabel = undefined;
+        this.choose(label);
+        return;
+      }
+      if (model.busy !== true) {
+        this.scriptedLabel = undefined;
+        const reject = this.reject;
+        this.answer = undefined;
+        reject?.(new Error(`No item “${label}” in the quick pick “${model.title}”`));
+        return;
+      }
+    }
+    for (const waiter of this.openWaiters.splice(0)) {
       waiter();
     }
-    return shown;
+    if (model.busy !== true) {
+      for (const waiter of this.pickerWaiters.splice(0)) {
+        waiter();
+      }
+    }
   }
 
   /**
-   * Resolves once a quick pick is open: at once if one is, else when the core opens the next one
-   * (after it has read what it lists), so a test never guesses how long that takes.
+   * Resolves once a quick pick is open and its list is complete (not busy): at once if one is,
+   * else when the core has read what it lists, so a test never guesses how long that takes.
    */
   pickerShown(): Promise<void> {
+    return this.answer !== undefined && this.shownModel?.busy !== true
+      ? Promise.resolve()
+      : new Promise((resolve) => {
+          this.pickerWaiters.push(resolve);
+        });
+  }
+
+  /** Resolves once a quick pick is open, even while it still lists only what it has so far. */
+  pickerOpened(): Promise<void> {
     return this.answer === undefined
       ? new Promise((resolve) => {
-          this.pickerWaiters.push(resolve);
+          this.openWaiters.push(resolve);
         })
       : Promise.resolve();
   }
 
+  /** Whether the open quick pick shows its busy indicator: the core is still reading its list. */
+  get pickerBusy(): boolean {
+    return this.answer !== undefined && this.shownModel?.busy === true;
+  }
+
+  /** The labels of the buttons in the open quick pick's title bar. */
+  get toolbarButtons(): string[] {
+    return this.answer === undefined ? [] : (this.shownModel?.toolbar ?? []).map((b) => b.label);
+  }
+
+  /** The learner presses a button in the title bar: the quick pick stays open. */
+  pressToolbar(button: string): void {
+    const pressed = this.picker?.toolbar?.find((candidate) => candidate.label === button);
+    if (pressed === undefined) {
+      throw new Error(`No button “${button}” in the open quick pick's title bar`);
+    }
+    this.toolbarHandler?.(pressed.intent);
+  }
+
   /** The quick pick the learner sees now, if one is open. */
   get picker(): QuickPickModel<unknown> | undefined {
-    return this.answer === undefined ? undefined : this.pickers.at(-1);
+    return this.answer === undefined ? undefined : this.shownModel;
   }
 
   /** The learner picks the open quick pick's item with this label. */
@@ -614,6 +688,14 @@ export interface Harness {
    */
   holdReads(folder: string): () => void;
   /**
+   * Holds only the next read of `folder`'s listing until `release` is called; reads after it go
+   * through. `reached` settles once that read has started. It lets a test finish a later scan
+   * before an earlier one.
+   */
+  holdFirstRead(folder: string): { readonly reached: Promise<void>; release(): void };
+  /** Makes reading `folder`'s listing fail with an unexpected error (not a file system error). */
+  breakReads(folder: string, message: string): void;
+  /**
    * Holds every read of the file at `path` until the returned function is called, as a slow disk
    * would; `reached` settles once a read has started.
    */
@@ -666,7 +748,12 @@ export async function createHarness(): Promise<Harness> {
   };
   const nodeFileSystem = createNodeFileSystem();
   const unreadable = new Set<string>();
+  const broken = new Map<string, string>();
   const held = new Map<string, Promise<void>>();
+  const heldOnce = new Map<
+    string,
+    { readonly reach: () => void; readonly released: Promise<void> }
+  >();
   const heldFiles = new Map<
     string,
     { readonly reach: () => void; readonly released: Promise<void> }
@@ -682,11 +769,23 @@ export async function createHarness(): Promise<Harness> {
   const fileSystem: FileSystem = {
     readDirectory(path) {
       const read = (): ReturnType<FileSystem['readDirectory']> =>
-        unreadable.has(path)
-          ? Promise.reject(
-              new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
-            )
-          : nodeFileSystem.readDirectory(path);
+        broken.has(path)
+          ? Promise.reject(new Error(broken.get(path)))
+          : unreadable.has(path)
+            ? Promise.reject(
+                new FileSystemError(
+                  'readOnly',
+                  path,
+                  `EACCES: permission denied, scandir '${path}'`,
+                ),
+              )
+            : nodeFileSystem.readDirectory(path);
+      const once = heldOnce.get(path);
+      if (once !== undefined) {
+        heldOnce.delete(path);
+        once.reach();
+        return track(once.released.then(read));
+      }
       const hold = held.get(path);
       return track(hold === undefined ? read() : hold.then(read));
     },
@@ -770,6 +869,21 @@ export async function createHarness(): Promise<Harness> {
       return () => {
         release();
       };
+    },
+    holdFirstRead(folder) {
+      let reach = (): void => undefined;
+      let release = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      heldOnce.set(folder, { reach, released });
+      return { reached, release };
+    },
+    breakReads(folder, message) {
+      broken.set(folder, message);
     },
     holdFileReads(path) {
       let reach = (): void => undefined;

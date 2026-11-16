@@ -17,8 +17,12 @@ One video inside a Course.
 _Avoid_: Episode, clip, lecture
 
 **Course picker**:
-The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, or add a Courses root.
+The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, or add a Courses root. It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
 _Avoid_: Course list, library view
+
+**Course list cache**:
+The Courses the last scan of the Courses roots found, kept on this machine (not in any Course folder) so the Course picker can open from it before the rescan is done. It is used only for the same Courses roots, and a copy that cannot be read is ignored.
+_Avoid_: Course data, library index, scan results
 
 **Section**:
 A named group of Lessons within a Course, in the order the Course presents them.
