@@ -12,6 +12,7 @@ import { createNodeFileSystem } from '../node/file-system.js';
 import type { LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { PlayerPanel } from './player-panel.js';
+import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
 
@@ -34,6 +35,8 @@ export const commands = {
   /** `Ctrl+'` `↑` / `↓`: one rung up or down the speed ladder. */
   speedUp: 'followalong.speedUp',
   speedDown: 'followalong.speedDown',
+  /** Run by a click on the speed item in the status bar: one rung up the ladder, round to 0.75×. */
+  speedCycle: 'followalong.speedCycle',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
 } as const;
@@ -47,6 +50,8 @@ export interface TestHooks {
   readonly playerEvents: readonly PlayerEvent[];
   /** The Lesson tree the learner sees now. */
   lessonTree(): LessonTreeModel;
+  /** The status bar items VS Code shows now, with the command each one runs. */
+  statusBar(): readonly DrawnItem[];
 }
 
 export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
@@ -54,6 +59,11 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
   const lessonTree = new LessonTreeView();
+  const statusBar = new StatusBarView({
+    playPause: commands.playPause,
+    speedCycle: commands.speedCycle,
+    seekBackShort: commands.seekBackShort,
+  });
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -63,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     config: createConfig(),
     ui: createUiSink(
       lessonTree,
+      statusBar,
       createResourcePlacement(() => player.viewColumn),
     ),
     logger,
@@ -86,13 +97,18 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     const playerEvents: PlayerEvent[] = [];
     context.subscriptions.push(player.onEvent((event) => playerEvents.push(event)));
-    testHooks = { playerEvents, lessonTree: () => lessonTree.current };
+    testHooks = {
+      playerEvents,
+      lessonTree: () => lessonTree.current,
+      statusBar: () => statusBar.drawn(),
+    };
   }
 
   context.subscriptions.push(
     channel,
     player,
     lessonTree,
+    statusBar,
     {
       dispose: () => {
         core.dispose();
@@ -168,6 +184,9 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.speedDown, () => {
       core.speedStep('down');
+    }),
+    register(commands.speedCycle, () => {
+      core.speedCycle();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );

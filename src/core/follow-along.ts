@@ -10,6 +10,7 @@ import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
+import { buildStatusBar, type StatusBarModel } from './status-bar.js';
 import {
   findResource,
   newResource,
@@ -40,6 +41,11 @@ export interface FollowAlong {
   seekStep(size: StepSize, direction: StepDirection): void;
   /** The speed commands: moves the playback rate one rung up or down the speed ladder. */
   speedStep(direction: SpeedDirection): void;
+  /**
+   * The speed item in the status bar: moves the playback rate one rung up the speed ladder, and
+   * from the top rung back to the bottom one, so repeated clicks go round.
+   */
+  speedCycle(): void;
   /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
   goToLesson(): Promise<void>;
   dispose(): void;
@@ -127,6 +133,27 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Rates asked of the player that it has not reported yet, oldest first. */
   let askedRates: number[] = [];
 
+  /** The playhead and length the player last reported for the current Lesson, in seconds. */
+  let position = 0;
+  let duration = 0;
+  /** What the status bar shows now; a new model is sent to the UI only when it differs. */
+  let statusBar: StatusBarModel = { items: [] };
+
+  function refreshStatusBar(): void {
+    const next = buildStatusBar({
+      playing: playback.playing,
+      position,
+      duration,
+      rate,
+      shortStep: stepSeconds('short'),
+    });
+    if (current === undefined || JSON.stringify(next) === JSON.stringify(statusBar)) {
+      return;
+    }
+    statusBar = next;
+    ui.showStatusBar(next);
+  }
+
   function loadCurrent(): void {
     if (current === undefined) {
       return;
@@ -141,6 +168,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     };
     player.send(command);
     playback = freshPlayback(command.autoplay);
+    position = 0;
+    duration = 0;
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -199,11 +228,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       }
       case 'timeUpdate':
+        if (event.lessonId === current?.id) {
+          position = event.position;
+          duration = event.duration;
+        }
         break;
     }
+    refreshStatusBar();
   }
 
-  const subscriptions: Disposable[] = [player.onEvent(onPlayerEvent)];
+  const subscriptions: Disposable[] = [
+    player.onEvent(onPlayerEvent),
+    // The back item names the short step, so a changed setting shows at once.
+    config.onDidChange((affects) => {
+      if (affects(stepSettings.short)) {
+        refreshStatusBar();
+      }
+    }),
+  ];
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
@@ -216,6 +258,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson): void {
     current = lesson;
+    // Nothing is known about this Lesson until the player loads it and reports.
+    playback = freshPlayback(false);
+    position = 0;
+    duration = 0;
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
     const shown = player.show({
       title: lesson.title,
@@ -226,6 +272,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } else if (playerReady) {
       loadCurrent();
     }
+    refreshStatusBar();
   }
 
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */
@@ -267,6 +314,18 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return typeof value === 'number' && Number.isFinite(value) && value > 0
       ? value
       : defaultStepSeconds[size];
+  }
+
+  /** Asks the player for `next`, the rung a speed command chose. */
+  function setRate(next: number): void {
+    // Counted at once, so presses in a row climb before the player has answered the first.
+    if (next !== rate) {
+      // The player reports only a change, so a press that changes nothing has no answer to wait for.
+      askedRates.push(next);
+    }
+    rate = next;
+    player.send({ type: 'setRate', rate });
+    refreshStatusBar();
   }
 
   /** Plays a Lesson of the open Course, by its id. */
@@ -420,17 +479,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
     },
     speedStep(direction) {
-      if (!hasPlayableLesson('Speed step')) {
-        return;
+      if (hasPlayableLesson('Speed step')) {
+        setRate(nextRate(rate, direction));
       }
-      // Counted at once, so presses in a row climb before the player has answered the first.
-      const next = nextRate(rate, direction);
-      if (next !== rate) {
-        // The player reports only a change, so a press that changes nothing has no answer to wait for.
-        askedRates.push(next);
+    },
+    speedCycle() {
+      if (hasPlayableLesson('Speed cycle')) {
+        setRate(rate >= fastest ? slowest : nextRate(rate, 'up'));
       }
-      rate = next;
-      player.send({ type: 'setRate', rate });
     },
     dispose() {
       for (const subscription of subscriptions) {

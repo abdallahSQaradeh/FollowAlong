@@ -14,6 +14,7 @@ import { createFollowAlong, type FollowAlong } from '../../src/core/follow-along
 import type { LessonTreeModel } from '../../src/core/lesson-tree.js';
 import type { LogEntry, Logger } from '../../src/core/logger.js';
 import type { QuickPickModel } from '../../src/core/quick-pick.js';
+import type { StatusBarModel } from '../../src/core/status-bar.js';
 import {
   FileSystemError,
   type Clock,
@@ -173,6 +174,8 @@ export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
+  /** The status bar items the learner sees now; none until the core shows some. */
+  statusBar: StatusBarModel = { items: [] };
   /** The Resources opened in a tab beside the code, in order. */
   readonly opened: ResourceTarget[] = [];
   /** Set to make opening a file fail, as VS Code does for a file that is gone. */
@@ -221,6 +224,10 @@ export class RecordingUi implements UiSink {
 
   showLessonTree(model: LessonTreeModel): void {
     this.lessonTree = model;
+  }
+
+  showStatusBar(model: StatusBarModel): void {
+    this.statusBar = model;
   }
 
   openResource(target: ResourceTarget): Promise<void> {

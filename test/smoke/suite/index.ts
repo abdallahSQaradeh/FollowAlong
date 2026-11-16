@@ -28,6 +28,8 @@ interface SeenEvent {
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
   lessonTree(): { readonly nodes: readonly TreeNode[] };
+  /** The status bar items VS Code shows, with the command each one runs. */
+  statusBar(): readonly { readonly id: string; readonly text: string; readonly command?: string }[];
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -67,6 +69,7 @@ export async function run(): Promise<void> {
     'followalong.seekForwardLong',
     'followalong.speedUp',
     'followalong.speedDown',
+    'followalong.speedCycle',
     'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
@@ -98,12 +101,43 @@ export async function run(): Promise<void> {
   say(await theLessonStarts(hooks.playerEvents, 'lesson.webm'));
   say(await playFromTheEditor(hooks.playerEvents));
 
+  say(await theStatusBarRunsTheCommands(hooks));
+
   // A click on a Lesson in the tree runs this command with the Lesson's id.
   await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
   say(await theLessonStarts(hooks.playerEvents, 'long.webm'));
 
   await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
   say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+}
+
+/**
+ * While a Lesson is loaded the status bar has its four items, and each clickable one runs a
+ * command that exists. What the items say at each state is covered at Seam 1.
+ */
+async function theStatusBarRunsTheCommands(hooks: TestHooks): Promise<string> {
+  const items = hooks.statusBar();
+  assert.deepEqual(
+    items.map(({ id, command }) => ({ id, command })),
+    [
+      { id: 'playPause', command: 'followalong.playPause' },
+      { id: 'time', command: undefined },
+      { id: 'speed', command: 'followalong.speedCycle' },
+      { id: 'back', command: 'followalong.seekBackShort' },
+    ],
+    'the status bar items of a loaded Lesson',
+  );
+  const registered = await vscode.commands.getCommands(true);
+  for (const { command } of items) {
+    assert.ok(command === undefined || registered.includes(command), `${String(command)} is gone`);
+  }
+  // What a click on the speed item runs: the item shows the new rate, then the key puts it back.
+  const speed = () => hooks.statusBar().find((item) => item.id === 'speed')?.text;
+  await vscode.commands.executeCommand('followalong.speedCycle');
+  assert.equal(speed(), '1.25×', 'the speed item after one click');
+  await vscode.commands.executeCommand('followalong.speedDown');
+  assert.equal(speed(), '1×', 'the speed item after one step down');
+  return 'the status bar shows play/pause, time, speed and back, each wired to a registered command';
 }
 
 /** Attaches a text file to a Lesson of a scratch Course, then opens it from the tree. */

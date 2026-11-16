@@ -7,6 +7,7 @@ import type { Logger } from '../../core/logger.js';
 import type { Config, KeyValueStore, Storage, UiSink } from '../../core/ports.js';
 import type { LessonTreeView } from './lesson-tree-view.js';
 import type { ResourcePlacement } from './resource-placement.js';
+import type { StatusBarView } from './status-bar-view.js';
 import { showQuickPick } from './quick-pick.js';
 
 function store(memento: vscode.Memento): KeyValueStore {
@@ -36,7 +37,11 @@ export function createConfig(): Config {
   };
 }
 
-export function createUiSink(tree: LessonTreeView, placement: ResourcePlacement): UiSink {
+export function createUiSink(
+  tree: LessonTreeView,
+  statusBar: StatusBarView,
+  placement: ResourcePlacement,
+): UiSink {
   return {
     showMessage({ severity, text }) {
       const show = {
@@ -49,6 +54,9 @@ export function createUiSink(tree: LessonTreeView, placement: ResourcePlacement)
     pick: showQuickPick,
     showLessonTree(model) {
       tree.show(model);
+    },
+    showStatusBar(model) {
+      statusBar.show(model);
     },
     async openResource(target) {
       // VS Code picks the editor for the file (text and code in the text editor). The group is
