@@ -22,6 +22,7 @@ import {
   createStorage,
   createTerminalSettings,
   createUiSink,
+  pickFileToAttach,
 } from './ports.js';
 
 export const commands = {
@@ -31,6 +32,8 @@ export const commands = {
   playLesson: playLessonCommand,
   /** The "+" on a Lesson in the tree; it is run with the Lesson's tree node. */
   attachResource: 'followalong.attachResource',
+  /** `Ctrl+'` `A`: attaches a file to the Lesson that is playing. */
+  attachToCurrentLesson: 'followalong.attachToCurrentLesson',
   /** Run by a click on a Resource in the tree, with the Resource's id. */
   openResource: openResourceCommand,
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
@@ -153,21 +156,13 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       if (typeof lessonId !== 'string') {
         return;
       }
-      const target =
-        file instanceof vscode.Uri
-          ? file
-          : (
-              await vscode.window.showOpenDialog({
-                canSelectFiles: true,
-                canSelectFolders: false,
-                canSelectMany: false,
-                openLabel: 'Attach',
-                title: 'Attach a file to this Lesson',
-              })
-            )?.[0];
+      const target = file instanceof vscode.Uri ? file : await pickFileToAttach();
       if (target !== undefined) {
         await core.attachResource(lessonId, target.fsPath);
       }
+    }),
+    register(commands.attachToCurrentLesson, async () => {
+      await core.attachToCurrentLesson();
     }),
     register(commands.openResource, async (resourceId) => {
       if (typeof resourceId === 'string') {

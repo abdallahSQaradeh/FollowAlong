@@ -99,6 +99,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "followalong.attachToCurrentLesson",
+        "title": "Attach Resource",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.openResource",
         "title": "Open Resource",
         "category": "FollowAlong"
@@ -181,6 +186,12 @@
         "command": "followalong.goToLesson",
         "key": "ctrl+' l",
         "mac": "cmd+' l",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.attachToCurrentLesson",
+        "key": "ctrl+' a",
+        "mac": "cmd+' a",
         "when": "editorTextFocus || terminalFocus"
       }
     ],

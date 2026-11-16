@@ -81,6 +81,7 @@ export async function run(): Promise<void> {
     'followalong.nextLesson',
     'followalong.previousLesson',
     'followalong.goToLesson',
+    'followalong.attachToCurrentLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
@@ -102,6 +103,11 @@ export async function run(): Promise<void> {
     ['speedDown', 'Speed down', "ctrl+' down"],
   ]);
   say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
+
+  chordCommandsAreBound(extension.packageJSON, [
+    ['attachToCurrentLesson', 'Attach Resource', "ctrl+' a"],
+  ]);
+  say("FollowAlong: Attach Resource is in the Command Palette, bound to Ctrl+' A");
 
   chordCommandsAreBound(extension.packageJSON, [
     ['nextLesson', 'Next Lesson', "ctrl+' n"],

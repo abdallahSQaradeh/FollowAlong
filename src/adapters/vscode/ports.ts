@@ -80,12 +80,28 @@ export function createUiSink(
       });
       placement.opened(target.path);
     },
+    async pickFile() {
+      return (await pickFileToAttach())?.fsPath;
+    },
     returnFocus() {
       focus.returnFocus().catch((error: unknown) => {
         logger.log({ level: 'warn', message: `Could not return focus: ${String(error)}` });
       });
     },
   };
+}
+
+/** The file dialog of an Attach: one file, from anywhere on disk. */
+export async function pickFileToAttach(): Promise<vscode.Uri | undefined> {
+  return (
+    await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      openLabel: 'Attach',
+      title: 'Attach a file to this Lesson',
+    })
+  )?.[0];
 }
 
 const terminalSettingsSection = 'terminal.integrated';

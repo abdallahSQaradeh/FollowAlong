@@ -1,0 +1,112 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
+import { createHarness, type Harness } from './harness.js';
+
+/** The labels of the Resources shown under a Lesson of the tree the learner sees. */
+function resourceLabels(h: Harness, lessonId: string): string[] {
+  const labels: string[] = [];
+  const walk = (nodes: readonly LessonTreeNode[]): void => {
+    for (const node of nodes) {
+      if (node.kind === 'section') {
+        walk(node.children);
+      } else if (node.kind === 'lesson' && node.id === lessonId) {
+        labels.push(...node.resources.map((resource) => resource.label));
+      }
+    }
+  };
+  walk(h.ui.lessonTree?.nodes ?? []);
+  return labels;
+}
+
+/** A Course of two Lessons, the first one playing in a ready player, and a file to attach. */
+async function playingFirstLesson(): Promise<{ h: Harness; notes: string }> {
+  const h = await createHarness();
+  const course = await h.folder('course', { '01 One.webm': 'v', '02 Two.webm': 'v' });
+  const notes = join(course, 'notes.md');
+  await writeFile(notes, '# notes');
+  await h.core.openCourse(course);
+  h.player.ready();
+  h.player.emit({ type: 'played', lessonId: '01 One.webm' });
+  return { h, notes };
+}
+
+describe('attaching a Resource from the chord', () => {
+  it('asks for a file and attaches it to the Lesson that is playing', async () => {
+    const { h, notes } = await playingFirstLesson();
+
+    const attached = h.core.attachToCurrentLesson();
+    expect(h.ui.fileDialogOpen).toBe(true);
+    h.ui.answerFileDialog(notes);
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+    expect(resourceLabels(h, '02 Two.webm')).toEqual([]);
+  });
+
+  it('attaches to the Lesson that became current, after the learner moved on', async () => {
+    const { h, notes } = await playingFirstLesson();
+    h.core.nextLesson();
+    h.player.ready();
+
+    const attached = h.core.attachToCurrentLesson();
+    h.ui.answerFileDialog(notes);
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+    expect(resourceLabels(h, '02 Two.webm')).toEqual(['notes.md']);
+  });
+
+  it('keeps the Lesson that was playing when the chord was pressed, if another starts meanwhile', async () => {
+    const { h, notes } = await playingFirstLesson();
+
+    const attached = h.core.attachToCurrentLesson();
+    h.core.nextLesson();
+    h.ui.answerFileDialog(notes);
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+    expect(resourceLabels(h, '02 Two.webm')).toEqual([]);
+  });
+
+  it('never pauses or otherwise commands the player', async () => {
+    const { h, notes } = await playingFirstLesson();
+    h.player.clearSent();
+
+    const attached = h.core.attachToCurrentLesson();
+    expect(h.player.sent).toEqual([]);
+    h.ui.answerFileDialog(notes);
+    await attached;
+
+    expect(h.player.sent).toEqual([]);
+  });
+
+  it('hands focus back to the code once the dialog closes, with or without a file', async () => {
+    const { h, notes } = await playingFirstLesson();
+
+    const first = h.core.attachToCurrentLesson();
+    h.ui.answerFileDialog(notes);
+    await first;
+    expect(h.ui.focusReturns).toBe(1);
+
+    const second = h.core.attachToCurrentLesson();
+    h.ui.answerFileDialog(undefined);
+    await second;
+    expect(h.ui.focusReturns).toBe(2);
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+  });
+
+  it('tells the learner to open a Lesson first when none is loaded, and opens no dialog', async () => {
+    const h = await createHarness();
+
+    await h.core.attachToCurrentLesson();
+
+    expect(h.ui.fileDialogs).toBe(0);
+    expect(h.ui.messages).toEqual([
+      { severity: 'info', text: 'Open a Lesson first, then attach a Resource to it.' },
+    ]);
+  });
+});
