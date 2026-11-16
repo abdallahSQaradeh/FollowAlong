@@ -38,6 +38,9 @@ export const playerViews: Readonly<
   secondarySidebar: { view: 'followalong.videoSidebar', container: 'followalong-video-sidebar' },
 };
 
+/** How long after a move a view hidden by the focus return is shown again, in ms. */
+const keepShownMs = 1000;
+
 /** The context key the views' `when` clauses read: only the spot the player is in shows. */
 const spotContextKey = 'followalong.videoSpot';
 
@@ -103,7 +106,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     private readonly extensionPath: string,
     private readonly logger: Logger,
     /** Hands focus back to the code after VS Code focused a view it opened. */
-    private readonly returnFocus: () => void,
+    private readonly returnFocus: () => Promise<void>,
   ) {
     for (const spot of ['bottomPanel', 'secondarySidebar'] as const) {
       this.subscriptions.push(
@@ -297,7 +300,9 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           this.adopt(spot, existing);
         }
         this.trace('returnFocus');
-        this.returnFocus();
+        void this.returnFocus().then(() => {
+          this.keepShown(spot);
+        });
       },
       (error: unknown) => {
         this.logger.log({
@@ -312,6 +317,36 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
         }
       },
     );
+  }
+
+  /**
+   * Shows the player's view in `spot` again, without taking focus, if handing focus back to the
+   * code hid it. After the player left an editor group, focusing the code editor hides the bottom
+   * panel it was just opened in (smoke test, CI run 43898701222: the view went hidden 25 ms after
+   * the focus return).
+   */
+  private keepShown(spot: ViewSpot): void {
+    const host = this.host;
+    const view = this.views.get(spot);
+    this.trace(`keepShown ${spot}; host=${host?.spot ?? 'none'} view=${this.idOf(view)}`);
+    if (host?.spot !== spot || view?.webview !== host.webview) {
+      return;
+    }
+    if (!view.visible) {
+      host.reveal();
+      return;
+    }
+    // The hide can also come just after: watch the next change for a moment.
+    const watching = view.onDidChangeVisibility(() => {
+      watching.dispose();
+      this.trace(`keepShown change ${spot} ${this.idOf(view)}`);
+      if (!view.visible && this.host === host) {
+        host.reveal();
+      }
+    });
+    setTimeout(() => {
+      watching.dispose();
+    }, keepShownMs);
   }
 
   /** Stops waiting for a view VS Code resolved before to become visible. */

@@ -134,9 +134,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
         }
       : outputLogger;
   const focus = new FocusReturn();
-  const player = new PlayerPanel(context.extensionPath, logger, () => {
-    void focus.returnFocus();
-  });
+  const player = new PlayerPanel(context.extensionPath, logger, () => focus.returnFocus());
   const lessonTree = new LessonTreeView(logger);
   const viewers = new ResourceViewers(context.extensionPath, logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
