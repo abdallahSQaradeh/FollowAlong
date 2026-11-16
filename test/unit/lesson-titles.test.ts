@@ -261,6 +261,20 @@ describe('the Course name a cleaned title drops, for a Course under wrapper fold
     expect(treeTitles(h)).toEqual(['Intro _ Learning', 'Setup _ Docker Mastery']);
   });
 
+  it('drops only its own name for a Course that is a Courses root, whatever root holds it', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Docker Mastery/docker-mastery-2024/01 Intro _ Docker Mastery.mp4': 'v',
+    });
+    const course = join(learning, 'Docker Mastery', 'docker-mastery-2024');
+    // The scan names this Course after its own folder: it is a root, the one named first.
+    h.config.set('coursesRoots', [course, learning]);
+
+    await h.core.openCourse(course);
+
+    expect(treeTitles(h)).toEqual(['Intro _ Docker Mastery']);
+  });
+
   it('drops only the Course folder’s own name when the Course is under no Courses root', async () => {
     const h = await createHarness();
     const outer = await h.folder('Docker Mastery', {

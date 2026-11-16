@@ -83,8 +83,12 @@ export function isInsideFolder(folder: string, path: string): boolean {
 export function courseNames(folder: string, roots: readonly string[]): string[] {
   const own = basename(folder);
   const spelled = normalisedRoot(folder) ?? folder;
-  const root = roots.find((candidate) => isInsideFolder(keyOf(candidate), keyOf(spelled)));
-  if (root === undefined) {
+  // The first root that is the folder or holds it, as the scan files the Course (ADR 0022).
+  const root = roots.find(
+    (candidate) =>
+      keyOf(candidate) === keyOf(spelled) || isInsideFolder(keyOf(candidate), keyOf(spelled)),
+  );
+  if (root === undefined || keyOf(root) === keyOf(spelled)) {
     return [own];
   }
   // How many folders lie between, counted on the keys; their names taken as the folder spells them.
