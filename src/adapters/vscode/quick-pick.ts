@@ -37,14 +37,20 @@ export function openQuickPick<Intent>(
   quickPick.keepScrollPosition = true;
   /** What pressing each button asks for: a VS Code button carries no data of ours. */
   const buttonIntents = new Map<vscode.QuickInputButton, Intent>();
+  /** The item buttons that do not close the quick pick. */
+  const staying = new Set<vscode.QuickInputButton>();
   const buttonsOf = (buttons: readonly QuickPickButtonModel<Intent>[]) =>
     buttons.map((button): vscode.QuickInputButton => {
       const drawn = { iconPath: new vscode.ThemeIcon(button.icon), tooltip: button.label };
       buttonIntents.set(drawn, button.intent);
+      if (button.staysOpen === true) {
+        staying.add(drawn);
+      }
       return drawn;
     });
   const draw = (shown: QuickPickModel<Intent>): void => {
     buttonIntents.clear();
+    staying.clear();
     quickPick.placeholder = shown.placeholder;
     quickPick.busy = shown.busy === true;
     quickPickStats.busy = quickPick.busy;
@@ -87,8 +93,14 @@ export function openQuickPick<Intent>(
       }
     });
     quickPick.onDidTriggerItemButton(({ button }) => {
-      if (buttonIntents.has(button)) {
-        finish(buttonIntents.get(button));
+      const intent = buttonIntents.get(button);
+      if (intent === undefined || answered) {
+        return;
+      }
+      if (staying.has(button)) {
+        onToolbarButton(intent);
+      } else {
+        finish(intent);
       }
     });
     quickPick.onDidTriggerButton((button) => {

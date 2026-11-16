@@ -50,6 +50,11 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.unhideCourse",
+        "title": "Unhide a Course…",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.playLesson",
         "title": "Play Lesson",
         "category": "FollowAlong"
