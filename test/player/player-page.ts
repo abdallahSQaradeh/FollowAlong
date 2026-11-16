@@ -29,6 +29,10 @@ export const media = {
   notAVideo: `${origin}/media/not-a-video.webm`,
   /** A download that stopped before its first byte. */
   empty: `${origin}/media/empty.webm`,
+  /** 8 s, H.264 + AAC, index (moov atom) at the end. */
+  longMp4: `${origin}/media/long.mp4`,
+  /** long.mp4's sound as the audio sidecar converts it (MP3). */
+  longMp3: `${origin}/media/long.mp3`,
 } as const;
 export const webmDuration = 3;
 
@@ -114,6 +118,10 @@ export interface PlayerHarness {
   /** Waits until the player has sent an event matching `expected` (a partial event). */
   waitForEvent(expected: Partial<PlayerEvent>): Promise<void>;
   video(): Promise<VideoState>;
+  /** The hidden `<audio>` that plays an MP4 Lesson's sidecar sound. */
+  sound(): Promise<SoundState>;
+  /** The video's and the sidecar's playheads, read at the same moment. */
+  playheads(): Promise<{ readonly video: number; readonly sound: number }>;
   /** Lets streams held by `holdAt` go on; returns once the player has read the bytes after it. */
   releaseStream(): Promise<void>;
   /** The Range header of every media request the player made, in order. */
@@ -133,6 +141,15 @@ export interface VideoState {
   readonly videoBytesDecoded: number;
   /** The buffered time ranges, as [start, end] pairs in seconds. */
   readonly buffered: readonly (readonly [number, number])[];
+}
+
+export interface SoundState {
+  readonly paused: boolean;
+  readonly muted: boolean;
+  readonly currentTime: number;
+  readonly playbackRate: number;
+  /** The sound file it holds: its `src`, empty when it holds none. */
+  readonly source: string;
 }
 
 export async function openPlayer(page: Page, options: PlayerOptions = {}): Promise<PlayerHarness> {
@@ -155,9 +172,15 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       path === '/media/lesson.webm' ||
       path === '/media/long.webm' ||
       path === '/media/no-duration.webm' ||
-      path === '/media/sample.mp4'
+      path === '/media/sample.mp4' ||
+      path === '/media/long.mp4' ||
+      path === '/media/long.mp3'
     ) {
-      const contentType = path.endsWith('.mp4') ? 'video/mp4' : 'video/webm';
+      const contentType = path.endsWith('.mp4')
+        ? 'video/mp4'
+        : path.endsWith('.mp3')
+          ? 'audio/mpeg'
+          : 'video/webm';
       const body = readFileSync(join(root, 'test', 'fixtures', path));
       // Byte ranges, as VS Code's webview resource loader answers them (research 01: 206).
       const range = /^bytes=(\d+)-(\d*)$/.exec(requestedRange ?? '');
@@ -360,6 +383,29 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         })
         .toBe(true);
     },
+    sound: () =>
+      evaluate((): SoundState => {
+        const element = document.querySelector('audio');
+        if (element === null) {
+          throw new Error('The player page has no <audio> element.');
+        }
+        return {
+          paused: element.paused,
+          muted: element.muted,
+          currentTime: element.currentTime,
+          playbackRate: element.playbackRate,
+          source: element.getAttribute('src') ?? '',
+        };
+      }, undefined),
+    playheads: () =>
+      evaluate(() => {
+        const video = document.querySelector('video');
+        const audio = document.querySelector('audio');
+        if (video === null || audio === null) {
+          throw new Error('The player page has no <video> or no <audio> element.');
+        }
+        return { video: video.currentTime, sound: audio.currentTime };
+      }, undefined),
     video: () =>
       evaluate((): VideoState => {
         const element = document.querySelector('video');

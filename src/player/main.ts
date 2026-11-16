@@ -27,6 +27,20 @@ if (nextButton === null) {
 }
 /** The "Next: <title>" overlay over the picture of a Lesson that has ended (ADR 0019). */
 const nextOverlay: HTMLElement = nextButton;
+const soundElement = document.querySelector('audio');
+if (soundElement === null) {
+  throw new Error('The player page has no <audio> element.');
+}
+/**
+ * The hidden `<audio>` that plays an MP4 Lesson's sound, converted to MP3, beside the muted video
+ * when the page cannot decode AAC (the audio sidecar, ADR 0034). The video is the clock: the sound
+ * follows its play, pause, seeks and rate.
+ */
+const sidecar: HTMLAudioElement = soundElement;
+/** Whether the page decodes AAC, the sound of every MP4 Lesson; VS Code does not. */
+const aacSupported = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') !== '';
+/** How far the sidecar may drift from the video before it is moved back to it, in seconds. */
+const maxDriftSeconds = 0.1;
 
 function post(event: PlayerEvent): void {
   host.postMessage(event);
@@ -76,6 +90,14 @@ interface Lesson {
   failed: boolean;
   /** Whether `played` was posted since the last pause, so a recovered stall is not a new play. */
   playing: boolean;
+  /**
+   * Where the Lesson's sound comes from: its own track (`own`); the sidecar, still to come
+   * (`awaited`) or playing beside the muted video (`sidecar`); or none, because it could not be
+   * prepared (`none`).
+   */
+  sound: 'own' | 'awaited' | 'sidecar' | 'none';
+  /** Set while the sound is awaited: the Lesson plays as soon as it arrives (autoplay, or a press). */
+  playWhenSound: boolean;
 }
 
 /** The Lesson in the media element. */
@@ -90,6 +112,8 @@ let pauseBy: 'extension' | 'picture' | undefined;
 let playRequested = false;
 /** The playback rate last reported, so a `ratechange` that changes nothing is not. */
 let reportedRate = 1;
+/** Set while the video is muted because its sound plays from the sidecar instead. */
+let mutedForSound = false;
 /** The seconds a click that resumes a paused Lesson steps back first (Rewind, ADR 0016). */
 let resumeRewind = 0;
 
@@ -104,9 +128,30 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
   media.pause();
 }
 
+/** Stops the sidecar of the Lesson before and empties it, so it never plays over the next one. */
+function dropSound(): void {
+  sidecar.pause();
+  if (sidecar.hasAttribute('src')) {
+    sidecar.removeAttribute('src');
+    sidecar.load();
+  }
+}
+
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
   hideNext();
+  dropSound();
+  // An MP4 whose AAC sound the page cannot decode waits for its sound, muted. The native controls
+  // are hidden meanwhile: their play button would start the picture without its sound.
+  const awaitsSound = command.container === 'mp4' && !aacSupported;
+  if (awaitsSound) {
+    media.muted = true;
+  } else if (mutedForSound) {
+    // Only the player's own mute is undone: a mute the learner chose stays.
+    media.muted = false;
+  }
+  mutedForSound = awaitsSound;
+  media.controls = !awaitsSound;
   // A pause or play whose event the new load cancels must not mark the next one.
   pauseBy = undefined;
   playRequested = false;
@@ -118,6 +163,8 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
     stop: new AbortController(),
     failed: false,
     playing: false,
+    sound: awaitsSound ? 'awaited' : 'own',
+    playWhenSound: false,
   };
   current = lesson;
   const { signal } = lesson.stop;
@@ -148,7 +195,79 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
   }
 }
 
+/** Moves the sidecar to the video's playhead and rate. */
+function alignSound(media: HTMLVideoElement): void {
+  sidecar.defaultPlaybackRate = media.playbackRate;
+  sidecar.playbackRate = media.playbackRate;
+  if (Math.abs(sidecar.currentTime - media.currentTime) > maxDriftSeconds) {
+    sidecar.currentTime = media.currentTime;
+  }
+}
+
+/** The sound of the Lesson arrived: it plays beside the muted video from now on. */
+function soundReady(audioUri: string, media: HTMLVideoElement): void {
+  const lesson = current;
+  if (lesson?.sound !== 'awaited') {
+    return;
+  }
+  lesson.sound = 'sidecar';
+  sidecar.src = audioUri;
+  alignSound(media);
+  media.controls = true;
+  if (lesson.playWhenSound) {
+    play(media);
+  }
+}
+
+/** The sound could not be prepared: the Lesson plays muted (ticket #42 adds a choice here). */
+function soundFailed(media: HTMLVideoElement): void {
+  const lesson = current;
+  if (lesson?.sound !== 'awaited') {
+    return;
+  }
+  lesson.sound = 'none';
+  media.controls = true;
+  if (lesson.playWhenSound) {
+    play(media);
+  }
+}
+
+/** Starts the video, and its sidecar first when it has one. */
 function play(media: HTMLVideoElement): void {
+  const lesson = current;
+  if (lesson?.sound === 'awaited') {
+    // Plays once the sound arrives (spec #12, story 70).
+    lesson.playWhenSound = true;
+    return;
+  }
+  if (lesson?.sound === 'sidecar' && media.paused) {
+    // The sound first: VS Code refuses sound until the learner has clicked in the page (#12 D3),
+    // and the muted picture alone would start where the sound cannot.
+    alignSound(media);
+    sidecar.play().then(
+      () => {
+        // A pause or another Lesson since then (a pause stops the sidecar again).
+        if (lesson === current && !sidecar.paused) {
+          playVideo(media);
+        }
+      },
+      (error: unknown) => {
+        if (lesson === current && !lesson.failed && isRefusal(error)) {
+          post({ type: 'paused', ...lesson.about, byUser: false });
+        }
+      },
+    );
+    return;
+  }
+  playVideo(media);
+}
+
+/** Whether `play()` was refused because the learner has not acted in the page yet (#12 D3). */
+function isRefusal(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'NotAllowedError';
+}
+
+function playVideo(media: HTMLVideoElement): void {
   const lesson = current;
   // A media element that is already playing fires no `play` event to clear the flag.
   playRequested = media.paused;
@@ -156,13 +275,7 @@ function play(media: HTMLVideoElement): void {
     playRequested = false;
     // Autoplay refused: the Lesson stays paused, and the extension is told. Other rejections
     // come from a new load (AbortError) or a failed Lesson, which reports its own `error`.
-    if (
-      lesson !== undefined &&
-      lesson === current &&
-      !lesson.failed &&
-      error instanceof DOMException &&
-      error.name === 'NotAllowedError'
-    ) {
+    if (lesson !== undefined && lesson === current && !lesson.failed && isRefusal(error)) {
       post({ type: 'paused', ...lesson.about, byUser: false });
     }
   });
@@ -214,6 +327,11 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       play(media);
       break;
     case 'pause':
+      if (current !== undefined) {
+        current.playWhenSound = false;
+      }
+      // Also a sidecar that started and whose video has not yet.
+      sidecar.pause();
       if (!media.paused) {
         pauseBy = 'extension';
         media.pause();
@@ -230,6 +348,12 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       break;
     case 'setResumeRewind':
       resumeRewind = command.seconds;
+      break;
+    case 'soundReady':
+      soundReady(command.audioUri, media);
+      break;
+    case 'soundFailed':
+      soundFailed(media);
       break;
   }
 }
@@ -309,9 +433,51 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   });
 }
 
+/**
+ * Makes the sidecar follow the video, the clock: its pause, seeks and rate, and its playhead
+ * whenever the two drift more than {@link maxDriftSeconds} apart.
+ */
+function followWithSound(media: HTMLVideoElement): void {
+  const following = () => current?.sound === 'sidecar';
+  media.addEventListener('play', () => {
+    // The native control bar's play button, a gesture in the page: the sound joins in.
+    if (following() && sidecar.paused) {
+      alignSound(media);
+      sidecar.play().catch(() => undefined);
+    }
+  });
+  media.addEventListener('pause', () => {
+    sidecar.pause();
+  });
+  media.addEventListener('seeking', () => {
+    if (following()) {
+      sidecar.currentTime = media.currentTime;
+    }
+  });
+  media.addEventListener('ratechange', () => {
+    if (following()) {
+      alignSound(media);
+    }
+  });
+  media.addEventListener('timeupdate', () => {
+    // Not while the sound is still seeking: moving it again would only restart that seek.
+    if (following() && !media.paused && !sidecar.seeking) {
+      alignSound(media);
+    }
+  });
+  media.addEventListener('volumechange', () => {
+    sidecar.volume = media.volume;
+  });
+}
+
 /** A click on the picture plays or pauses the Lesson. */
 function togglePlayback(media: HTMLVideoElement): void {
   if (current === undefined || current.failed) {
+    return;
+  }
+  if (current.sound === 'awaited') {
+    // The click asks for the Lesson as soon as its sound arrives, or takes that back.
+    current.playWhenSound = !current.playWhenSound;
     return;
   }
   if (media.paused) {
@@ -392,8 +558,8 @@ nextOverlay.addEventListener('click', () => {
     post({ type: 'nextClicked', ...current.about });
   }
 });
-const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
 reportMediaEvents(video);
+followWithSound(video);
 reportInteractions(video, overlay);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   const command = parsePlayerCommand(event.data);
@@ -401,4 +567,4 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
     run(command, video);
   }
 });
-post({ type: 'ready', aacSupported: aac !== '' });
+post({ type: 'ready', aacSupported });

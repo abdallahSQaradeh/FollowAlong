@@ -46,6 +46,7 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 <div class="overlay" aria-hidden="true"></div>
 <button class="next" type="button" hidden></button>
 </main>
+<audio preload="auto"></audio>
 <script nonce="${nonce}">${inline(options.script, 'script')}</script>
 </body>
 </html>
