@@ -17,7 +17,7 @@ describe('opening a Course', () => {
     h.player.ready();
 
     expect(h.player.shown).toEqual([
-      { title: '01 Welcome.webm', resourceRoots: [course, h.storage.folder] },
+      { title: 'Welcome', resourceRoots: [course, h.storage.folder] },
     ]);
     expect(h.player.sent).toEqual([
       {
@@ -171,7 +171,7 @@ describe('opening a Course', () => {
     expect(h.ui.messages).toEqual([
       {
         severity: 'info',
-        text: 'VS Code did not let “01 Intro.webm” start by itself. Press play in the player to start it.',
+        text: 'VS Code did not let “Intro” start by itself. Press play in the player to start it.',
       },
     ]);
   });
@@ -198,7 +198,7 @@ describe('opening a Course', () => {
     h.player.emit({ type: 'error', lessonId: '01 Intro.webm', message: 'decode failed' });
 
     expect(h.ui.messages).toEqual([
-      { severity: 'error', text: 'FollowAlong could not play “01 Intro.webm”: decode failed' },
+      { severity: 'error', text: 'FollowAlong could not play “Intro”: decode failed' },
     ]);
   });
 
