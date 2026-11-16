@@ -388,6 +388,16 @@ function stripGroups(): vscode.TabGroup[] {
   );
 }
 
+/** The editor groups in layout order with their tabs, for a failure message. */
+function layout(): string {
+  return vscode.window.tabGroups.all
+    .map(
+      (group) =>
+        `[${String(group.viewColumn)}${group.isActive ? ' active' : ''}: ${group.tabs.map((tab) => tab.label).join(', ')}]`,
+    )
+    .join(' ');
+}
+
 /**
  * The mini strip is its own editor group above the code (ADR 0100): it comes first in the layout,
  * VS Code draws its page above the code editor, and it is shorter than the code.
@@ -395,7 +405,11 @@ function stripGroups(): vscode.TabGroup[] {
 async function theStripIsAboveTheCode(code: vscode.TextDocument): Promise<string> {
   const [group, ...others] = stripGroups();
   assert.ok(group !== undefined && others.length === 0, 'no editor group holds the strip');
-  assert.equal(group.viewColumn, vscode.ViewColumn.One, 'the strip is not the first group');
+  assert.equal(
+    group.viewColumn,
+    vscode.ViewColumn.One,
+    `the strip is not the first group; the layout is ${layout()}`,
+  );
   const codeColumn = vscode.window.visibleTextEditors.find(
     (editor) => editor.document === code,
   )?.viewColumn;
