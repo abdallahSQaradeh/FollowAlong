@@ -38,6 +38,12 @@ interface SeenEvent {
 /** What `activate` returns in ExtensionMode.Test (src/adapters/vscode/extension.ts). */
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
+  /** The text edits forwarded to the core's auto-pause input (src/core/auto-pause.ts). */
+  readonly documentEdits: readonly {
+    readonly scheme: string;
+    readonly path?: string;
+    readonly inActiveEditor: boolean;
+  }[];
   /** What the PDF viewers reported (src/protocol/pdf-viewer-messages.ts). */
   readonly pdfViewerEvents: readonly { readonly type: string; readonly pages?: number }[];
   lessonTree(): { readonly nodes: readonly TreeNode[] };
@@ -193,6 +199,67 @@ export async function run(): Promise<void> {
 
   await resourcesOpenByType(extension.extensionPath, hooks);
   say('Markdown, HTML, an image and a PDF each open in their own kind of tab beside the code');
+
+  await aTextEditReachesAutoPause(hooks);
+  say(
+    "a text edit reaches the core's auto-pause input, telling the active editor from the others; a cursor move does not",
+  );
+}
+
+/**
+ * Types into a file and an untitled document in the active editor, edits an untitled document no
+ * editor shows, and moves the cursor: each edit reaches the core's auto-pause input with its scheme,
+ * its path and whether it is in the active editor; the cursor move does not. Which edits pause the
+ * Lesson is covered at Seam 1.
+ */
+async function aTextEditReachesAutoPause(hooks: TestHooks): Promise<void> {
+  assert.equal(
+    vscode.workspace.getConfiguration('followalong').get('autoPause'),
+    'off',
+    'followalong.autoPause defaults to off',
+  );
+  const folder = mkdtempSync(join(tmpdir(), 'followalong-smoke-edits-'));
+  try {
+    const file = join(folder, 'practice.js');
+    writeFileSync(file, '');
+    const before = hooks.documentEdits.length;
+
+    const practice = await vscode.window.showTextDocument(vscode.Uri.file(file));
+    await practice.edit((edit) => {
+      edit.insert(new vscode.Position(0, 0), 'const a = 1;');
+    });
+    const untitled = await vscode.window.showTextDocument(
+      await vscode.workspace.openTextDocument({ content: '' }),
+    );
+    await untitled.edit((edit) => {
+      edit.insert(new vscode.Position(0, 0), 'let b;');
+    });
+    const hidden = await vscode.workspace.openTextDocument({ content: '' });
+    const elsewhere = new vscode.WorkspaceEdit();
+    elsewhere.insert(hidden.uri, new vscode.Position(0, 0), 'x');
+    assert.ok(await vscode.workspace.applyEdit(elsewhere), 'VS Code did not apply the edit');
+    untitled.selection = new vscode.Selection(0, 2, 0, 2);
+
+    const expected = [
+      { scheme: 'file', path: vscode.Uri.file(file).fsPath, inActiveEditor: true },
+      { scheme: 'untitled', inActiveEditor: true },
+      { scheme: 'untitled', inActiveEditor: false },
+    ];
+    await waitFor('the three edits to reach the core', () =>
+      hooks.documentEdits.length - before >= expected.length ? true : undefined,
+    );
+    // Long enough for a stray event about the cursor move to arrive too, if one were sent.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.deepEqual(hooks.documentEdits.slice(before), expected);
+  } finally {
+    // Nothing is saved: each changed document is reverted as it closes, so closing asks nothing.
+    for (const document of vscode.workspace.textDocuments.filter((open) => open.isDirty)) {
+      await vscode.window.showTextDocument(document);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    rmSync(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  }
 }
 
 /** A 1 × 1 PNG, for the image Resource. */
