@@ -194,14 +194,10 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.speedDown, () => {
       core.speedStep('down');
     }),
-    register(commands.statusBarClick, async (command) => {
+    register(commands.statusBarClick, (command) => {
       if (isStatusBarCommand(command)) {
         core.statusBarClick(command);
       }
-      // A click gives the status bar item keyboard focus (VS Code makes the label focusable), so
-      // the learner would have to click back into the code. The click is a mouse action, so the
-      // editor is where the learner was typing.
-      await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
     }),
     register(commands.nextLesson, () => {
       core.nextLesson();
