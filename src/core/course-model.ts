@@ -167,3 +167,14 @@ export function buildCourse(listing: FolderListing): Course {
 export function lessonsInOrder(outline: Outline): Lesson[] {
   return [...outline.lessons, ...outline.sections.flatMap(lessonsInOrder)];
 }
+
+/** The Section with this id (its folder's path in the Course), at any depth, or `undefined`. */
+export function findSection(outline: Outline, sectionId: string): Section | undefined {
+  for (const section of outline.sections) {
+    const found = section.id === sectionId ? section : findSection(section, sectionId);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}

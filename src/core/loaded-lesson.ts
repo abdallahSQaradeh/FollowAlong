@@ -109,6 +109,12 @@ export interface LoadedLesson {
   playPause(): void;
   /** Resumes a paused Lesson with no rewind, for automatic resumes such as auto-resume. */
   resumeWithoutRewind(): void;
+  /**
+   * Progress of these Lessons was reset by hand. If the Loaded Lesson is one of them, the play
+   * counted so far goes: its 10 s towards "in progress" start again, so the Lesson that keeps
+   * playing does not come straight back as in progress.
+   */
+  progressReset(lessonIds: readonly string[]): void;
   /** Moves the playhead back or forward by the short or the long step setting. */
   seekStep(size: StepSize, direction: StepDirection): void;
   /** Moves the playback rate one rung up or down the speed ladder. */
@@ -990,6 +996,12 @@ export function createLoadedLesson(
       // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
       // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
       ui.returnFocus();
+    },
+    progressReset(lessonIds) {
+      if (current !== undefined && lessonIds.includes(current.lesson.id)) {
+        current.playedSeconds = 0;
+        current.lastPlayingPosition = undefined;
+      }
     },
     dispose() {
       saveTimer?.dispose();

@@ -129,6 +129,21 @@
         "command": "followalong.moveVideo",
         "title": "Move video to…",
         "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.markSectionDone",
+        "title": "Mark all done",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.resetSection",
+        "title": "Reset Section",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.resetCourseProgress",
+        "title": "Reset Course progress",
+        "category": "FollowAlong"
       }
     ],
     "keybindings": [
@@ -297,6 +312,14 @@
         {
           "command": "followalong.relinkResource",
           "when": "false"
+        },
+        {
+          "command": "followalong.markSectionDone",
+          "when": "false"
+        },
+        {
+          "command": "followalong.resetSection",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -319,6 +342,16 @@
           "command": "followalong.detachResource",
           "when": "view == followalong.lessons && viewItem =~ /^resource/",
           "group": "1_manage@2"
+        },
+        {
+          "command": "followalong.markSectionDone",
+          "when": "view == followalong.lessons && viewItem == section",
+          "group": "2_progress@1"
+        },
+        {
+          "command": "followalong.resetSection",
+          "when": "view == followalong.lessons && viewItem == section",
+          "group": "2_progress@2"
         }
       ]
     },
