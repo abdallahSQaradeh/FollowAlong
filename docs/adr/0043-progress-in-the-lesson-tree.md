@@ -7,8 +7,8 @@ done, resets) build on the same model.
 
 ## The view model
 
-`buildLessonTree(course, resources, progress)` (`src/core/lesson-tree.ts`) is a pure function of the
-Course, its Resources and its Progress. It reads each Lesson's state with `lessonStatus` (ADR 0030)
+`buildLessonTree` (`src/core/lesson-tree.ts`) is a pure function of the Course, its Resources (and
+which of them are missing) and its Progress. It reads each Lesson's state with `lessonStatus` (ADR 0030)
 and never decides what done or in progress means.
 
 - **Lesson node:** `status` (`notStarted` | `inProgress` | `done`), `glyph` (`○` / `◐` / `✓`) and
@@ -34,17 +34,22 @@ and never decides what done or in progress means.
   no icon files.
 - `description` is the tree item's description (grey text after the label), for Lessons and
   Sections.
-- The Course `summary` is the tree **view's** description, beside the title "Lessons". It is not
-  part of the Course node (#56, ADR 0045), which carries the Course Resources and their "+": the
-  Progress decoration and the Resource rows stay separate parts of the model, so neither ticket
-  has to move around the other.
+- The Course `summary` is the **Course node's** description (#56, ADR 0045): the Course node is
+  the Course, and "the Course shows done/total and percent". The model keeps `summary` as a field of
+  its own, apart from the Course node and its Resource rows, so the Progress decoration and the
+  Resources stay separate parts of the model and neither ticket has to move around the other.
+- The Lesson and Section nodes carry their Progress as flat fields (`status`, `glyph`,
+  `description`, `done`, `total`) next to their Resources, not in a nested object: the Resource rows
+  live in their own `resources` array, and #29/#30 read `status` and the counts directly to choose
+  menu entries.
 
 ## Considered options
 
 - **ThemeIcons per state** (codicons for done, in progress and not started). Rejected: they depend
   on the codicon set and the theme, and the stories name the glyphs.
-- **The Course summary as a tree node of its own.** Rejected: it would be selectable and
-  highlightable like a Lesson, and it is one line of text, which the view's description shows.
+- **The Course summary as a tree node of its own, or in the view's description.** Rejected: a node
+  of its own would be selectable and highlightable like a Lesson; the view's description is
+  hidden when the view is narrow and is not where the learner looks for the Course.
 - **Percent rounded to the nearest.** Rejected: see above, a Course at 99.6 % would show `100%`.
 - **A `current` flag in the model.** Rejected: see above; `selectLesson` already does it.
 

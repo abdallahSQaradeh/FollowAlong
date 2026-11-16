@@ -128,11 +128,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /**
-   * Draws the open Course's tree again from what is known now, Progress not yet saved included.
-   * Does nothing when the learner would see the same tree. `store` is the Resources to show: the
-   * open Course's, unless a change made in them is being shown.
+   * Draws the tree of the open Course with `store`'s Resources and what Progress knows now, not yet
+   * saved included. Does nothing when the learner would see the same tree.
    */
-  function refreshTree(store = resourceStore): void {
+  function drawTreeWith(store: ResourceStore | undefined): void {
     if (openedCourse === undefined || progress === undefined || store === undefined) {
       return;
     }
@@ -145,6 +144,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (JSON.stringify(model) !== shownTree) {
       drawTree(model);
     }
+  }
+
+  /** Draws the open Course's tree again (ADR 0044). */
+  function refreshTree(): void {
+    drawTreeWith(resourceStore);
   }
 
   /** The Lesson the player holds, and the playback commands. */
@@ -200,7 +204,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (openedCourse?.folder !== course.folder) {
       return false;
     }
-    refreshTree(store);
+    drawTreeWith(store);
     return true;
   }
 

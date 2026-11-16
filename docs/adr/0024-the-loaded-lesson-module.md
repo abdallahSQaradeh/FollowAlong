@@ -44,6 +44,9 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   - Each fix has a red-then-green Seam 1 test. With the narrower player root of ADR 0025, they are
     CP1's only behaviour changes.
 
+_Amended by ADR 0044: `OpenCourseView` also has `progressChanged()`, which tells the Course side
+when the Lesson tree may show something new._
+
 ## Considered options
 
 - **A page-lifecycle module only** (`ready`/`closed`, rate, Rewind). Rejected: it would remove the

@@ -242,4 +242,48 @@ describe('Progress in the Lesson tree', () => {
 
     expect(h.ui.selectedLesson).toBe('02 Setup.webm');
   });
+
+  it('shows where the Lesson was left when the learner closes the player', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', threeLessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.core.playLesson('01 Intro.webm');
+    playUntil(h, '01 Intro.webm', 750, 2405);
+
+    h.player.close();
+
+    expect(descriptionOf(h, '01 Intro.webm')).toBe('12:30 / 40:05');
+  });
+
+  it('marks a paused Lesson done when the learner seeks into its last 5 %', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', threeLessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    const lesson = '01 Intro.webm';
+    playUntil(h, lesson, 12);
+    pause(h, lesson);
+    expect(glyphs(h)[lesson]).toBe('◐');
+
+    h.player.emit({ type: 'timeUpdate', lessonId: lesson, position: 580, duration: 600 });
+    h.player.emit({ type: 'seeked', lessonId: lesson });
+
+    expect(glyphs(h)[lesson]).toBe('✓');
+    expect(descriptionOf(h, lesson)).toBe('');
+  });
+
+  it('shows just the position for a Lesson in progress whose length is not known', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', threeLessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    const lesson = '01 Intro.webm';
+
+    playUntil(h, lesson, 12, 0);
+    h.clock.advance(5000);
+
+    expect(statusOf(h, lesson)).toBe('inProgress');
+    expect(descriptionOf(h, lesson)).toBe('00:12');
+  });
 });

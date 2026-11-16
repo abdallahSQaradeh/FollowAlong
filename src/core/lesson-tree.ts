@@ -8,7 +8,7 @@ import { lessonsInOrder, type Course, type Outline, type Section } from './cours
 import type { LessonStatus } from './lesson-status.js';
 import { lessonEntry, lessonStatus, type CourseProgress } from './progress.js';
 import { resourcePath, type ResourceRecord, type ResourcesData } from './resources.js';
-import { formatClock } from './status-bar.js';
+import { formatClock } from './clock-text.js';
 
 /** The mark before a Lesson in the tree, by its state (spec #12, story 86). */
 export const lessonGlyphs: Readonly<Record<LessonStatus, string>> = {
@@ -118,7 +118,7 @@ function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode 
 }
 
 /** `12:30 / 40:05`: where the Lesson was saved and how long it is; just the position while its length is unknown. */
-function playhead(progress: CourseProgress, lessonId: string): string {
+function playheadText(progress: CourseProgress, lessonId: string): string {
   const saved = lessonEntry(progress.lessons, lessonId);
   if (saved === undefined) {
     return '';
@@ -126,6 +126,11 @@ function playhead(progress: CourseProgress, lessonId: string): string {
   return saved.duration > 0
     ? `${formatClock(saved.position)} / ${formatClock(saved.duration)}`
     : formatClock(saved.position);
+}
+
+/** `3/12`: how many of the Lessons are done, of how many. */
+function fraction(done: number, total: number): string {
+  return `${String(done)}/${String(total)}`;
 }
 
 /** How many of the Lessons under `outline` are done, and how many there are. */
@@ -145,7 +150,7 @@ function nodeOf(section: Section, source: TreeSource): LessonTreeNode {
     label: section.name,
     done,
     total,
-    description: `${String(done)}/${String(total)}`,
+    description: fraction(done, total),
     children: nodesOf(section, source),
   };
 }
@@ -160,7 +165,7 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
         label: lesson.title,
         status,
         glyph: lessonGlyphs[status],
-        description: status === 'inProgress' ? playhead(source.progress, lesson.id) : '',
+        description: status === 'inProgress' ? playheadText(source.progress, lesson.id) : '',
         resources: (source.resources.lessons[lesson.id] ?? []).map((record) =>
           resourceNode(source, record),
         ),
@@ -195,7 +200,7 @@ export function buildLessonTree(
       done,
       total,
       percent,
-      description: `${String(done)}/${String(total)} · ${String(percent)}%`,
+      description: `${fraction(done, total)} · ${String(percent)}%`,
     },
     nodes: nodesOf(course, source),
   };

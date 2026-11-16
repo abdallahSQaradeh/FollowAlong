@@ -90,8 +90,6 @@ export class LessonTreeView implements vscode.TreeDataProvider<TreeNode>, vscode
   show(model: LessonTreeModel): void {
     this.model = model;
     this.view.message = model.message ?? '';
-    // The Course's done/total and percent sit beside the view's title.
-    this.view.description = model.summary?.description ?? '';
     this.changed.fire(undefined);
   }
 
@@ -149,6 +147,8 @@ export class LessonTreeView implements vscode.TreeDataProvider<TreeNode>, vscode
       );
       item.id = node.id;
       item.contextValue = 'course';
+      // The Course's done/total and percent: `27/140 · 19%`.
+      item.description = this.model.summary?.description ?? '';
       item.iconPath = new vscode.ThemeIcon('book');
       return item;
     }

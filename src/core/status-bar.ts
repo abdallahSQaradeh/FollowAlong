@@ -4,6 +4,8 @@
  * it and runs the command a click names (spec #12, story 47).
  */
 
+import { formatClock } from './clock-text.js';
+
 /** The commands a status bar item can run when clicked, named as the core knows them. */
 export type StatusBarCommand = 'playPause' | 'speedCycle' | 'seekBackShort';
 
@@ -54,16 +56,7 @@ export interface StatusBarState {
   readonly shortStep: number;
 }
 
-const secondsPerMinute = 60;
 const unknownTime = '--:--';
-
-/** `mm:ss`, with minutes past 59 kept as minutes (`65:30`). */
-export function formatClock(seconds: number): string {
-  const whole = Math.floor(seconds);
-  const minutes = Math.floor(whole / secondsPerMinute);
-  const rest = whole % secondsPerMinute;
-  return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
-}
 
 export function buildStatusBar(state: StatusBarState): StatusBarModel {
   return {

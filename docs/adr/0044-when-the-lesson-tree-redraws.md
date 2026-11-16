@@ -14,8 +14,8 @@ redrawn that often: every redraw makes VS Code ask for the whole tree again.
 2. **Progress is saved:** the 5 s timer while a Lesson plays (this is what moves the
    `12:30 / 40:05` text on), and the saves on pause, seek and end. The text is therefore at most 5 s
    behind the video.
-3. **The learner leaves a Lesson for another** (`playLesson`, so also next/previous and the Next
-   overlay): the Lesson left shows where it was left.
+3. **The learner leaves a Lesson**, for another (`playLesson`, so also next/previous and the Next
+   overlay) or by closing the player: the Lesson left shows where it was left.
 4. **A Resource is attached** (the tree changes).
 5. A Course opens (a full draw, as before).
 
@@ -25,6 +25,14 @@ saves that change nothing visible (a done or not-started Lesson that plays on) d
 At most one redraw per save interval while a Lesson plays, plus one per state change: a minute of
 play is at most 13 redraws, against 240 `timeUpdate`s. The Seam 1 test counts the draws at the UI
 sink and fails if a `timeUpdate` redraws.
+
+## Amends ADR 0024
+
+The Loaded Lesson needed three things from the Course side (`OpenCourseView`). It now needs a
+fourth, `progressChanged()`: the Course side owns the tree and the Resources, the Loaded Lesson
+knows when a state changed or a save happened, and the tree is a pure function of data only the
+Course side holds. A callback was the smallest way to say it (ADR 0024 rejected per-event callbacks,
+four or five of them; this is one, called from three places, and not per event).
 
 ## Considered options
 
