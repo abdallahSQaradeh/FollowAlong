@@ -30,9 +30,13 @@ export interface LessonProgress {
 
 /** The Lesson played last in the Course. */
 export interface LastLesson {
+  /** The Lesson's id, or {@link noLastLesson} after the Course's Progress was reset. */
   readonly lessonId: string;
   readonly savedAt: number;
 }
+
+/** The `lessonId` of a {@link LastLesson} that says no Lesson was played last (ADR 0061). */
+export const noLastLesson = '';
 
 /** Version 1 of `progress.json`'s `data`. */
 export interface CourseProgress {
@@ -119,6 +123,15 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
   return last === undefined ? { lessons } : { lessons, last };
 }
 
+/**
+ * The `savedAt` for a change made now to a Lesson's entry: never at or before the entry's own, so
+ * the change wins the per-Lesson merge of two copies even when the clock has not moved (or went
+ * back).
+ */
+function savedAfter(before: { readonly savedAt: number } | undefined, now: number): number {
+  return before === undefined ? now : Math.max(now, before.savedAt + 1);
+}
+
 /** A Lesson's state: not started, in progress or done (ADR 0030). */
 export function lessonStatus(progress: CourseProgress, lessonId: string): LessonStatus {
   return lessonEntry(progress.lessons, lessonId)?.status ?? 'notStarted';
@@ -141,6 +154,23 @@ export interface ProgressRecorder {
    * whether it ended. The Lesson's status follows (ADR 0030); it is written by the next `save`.
    */
   record(lessonId: string, seen: PlayheadSeen): void;
+  /**
+   * Marks these Lessons done by hand, keeping each one's position. A Lesson with nothing saved gets
+   * a done mark at 0:00. Written by the next `save`.
+   */
+  markDone(lessonIds: readonly string[]): void;
+  /**
+   * Resets these Lessons: their done marks and positions go, so each reads as never played. An
+   * entry is written rather than removed: the newest entry per Lesson wins when two copies are
+   * merged, and a removed one would come back from the other copy (ADR 0061). Written by the next
+   * `save`.
+   */
+  reset(lessonIds: readonly string[]): void;
+  /**
+   * Resets every Lesson, and the Lesson the Course reopens on, as if the Course had never been
+   * played. Written by the next `save`.
+   */
+  resetAll(): void;
   /** Writes what was recorded since the last save, after any save already under way. */
   save(): Promise<void>;
 }
@@ -226,6 +256,27 @@ export async function openProgress(
     }
   }
 
+  /**
+   * Replaces each of these Lessons' entries by hand, in memory: `change` gives the entry's fields
+   * from what was there, and it is stamped after that entry (`savedAfter`).
+   */
+  function changeEntries(
+    lessonIds: readonly string[],
+    change: (before: LessonProgress | undefined) => Omit<LessonProgress, 'savedAt'>,
+  ): void {
+    const lessons: Record<string, LessonProgress> = { ...progress.lessons };
+    for (const lessonId of lessonIds) {
+      const before = lessonEntry(lessons, lessonId);
+      lessons[lessonId] = { ...change(before), savedAt: savedAfter(before, clock.now()) };
+    }
+    progress = { ...progress, lessons };
+    unsaved = true;
+  }
+
+  function resetEntries(lessonIds: readonly string[]): void {
+    changeEntries(lessonIds, () => ({ position: 0, duration: 0 }));
+  }
+
   return {
     current: () => progress,
     record(lessonId, seen) {
@@ -245,6 +296,23 @@ export async function openProgress(
         last: { lessonId, savedAt },
       };
       unsaved = true;
+    },
+    markDone(lessonIds) {
+      changeEntries(lessonIds, (before) => ({
+        position: before?.position ?? 0,
+        duration: before?.duration ?? 0,
+        status: 'done',
+      }));
+    },
+    reset: resetEntries,
+    resetAll() {
+      resetEntries(Object.keys(progress.lessons));
+      if (progress.last !== undefined) {
+        progress = {
+          ...progress,
+          last: { lessonId: noLastLesson, savedAt: savedAfter(progress.last, clock.now()) },
+        };
+      }
     },
     save() {
       saving = saving.then(write);
