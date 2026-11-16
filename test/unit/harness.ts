@@ -218,8 +218,8 @@ export interface Harness {
   settle(): Promise<void>;
   /**
    * VS Code starts again on the same workspace: a new core and a new player page, over the same
-   * disk and the same global and workspace storage. The old core is dropped as a crash would
-   * drop it; call `close()` on it first for a clean window close.
+   * disk and the same global and workspace storage. The old core is dropped (`dispose`) as a
+   * crash would drop it; call `close()` on it first for a clean window close.
    */
   restart(): void;
 }
@@ -325,6 +325,7 @@ export async function createHarness(): Promise<Harness> {
       }
     },
     restart() {
+      harness.core.dispose();
       const windowPlayer = new FakePlayer();
       Object.assign(harness, {
         core: start(windowPlayer),

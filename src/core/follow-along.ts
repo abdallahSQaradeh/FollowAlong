@@ -11,6 +11,9 @@ import { buildLessonTree } from './lesson-tree.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 
+/** How often Progress is saved while a Lesson plays (spec #12, Progress store). */
+const saveIntervalMs = 5000;
+
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
   openCourse(folder: string): Promise<void>;
@@ -35,11 +38,13 @@ interface CurrentLesson {
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, storage, ui, logger } = ports;
+  const { player, storage, clock, ui, logger } = ports;
 
   let current: CurrentLesson | undefined;
   /** The open Course's Progress. */
   let progress: ProgressRecorder | undefined;
+  /** The next save while the Lesson plays. */
+  let saveTimer: Disposable | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
   /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
@@ -60,6 +65,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     };
     player.send(command);
     awaitingAutoplay = command.autoplay;
+  }
+
+  /** Saves every 5 s from now on, until the Lesson stops playing. */
+  function startSaving(): void {
+    saveTimer ??= clock.schedule(saveIntervalMs, () => {
+      saveTimer = undefined;
+      void progress?.save();
+      if (current?.playing === true) {
+        startSaving();
+      }
+    });
+  }
+
+  /** The Lesson stopped playing (paused, ended, failed or replaced): no more saves on the clock. */
+  function stopPlaying(shown: CurrentLesson): void {
+    shown.playing = false;
+    saveTimer?.dispose();
+    saveTimer = undefined;
   }
 
   /** Whether `event` is about the Lesson the player shows now, not a late one about the last. */
@@ -105,6 +128,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           });
         }
         awaitingAutoplay = false;
+        stopPlaying(shown);
         if (shown.engaged) {
           void progress?.save();
         }
@@ -115,6 +139,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         if (shown !== undefined) {
           awaitingAutoplay = false;
           shown.engaged = true;
+          shown.playing = true;
+          startSaving();
         }
         break;
       }

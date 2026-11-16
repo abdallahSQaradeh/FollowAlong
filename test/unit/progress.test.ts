@@ -48,4 +48,37 @@ describe('remembering where the learner is in each Lesson', () => {
       autoplay: false,
     });
   });
+
+  it('saves every 5 s while the Lesson plays', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 12);
+    h.clock.advance(5000);
+    await h.settle();
+    h.player.emit({ type: 'timeUpdate', lessonId: '01 Intro.webm', position: 20, duration: 600 });
+    h.clock.advance(5000);
+    await h.settle();
+    h.player.emit({ type: 'timeUpdate', lessonId: '01 Intro.webm', position: 24, duration: 600 });
+
+    // VS Code stops without a word (a crash): what the last save wrote is what is left.
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 15 });
+  });
+
+  it('saves nothing in the first 5 s of play unless something else asks for a save', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 3);
+    h.clock.advance(4999);
+
+    expect(await reopen(h, course)).toMatchObject({
+      lessonId: '01 Intro.webm',
+      startAt: 0,
+      autoplay: true,
+    });
+    expect(await h.listFiles(course)).toEqual(Object.keys(lessons));
+  });
 });
