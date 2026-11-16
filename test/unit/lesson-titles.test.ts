@@ -1,11 +1,18 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import { createHarness } from './harness.js';
+import { createHarness, type Harness } from './harness.js';
 
 /** The Lesson titles the learner reads in the tree, in tree order, Sections flattened. */
-async function openedTitles(files: Readonly<Record<string, string>>, courseName = 'Course') {
+async function openedTitles(
+  files: Readonly<Record<string, string>>,
+  courseName = 'Course',
+  prepare?: (h: Harness, course: string) => void,
+) {
   const h = await createHarness();
   const course = await h.folder(courseName, files);
+  prepare?.(h, course);
   await h.core.openCourse(course);
   const titles: string[] = [];
   const collect = (nodes: readonly { kind: string; label: string; children?: unknown }[]): void => {
@@ -67,5 +74,85 @@ describe('Lesson titles cleaned from file names', () => {
       '01',
       'Lesson 2 -',
     ]);
+  });
+});
+
+describe('Lesson titles from a .txt title list', () => {
+  const lessons = {
+    '01 Welcome.mp4': 'v',
+    'Section 2/02 Setup.mp4': 'v',
+    'Section 2/03 Tools.webm': 'v',
+  };
+
+  it('uses the lines of a list with one line per Lesson, in Lesson order', async () => {
+    const titles = await openedTitles({
+      ...lessons,
+      'titles.txt': 'Welcome to the Course\nSetting up your machine\nThe tools we use\n',
+    });
+
+    expect(titles).toEqual([
+      'Welcome to the Course',
+      'Setting up your machine',
+      'The tools we use',
+    ]);
+  });
+
+  it('ignores a list whose line count differs from the Lesson count', async () => {
+    const tooFew = await openedTitles({ ...lessons, 'titles.txt': 'One\nTwo\n' });
+    const tooMany = await openedTitles({ ...lessons, 'titles.txt': 'One\nTwo\nThree\nFour\n' });
+
+    expect(tooFew).toEqual(['Welcome', 'Setup', 'Tools']);
+    expect(tooMany).toEqual(['Welcome', 'Setup', 'Tools']);
+  });
+
+  it('reads Windows line endings, a byte order mark, blank lines and padding', async () => {
+    const titles = await openedTitles({
+      ...lessons,
+      'titles.txt':
+        '\uFEFFWelcome to the Course\r\n\r\n  Setting up  \r\n\r\nThe tools we use\r\n\r\n',
+    });
+
+    expect(titles).toEqual(['Welcome to the Course', 'Setting up', 'The tools we use']);
+  });
+
+  it('takes the first .txt whose line count fits, so a stray notes file does not block it', async () => {
+    const titles = await openedTitles({
+      ...lessons,
+      'a notes.txt': 'Read me first\nAnd this\n',
+      'b titles.txt': 'One\nTwo\nThree\n',
+      'c other.txt': 'Four\nFive\nSix\n',
+    });
+
+    expect(titles).toEqual(['One', 'Two', 'Three']);
+  });
+
+  it('finds the list in a wrapper folder around the Lessons', async () => {
+    const titles = await openedTitles({
+      'Wrapper/titles.txt': 'One\nTwo\n',
+      'Wrapper/Inner/a.mp4': 'v',
+      'Wrapper/Inner/b.mp4': 'v',
+    });
+
+    expect(titles).toEqual(['One', 'Two']);
+  });
+
+  it('does not take a .txt inside a Section for the Course title list', async () => {
+    const titles = await openedTitles({
+      'a.mp4': 'v',
+      'b.mp4': 'v',
+      'Section 1/c.mp4': 'v',
+      'Section 1/lines.txt': 'One\nTwo\nThree\n',
+    });
+
+    expect(titles).toEqual(['a', 'b', 'c']);
+  });
+
+  it('cleans file names when the list cannot be read, and says so', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { 'a.mp4': 'v', 'titles.txt': 'One\n' });
+    h.makeUnreadable(join(course, 'titles.txt'));
+    await h.core.openCourse(course);
+    expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['a']);
+    expect(h.logger.entries.filter((entry) => entry.level === 'warn')).toHaveLength(1);
   });
 });

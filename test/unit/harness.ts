@@ -243,8 +243,8 @@ export interface Harness {
   /** The temp dir every fixture lives in. */
   readonly root: string;
   /**
-   * Makes reading `folder` fail as it does for a folder the learner may not read (Windows
-   * "System Volume Information"). Containers often run as root, which reads everything, so the
+   * Makes reading `folder` (or a file) fail as it does for a folder the learner may not read
+   * (Windows "System Volume Information"). Containers often run as root, which reads everything, so the
    * denial is applied at the File system port with the error the Node adapter gives for EACCES.
    */
   makeUnreadable(folder: string): void;
@@ -278,6 +278,14 @@ export async function createHarness(): Promise<Harness> {
         );
       }
       return nodeFileSystem.readDirectory(path);
+    },
+    readText(path) {
+      if (unreadable.has(path)) {
+        return Promise.reject(
+          new FileSystemError('readOnly', path, `EACCES: permission denied, open '${path}'`),
+        );
+      }
+      return nodeFileSystem.readText(path);
     },
   };
   const ports: Ports = {

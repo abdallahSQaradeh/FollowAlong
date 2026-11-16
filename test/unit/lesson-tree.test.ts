@@ -130,7 +130,7 @@ describe('the Lesson tree of an opened Course', () => {
       'slides.pdf': 'x',
       'page.html': 'x',
       'lesson.srt': 'x',
-      'notes.txt': 'x',
+      'notes.txt': 'Some notes\nand more notes\n',
       'code.zip': 'x',
       'Resources/handout.pdf': 'x',
       'Resources/links.html': 'x',

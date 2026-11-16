@@ -24,3 +24,23 @@ export function cleanFileName(fileName: string, courseName: string): string {
   const cleaned = withoutCourse.replace(LEADING_NUMBER, '').replace(LESSON_PREFIX, '').trim();
   return cleaned === '' ? stem : cleaned;
 }
+
+/** The lines of a title list: no byte order mark, trimmed, and without blank lines. */
+function titleLines(text: string): string[] {
+  return text
+    .replace(/^\uFEFF/u, '')
+    .split(/\r\n|\r|\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+}
+
+/**
+ * The titles of the first title list (in the order given) with exactly `lessonCount` lines, or
+ * `undefined` when none fits, so a notes file with another line count never blocks the real list.
+ */
+export function titlesFromLists(
+  lists: readonly string[],
+  lessonCount: number,
+): string[] | undefined {
+  return lists.map(titleLines).find((lines) => lines.length === lessonCount);
+}
