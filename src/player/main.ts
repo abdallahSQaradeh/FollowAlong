@@ -520,7 +520,7 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       soundSettled(undefined, media);
       break;
     case 'zoom':
-      zoomControls.reset();
+      zoomControls.run(command.action);
       break;
     case 'takeSnapshot':
       post({ type: 'snapshot', snapshot: snapshotOf(media) });
