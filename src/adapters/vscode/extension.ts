@@ -25,6 +25,9 @@ export const commands = {
   seekForwardShort: 'followalong.seekForwardShort',
   seekBackLong: 'followalong.seekBackLong',
   seekForwardLong: 'followalong.seekForwardLong',
+  /** `Ctrl+'` `↑` / `↓`: one rung up or down the speed ladder. */
+  speedUp: 'followalong.speedUp',
+  speedDown: 'followalong.speedDown',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
 } as const;
@@ -121,6 +124,12 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.seekForwardLong, () => {
       core.seekStep('long', 'forward');
+    }),
+    register(commands.speedUp, () => {
+      core.speedStep('up');
+    }),
+    register(commands.speedDown, () => {
+      core.speedStep('down');
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );
