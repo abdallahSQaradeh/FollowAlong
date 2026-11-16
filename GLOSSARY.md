@@ -17,7 +17,7 @@ One video inside a Course.
 _Avoid_: Episode, clip, lecture
 
 **Course picker**:
-The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, or add a Courses root. It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
+The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, add a Courses root, or _Browse…_ folders (the **Folder browser**). It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
 _Avoid_: Course list, library view
 
 **Folder browser**:

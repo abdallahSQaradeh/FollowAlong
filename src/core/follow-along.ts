@@ -438,7 +438,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return;
     }
     const playing = loaded.lesson();
-    const openLesson = openedCourse && lessonOfVideo(openedCourse, video);
+    const openLesson = openedCourse === undefined ? undefined : lessonOfVideo(openedCourse, video);
     if (
       openLesson !== undefined &&
       openedCourse !== undefined &&
@@ -450,6 +450,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return;
     }
     if (
+      video === undefined &&
       playing !== undefined &&
       openedCourse !== undefined &&
       sameFolder(openedCourse.folder, folder)

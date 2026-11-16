@@ -26,7 +26,8 @@ export interface QuickPickItemModel<Intent> {
   /**
    * Whether picking the item leaves the quick pick open (a folder to drill into, ADR 0066). Like a
    * title bar button, the core is told the item's intent and may replace the model; the text
-   * the learner typed is cleared, because it filtered the list that is now replaced.
+   * the learner typed is cleared when the core replaces the list under another title, because it
+   * filtered the list that is gone.
    */
   readonly keepsOpen?: boolean;
 }

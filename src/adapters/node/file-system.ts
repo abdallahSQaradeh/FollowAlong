@@ -97,17 +97,20 @@ export function createNodeFileSystem(): FileSystem {
       const found = await Promise.all(
         letters.map(async (letter) => {
           const drive = `${letter}:\\`;
+          let timer: NodeJS.Timeout | undefined;
           const present = await Promise.race([
             stat(drive).then(
               () => true,
               () => false,
             ),
-            new Promise<boolean>((resolve) =>
-              setTimeout(() => {
+            new Promise<boolean>((resolve) => {
+              timer = setTimeout(() => {
                 resolve(false);
-              }, driveTimeoutMs),
-            ),
-          ]);
+              }, driveTimeoutMs);
+            }),
+          ]).finally(() => {
+            clearTimeout(timer);
+          });
           return present ? [drive] : [];
         }),
       );

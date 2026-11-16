@@ -64,9 +64,12 @@ export async function showCoursePicker(
   /** Counts the folders the learner asked for: of two, only the later one is shown. */
   let newestFolder = 0;
 
+  /** Whether the Folder browser is still looking at what it lists: it is busy, whatever else lands. */
+  let browsingBusy = false;
+
   const view = (): QuickPickModel<PickerIntent> =>
     browsing !== undefined
-      ? buildFolderBrowser(browsing)
+      ? { ...buildFolderBrowser(browsing), ...(browsingBusy ? { busy: true } : {}) }
       : buildCoursePicker({
           hasRoots: roots.length > 0,
           courses,
@@ -117,37 +120,57 @@ export async function showCoursePicker(
     await redraw();
   };
 
+  /** Shows the Folder browser at `next`, busy while it goes on looking at what it lists. */
+  const showBrowser = (next: FolderBrowserView, looking: boolean): void => {
+    browsing = next;
+    browsingBusy = looking;
+    picker.update(view());
+  };
+
   /**
    * Shows the top of the Folder browser at once: the Courses roots, or the drives or home folder
    * when there is none. Which of them hold videos, and (under roots) the drives or home folder
    * to reach what is outside them, follow when they have been looked at.
    */
   const browseTop = async (stale: () => boolean): Promise<void> => {
-    const named = roots.map((path): BrowsedFolder => ({ path }));
-    browsing = { kind: 'top', start: named, elsewhere: [] };
-    picker.update({ ...view(), busy: true });
+    showBrowser(
+      { kind: 'top', start: roots.map((path): BrowsedFolder => ({ path })), elsewhere: [] },
+      true,
+    );
     const found = await ports.fileSystem.startingFolders();
     if (stale()) {
       return;
     }
     const outside = found.filter((path) => !roots.some((root) => sameFolder(root, path)));
     const start = roots.length === 0 ? outside : roots;
-    const elsewhere = roots.length === 0 ? [] : outside;
-    const places = [...start, ...elsewhere].map((path): BrowsedFolder => ({ path }));
-    browsing = {
+    const places = [...start, ...(roots.length === 0 ? [] : outside)].map(
+      (path): BrowsedFolder => ({ path }),
+    );
+    const top = (folders: readonly BrowsedFolder[]): FolderBrowserView => ({
       kind: 'top',
-      start: places.slice(0, start.length),
-      elsewhere: places.slice(start.length),
-    };
-    picker.update({ ...view(), busy: true });
+      start: folders.slice(0, start.length),
+      elsewhere: folders.slice(start.length),
+    });
+    showBrowser(top(places), true);
     const looked = await lookForVideos(ports, places);
     if (!stale()) {
-      browsing = {
-        kind: 'top',
-        start: looked.slice(0, start.length),
-        elsewhere: looked.slice(start.length),
-      };
-      picker.update(view());
+      showBrowser(top(looked), false);
+    }
+  };
+
+  /** Shows what is in `folder`; the list the learner picked it from stays until it is read. */
+  const browseFolder = async (folder: string, stale: () => boolean): Promise<void> => {
+    browsingBusy = true;
+    picker.update(view());
+    const content = await readBrowsedFolder(ports, folder);
+    if (stale()) {
+      return;
+    }
+    // The folders are shown at once; which of them hold videos is looked at while they are.
+    showBrowser({ kind: 'folder', folder, ...content }, true);
+    const folders = await lookForVideos(ports, content.folders);
+    if (!stale()) {
+      showBrowser({ kind: 'folder', folder, folders, videos: content.videos }, false);
     }
   };
 
@@ -157,33 +180,11 @@ export async function showCoursePicker(
     const mine = newestFolder;
     /** Whether the picker is closed, or the learner asked for another folder since. */
     const stale = (): boolean => closed || mine !== newestFolder;
-    if (folder === undefined) {
-      await browseTop(stale);
-      return;
-    }
-    // Busy while the folder is read, the list the learner picked from still in view.
     const previous = browsing;
-    picker.update({ ...view(), busy: true });
     try {
-      const content = await readBrowsedFolder(ports, folder);
-      if (stale()) {
-        return;
-      }
-      // The folders are shown at once; which of them hold videos is looked at while they are.
-      browsing = { kind: 'folder', folder, ...content };
-      picker.update({ ...view(), busy: true });
-      const folders = await lookForVideos(ports, content.folders);
-      if (!stale()) {
-        browsing = { kind: 'folder', folder, folders, videos: content.videos };
-        picker.update(view());
-      }
+      await (folder === undefined ? browseTop(stale) : browseFolder(folder, stale));
     } catch (error) {
-      if (!(error instanceof FileSystemError)) {
-        ports.logger.log({
-          level: 'error',
-          message: `Could not browse ${folder}: ${describe(error)}`,
-        });
-      } else {
+      if (error instanceof FileSystemError && folder !== undefined) {
         ports.logger.log({
           level: 'warn',
           message: `Cannot browse ${folder} (${error.message}).`,
@@ -192,10 +193,18 @@ export async function showCoursePicker(
           severity: 'warning',
           text: `FollowAlong can't read the folder “${folderLabel(folder)}”.`,
         });
+      } else {
+        ports.logger.log({
+          level: 'error',
+          message: `Could not browse ${folder ?? 'the start'}: ${describe(error)}`,
+        });
       }
       if (!stale()) {
-        // Back to the list the learner picked from, not busy any more.
-        browsing = previous;
+        // Back to the list the learner picked from (or, at the top, what is known of it), not busy.
+        if (folder !== undefined) {
+          browsing = previous;
+        }
+        browsingBusy = false;
         picker.update(view());
       }
     }
@@ -215,6 +224,7 @@ export async function showCoursePicker(
       case 'backToCourses':
         newestFolder += 1;
         browsing = undefined;
+        browsingBusy = false;
         picker.update(view());
         break;
       case 'browseTo':

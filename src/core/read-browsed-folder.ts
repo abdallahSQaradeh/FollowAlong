@@ -7,7 +7,12 @@ import { join } from 'node:path';
 import { isLessonFile, naturalOrder } from './course-model.js';
 import { isWalked } from './course-scanner.js';
 import type { BrowsedFolder, BrowsedVideo } from './folder-browser.js';
-import { FileSystemError, type Ports } from './ports.js';
+import { type DirectoryEntry, FileSystemError, type Ports } from './ports.js';
+
+/** Whether the directory entry is a video: a file that is a Lesson. */
+function isVideo(entry: DirectoryEntry): boolean {
+  return entry.kind === 'file' && isLessonFile(entry.name);
+}
 
 /** What a folder holds, as the browser lists it. */
 export interface BrowsedContent {
@@ -32,7 +37,7 @@ export async function readBrowsedFolder(
       .map((entry) => ({ name: entry.name, path: join(folder, entry.name) }))
       .sort(byName),
     videos: entries
-      .filter((entry) => entry.kind === 'file' && isLessonFile(entry.name))
+      .filter(isVideo)
       .map((entry) => ({ name: entry.name, path: join(folder, entry.name) }))
       .sort(byName),
   };
@@ -52,7 +57,7 @@ export async function lookForVideos(
         const entries = await ports.fileSystem.readDirectory(folder.path);
         return {
           ...folder,
-          holdsVideos: entries.some((entry) => entry.kind === 'file' && isLessonFile(entry.name)),
+          holdsVideos: entries.some(isVideo),
         };
       } catch (error) {
         if (!(error instanceof FileSystemError)) {

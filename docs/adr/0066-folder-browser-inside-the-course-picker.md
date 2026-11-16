@@ -67,7 +67,8 @@ drill-down inside the quick pick". These are the choices it leaves open.
   position, with autoplay), not the Course's last Lesson or the first (story 15). There is no
   parallel open path.
 - **A video of the Course that is open** plays through `playLesson` without opening the Course
-  again; **_Open as Course_ on the open Course** changes nothing that plays (ADR 0041).
+  again (a video the open Course does not know yet, say one downloaded since, opens the Course
+  again so it is found); **_Open as Course_ on the open Course** changes nothing that plays (ADR 0041).
 - **A Course outside the roots** gets its folder added to the player's folders (ADR 0022, D9), so
   the page reloads once; that is accepted. The Course is remembered in Recent as any other.
 - **An unreadable folder** is a warning (“FollowAlong can't read the folder “X”.”) and a log line;
@@ -75,6 +76,7 @@ drill-down inside the quick pick". These are the choices it leaves open.
 
 ## Not done here
 
-Hiding a stray folder (#38), the Progress line (#36) and _Open in new window_ (#40). The File system
-port still has no way to cancel a read, so a slow folder read finishes in the background when the
+Hiding a stray folder (#38), the Progress line (#36) and _Open in new window_ (#40). The 1.5 s guard on a
+drive covers its first `stat` only: a drive that answers it and then hangs in a folder read keeps the
+quick pick busy, because the File system port still has no way to cancel a read, so a slow folder read finishes in the background when the
 learner has gone on or closed the picker; its result is dropped.

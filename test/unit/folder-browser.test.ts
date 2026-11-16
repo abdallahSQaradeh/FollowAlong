@@ -1,6 +1,6 @@
 import { isAbsolute, join, parse, sep } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createNodeFileSystem } from '../../src/adapters/node/file-system.js';
 import { buildFolderBrowser } from '../../src/core/folder-browser.js';
@@ -75,8 +75,8 @@ describe('walking folders in the Folder browser', () => {
 
   it('goes back up one folder at a time, also above a Courses root', async () => {
     const h = await createHarness();
-    const courses = await h.folder('Library/Courses', { 'Node/01 Intro.mp4': 'v' });
-    await h.folder('Library/Other', { 'x/01 Intro.mp4': 'v' });
+    const courses = await h.folder('Downloads/Courses', { 'Node/01 Intro.mp4': 'v' });
+    await h.folder('Downloads/Other', { 'x/01 Intro.mp4': 'v' });
     h.config.set('coursesRoots', [courses]);
     await browse(h);
     h.ui.choose('Courses');
@@ -440,10 +440,9 @@ describe('the Folder browser while the Courses roots are scanned', () => {
     await h.ui.pickerOpened();
     h.ui.choose('Browse…');
     release();
-    // The scan is done once its result is cached.
-    await vi.waitFor(() => {
-      expect(h.storage.global.get('courseListCache')).toBeDefined();
-    });
+    // The scan reads the disk for real: it has landed once those reads are done and answered.
+    await h.settle();
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(rows(h.ui.picker)).toEqual(['Back to Courses', 'Learning']);
   });
@@ -497,7 +496,84 @@ describe('the File system port’s starting folders', () => {
     expect(folders.length).toBeGreaterThan(0);
     for (const folder of folders) {
       expect(isAbsolute(folder)).toBe(true);
-      expect(await createNodeFileSystem().readDirectory(folder)).toBeDefined();
+      expect(await createNodeFileSystem().exists(folder)).toBe(true);
     }
+  });
+});
+
+describe('Browse… edge cases found in review', () => {
+  it('opens the Course again for a picked video the open Course does not know yet', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'React/01 Intro.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+    await h.core.openCourse(join(learning, 'React'));
+    h.player.ready();
+    // Downloaded after the Course was opened.
+    await h.folder('Learning', { 'React/02 State.mp4': 'v' });
+    h.player.clearSent();
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+    for (const label of ['Learning', 'React']) {
+      h.ui.choose(label);
+      await h.ui.pickerShown();
+    }
+
+    h.ui.choose('02 State.mp4');
+    await picking;
+
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: '02 State.mp4', autoplay: true },
+    ]);
+    expect(h.ui.lessonTree?.nodes).toHaveLength(2);
+  });
+
+  it('stops being busy, and says why in the log, when a root cannot be looked at', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Node/01 Intro.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.breakReads(learning, 'the drive went away in a way nobody planned for');
+
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual(['Back to Courses', 'Learning']);
+    expect(h.logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        message: expect.stringContaining('the drive went away') as unknown,
+      }),
+    );
+  });
+
+  it('stays busy while it looks at folders, also when the Course scan lands in the meantime', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Node/01 Intro.mp4': 'v',
+      'Node/Part 1/02 More.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    const scan = h.holdFirstRead(learning);
+    void h.core.pickCourse();
+    await scan.reached;
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+    h.ui.choose('Learning');
+    await h.ui.pickerShown();
+    const release = h.holdReads(join(learning, 'Node', 'Part 1'));
+    h.ui.choose('Node');
+    await h.ui.nextUpdate();
+
+    scan.release();
+    // Real reads take a few milliseconds: this is long enough for the scan to land.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(h.ui.pickerBusy).toBe(true);
+    release();
+    await h.ui.pickerShown();
+    expect(h.ui.buttonsOf('Part 1')).toEqual(['Open as Course']);
   });
 });
