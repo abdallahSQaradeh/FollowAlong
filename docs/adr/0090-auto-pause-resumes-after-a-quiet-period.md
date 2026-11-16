@@ -1,0 +1,32 @@
+# Auto-pause resumes after a quiet period, and plays through once the learner plays
+
+#60 adds what ADR 0052 left for later: with `pauseAndResume`, a Lesson that typing paused goes on
+by itself once the learner stops typing (story 99), and the learner's own play of it lets typing
+play through (`overridden`, story 102). `stepAutoPause` stays pure, and the Loaded Lesson keeps the
+timer on the Clock port. These are the choices spec #12 left open. Sources: #60 and its routed
+notes, ADR 0049, ADR 0052, and the orchestrator's answers to the #60 plan.
+
+- **The quiet period runs exactly while auto-pause holds a pause it caused in `pauseAndResume`.**
+  The step function derives `startQuiet` and `cancelQuiet` from that one rule, so every way out of
+  `autoPaused` (the learner's pause, a play, the Lesson's end or change, the setting) stops it, and
+  switching from `pause` to `pauseAndResume` during an auto-pause starts it. Each edit starts it
+  again. Its length is read when it starts, so a changed setting counts from the next edit.
+- **Auto-resume is the core's own `play`, with no `seekBy`** (story 103): Rewind is for a resume by
+  hand (ADR 0016).
+- **`played` has a source.** The Loaded Lesson knows what it asked for: the play/pause command's
+  `play` is the learner's, auto-pause's resume is `autoResume`, a `load`'s autoplay is `autoplay`
+  (a picked or next Lesson, a moved or reloaded page), and a play nobody asked for is the learner's
+  click or the native controls. Only the learner's play of a Lesson auto-pause paused makes it
+  `overridden`; its own resume and an autoplay arm it again, so the next edit pauses.
+- **`overridden` lasts until the next pause of any kind**: the learner's, one the player reports
+  (a refused play, for one), the Lesson's end, or the learner leaving it. Then it is `armed`.
+- **It resumes only from the page that holds the pause.** A move (ADR 0049) or a reload starts a
+  page that has had no click, so VS Code would refuse a `play` there (#12 D3): a new page drops
+  the auto-pause, and the Lesson stays paused as a plain pause, without "Paused (typing)". A quiet
+  period that ends while the player has not yet reported the pause is dropped the same way.
+- **A refused auto-resume ends the auto-pause.** The pause that answers it is a plain pause, and
+  the learner is told once to press play in the player, as for any refused play (ADR 0052,
+  Consequences).
+- **The learner's pause is never resumed** (story 101): it takes auto-pause back to `armed`, and
+  only `autoPaused` resumes. A late `paused {byUser: true}` from an earlier `load` is not about the
+  Lesson (the `shownLesson` guard), so it does not end the auto-pause.
