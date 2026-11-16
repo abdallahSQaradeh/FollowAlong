@@ -502,6 +502,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     try {
       course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
     } catch (error) {
+      // A later open replaced this one: what this folder failed with no longer matters.
+      if (error instanceof FileSystemError && superseded()) {
+        return;
+      }
       if (FileSystemError.is(error, 'notFound')) {
         ui.showMessage({
           severity: 'error',

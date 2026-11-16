@@ -118,6 +118,22 @@ describe('opening a Course', () => {
     expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['b', 'Part 2']);
   });
 
+  it('says nothing about an earlier open that fails after a later one', async () => {
+    const h = await createHarness();
+    const moved = join(h.root, 'Moved course');
+    const fast = await h.folder('Fast course', { 'b.webm': 'video' });
+    const release = h.holdReads(moved);
+
+    const first = h.core.openCourse(moved);
+    const second = h.core.openCourse(fast);
+    await second;
+    release();
+    await first;
+
+    expect(h.ui.messages).toEqual([]);
+    expect(h.player.shown.map((shown) => shown.resourceRoots[0])).toEqual([fast]);
+  });
+
   it('replaces the open Course in the player that is already open', async () => {
     const h = await createHarness();
     const first = await h.folder('first', { 'a.webm': 'video' });
