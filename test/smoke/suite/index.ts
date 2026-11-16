@@ -90,7 +90,7 @@ async function aClickOnThePicture(
         .flatMap((context) => context.pages())
         .flatMap((page) => page.frames());
     // The player page is a frame inside the webview's frame, inside the workbench page.
-    const overlay = await waitForAsync('the player page among the VS Code frames', async () => {
+    const findOverlay = async () => {
       for (const frame of frames()) {
         const found = frame.locator('.overlay');
         if ((await found.count().catch(() => 0)) === 1) {
@@ -98,6 +98,14 @@ async function aClickOnThePicture(
         }
       }
       return undefined;
+    };
+    const overlay = await waitForAsync(
+      'the player page among the VS Code frames',
+      findOverlay,
+    ).catch((error: unknown) => {
+      // Say which frames there were, so a failure in CI can be read without a rerun.
+      const seen = frames().map((frame) => frame.url() || '(no URL)');
+      throw new Error(`${String(error)}; frames seen: ${seen.join(', ') || 'none'}`);
     });
     await overlay.click({ timeout: 10_000 });
 

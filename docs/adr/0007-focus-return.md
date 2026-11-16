@@ -58,6 +58,8 @@ of it.
 - The native overflow menu (playback speed, picture-in-picture) and the fullscreen button are not
   reported as interactions. Opening the menu must not close it by moving focus away. Speed has
   FollowAlong's own controls.
+- The prototype found that in the floating-window spot, returning focus raises the main window
+  over the floating one. The ticket for that spot decides whether focus returns there.
 - When a later ticket makes the player change the volume itself, it must mark that change as the
   player's, just as `play()` does, or `volumechange` will report it as the learner's.
 - Seam 2's default harness posts with Playwright's `page.evaluate`, which counts as a user

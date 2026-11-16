@@ -15,6 +15,11 @@
       "pattern": "^\\(Use `exe --trace-deprecation \\.\\.\\.` to show where the warning was created\\)$",
       "reason": "The same hint line as the entry above, as Linux names the binary ('exe'). It follows the allowlisted [AgentHost:stderr] url.parse() line when VS Code's agent host prints it during the smoke run (seen in CI on Ubuntu). The deprecation line itself is still checked.",
       "logs": ["test-smoke"]
+    },
+    {
+      "pattern": "^Warning: 'remote-debugging-port' is not in the list of known options, but still passed to Electron/Chromium\\.$",
+      "reason": "scripts/run-smoke.mjs passes --remote-debugging-port on purpose, so the smoke suite can click in the player page with real input (ADR 0007). VS Code's command line knows only its own options and says so, then passes the switch to Chromium as needed. Seen in CI on Windows.",
+      "logs": ["test-smoke"]
     }
   ]
 }
