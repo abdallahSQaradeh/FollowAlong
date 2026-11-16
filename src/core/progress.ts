@@ -289,8 +289,11 @@ export async function openProgress(
   let failureShown = false;
   /** The learner is told once that Progress went to the extension storage instead. */
   let keptElsewhereShown = false;
-  /** Set while saves keep failing, so a run of failures is logged once. */
-  let failing = false;
+  /**
+   * What kind of failure saves keep meeting, so a run of failures is logged once, and a failure of
+   * another kind is logged again: the file held for a moment (`busy`), or anything else.
+   */
+  let failing: 'busy' | 'error' | undefined;
 
   async function write(): Promise<void> {
     if (!unsaved) {
@@ -299,7 +302,7 @@ export async function openProgress(
     unsaved = false;
     try {
       const written = await data.write(progressFile, progress);
-      failing = false;
+      failing = undefined;
       if (written.merged !== undefined) {
         // The file held Lessons this session could not read when the Course opened.
         progress = mergeProgress(written.merged, progress);
@@ -336,8 +339,8 @@ export async function openProgress(
       unsaved = true;
       if (error instanceof CourseDataBusyError) {
         // The file is held for a moment: nothing for the learner to act on (ADR 0074).
-        if (!failing) {
-          failing = true;
+        if (failing !== 'busy') {
+          failing = 'busy';
           logger.log({ level: 'warn', message: `Progress not saved yet: ${error.message}` });
         }
         return;
@@ -347,8 +350,8 @@ export async function openProgress(
         : error instanceof Error
           ? error.message
           : String(error);
-      if (!failing) {
-        failing = true;
+      if (failing !== 'error') {
+        failing = 'error';
         logger.log({ level: 'error', message: `Could not save Progress for ${course}: ${reason}` });
       }
       if (!failureShown) {

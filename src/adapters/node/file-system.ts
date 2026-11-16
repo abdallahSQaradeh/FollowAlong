@@ -147,17 +147,26 @@ async function removeLockOf(lockPath: string, token: string): Promise<void> {
  */
 async function takeOverLeftBehind(lockPath: string): Promise<void> {
   const token = await lockToken(lockPath);
-  const old = await stat(lockPath).then(
-    (found) => Date.now() - found.mtimeMs >= leftBehindLockMs,
-    () => false,
-  );
-  if (!old) {
-    return;
-  }
-  // A lock whose token cannot be read is judged by its age alone.
-  await (token === undefined ? rm(lockPath, { force: true }) : removeLockOf(lockPath, token)).catch(
+  const modifiedMs = await stat(lockPath).then(
+    (found) => found.mtimeMs,
     () => undefined,
   );
+  if (modifiedMs === undefined || Date.now() - modifiedMs < leftBehindLockMs) {
+    return;
+  }
+  if (token !== undefined) {
+    await removeLockOf(lockPath, token).catch(() => undefined);
+    return;
+  }
+  // A lock whose token cannot be read is judged by its age alone: removed only if it is still the
+  // same file, untouched since it was found old (another window may have taken it over since).
+  const stillSame = await stat(lockPath).then(
+    (found) => found.mtimeMs === modifiedMs,
+    () => false,
+  );
+  if (stillSame) {
+    await rm(lockPath, { force: true }).catch(() => undefined);
+  }
 }
 
 /** See {@link FileSystem.lock}. */

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -485,6 +485,34 @@ describe('Course data another window changes while this one has the Course open'
     h.player.ready();
     h.core.playLesson(intro);
     expect(h.player.sent.at(-1)).toMatchObject({ lessonId: intro, startAt: 0 });
+  });
+
+  it('logs a different failure that follows a save the file was held for', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { [intro]: 'video' });
+    const progressFile = join(course, '.followalong', 'progress.json');
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h.player, intro, 100);
+    pause(h.player, intro);
+    await h.settle();
+    h.makeUnreadable(progressFile);
+    playTo(h.player, intro, 150);
+    pause(h.player, intro);
+    await h.settle();
+
+    // The Course folder is moved away while open: the next save fails for another reason.
+    await rename(course, `${course}-moved`);
+    playTo(h.player, intro, 200);
+    pause(h.player, intro);
+    await h.settle();
+
+    expect(h.logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        message: expect.stringContaining('the Course folder is missing') as unknown,
+      }),
+    );
   });
 
   it('keeps the Resources both windows attach at the same moment', async () => {
