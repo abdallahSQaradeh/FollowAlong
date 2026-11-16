@@ -26,7 +26,10 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
   }
 
   getChildren(node?: LessonTreeNode): LessonTreeNode[] {
-    return [...(node === undefined ? this.model.nodes : (node.children ?? []))];
+    if (node === undefined) {
+      return [...this.model.nodes];
+    }
+    return node.kind === 'section' ? [...node.children] : [];
   }
 
   getTreeItem(node: LessonTreeNode): vscode.TreeItem {

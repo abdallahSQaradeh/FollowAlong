@@ -88,7 +88,7 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
             {
               id: `${idPrefix}${file}`,
               path: join(listing.path, file),
-              title: file.slice(0, file.length - extname(file).length),
+              title: file,
               container,
             },
           ];

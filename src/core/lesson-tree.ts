@@ -4,14 +4,21 @@
  */
 import type { Course, Outline, Section } from './course-model.js';
 
-export interface LessonTreeNode {
-  /** A Lesson's id (its path in the Course), or a Section's folder path ending in `/`. */
-  readonly id: string;
-  readonly kind: 'section' | 'lesson';
-  readonly label: string;
-  /** A Section's Lessons and nested Sections; always absent on a Lesson. */
-  readonly children?: readonly LessonTreeNode[];
-}
+export type LessonTreeNode =
+  | {
+      readonly kind: 'lesson';
+      /** The Lesson's id: its path in the Course. */
+      readonly id: string;
+      readonly label: string;
+    }
+  | {
+      readonly kind: 'section';
+      /** The Section's folder path in the Course, ending in `/`. */
+      readonly id: string;
+      readonly label: string;
+      /** The Section's Lessons, then its nested Sections. */
+      readonly children: readonly LessonTreeNode[];
+    };
 
 export interface LessonTreeModel {
   /** Shown instead of the tree, when there is nothing to list. */

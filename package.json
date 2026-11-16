@@ -63,7 +63,7 @@
     "viewsWelcome": [
       {
         "view": "followalong.lessons",
-        "contents": "Open a Course to list its Lessons here.\n[Open Course…](command:followalong.openCourse)"
+        "contents": "Open a Course folder to list its Lessons here.\n[Open Course…](command:followalong.openCourse)"
       }
     ],
     "menus": {

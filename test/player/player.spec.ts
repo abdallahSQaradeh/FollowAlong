@@ -51,9 +51,7 @@ test.describe('the player', () => {
     expect(last?.duration).toBeCloseTo(webmDuration, 1);
   });
 
-  test('plays an MP4 Lesson straight from its file, with sound where AAC plays', async ({
-    page,
-  }) => {
+  test('plays an MP4 Lesson straight from its file', async ({ page }) => {
     const player = await openPlayer(page);
     const mp4Id = 'Section 1/02 Setup.mp4';
 

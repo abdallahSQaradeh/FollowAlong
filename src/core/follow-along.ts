@@ -93,7 +93,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   const subscriptions: Disposable[] = [player.onEvent(onPlayerEvent)];
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
-  let openCourse: Course | undefined;
+  let openedCourse: Course | undefined;
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson): void {
@@ -125,7 +125,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         throw error;
       }
-      openCourse = course;
+      openedCourse = course;
       const first = lessonsInOrder(course)[0];
       if (first === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
@@ -138,18 +138,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       play(course, first);
     },
     playLesson(lessonId) {
+      const course = openedCourse;
       const lesson =
-        openCourse === undefined
-          ? undefined
-          : lessonsInOrder(openCourse).find((l) => l.id === lessonId);
-      if (openCourse === undefined || lesson === undefined) {
+        course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+      if (course === undefined || lesson === undefined) {
         logger.log({
           level: 'warn',
           message: `Cannot play ${lessonId}: it is not a Lesson of the open Course.`,
         });
         return;
       }
-      play(openCourse, lesson);
+      play(course, lesson);
     },
     dispose() {
       for (const subscription of subscriptions) {

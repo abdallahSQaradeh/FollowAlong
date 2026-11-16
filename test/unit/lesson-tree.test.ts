@@ -5,21 +5,26 @@ import { describe, expect, it } from 'vitest';
 import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
 import { createHarness } from './harness.js';
 
-/** The tree as the learner reads it: Lessons by label, Sections as `label: [children]`. */
+/**
+ * The tree as the learner reads it: Lessons by file name without its extension, Sections as
+ * `label: [children]`. Only the first test below looks at the whole file name.
+ */
 function outline(nodes: readonly LessonTreeNode[] | undefined): unknown[] {
   return (nodes ?? []).map((node) =>
-    node.kind === 'section' ? { [node.label]: outline(node.children) } : node.label,
+    node.kind === 'section'
+      ? { [node.label]: outline(node.children) }
+      : node.label.replace(/\.(mp4|webm)$/i, ''),
   );
 }
 
 describe('the Lesson tree of an opened Course', () => {
-  it('lists every .mp4 and .webm Lesson, titled by its file name', async () => {
+  it('lists every .mp4 and .webm Lesson, titled by its raw file name', async () => {
     const h = await createHarness();
     const course = await h.folder('Course', { 'intro.mp4': 'v', 'setup.webm': 'v' });
 
     await h.core.openCourse(course);
 
-    expect(outline(h.ui.lessonTree?.nodes)).toEqual(['intro', 'setup']);
+    expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['intro.mp4', 'setup.webm']);
   });
 
   it('shows a subfolder that holds videos as a Section', async () => {
@@ -64,25 +69,25 @@ describe('the Lesson tree of an opened Course', () => {
   it('shows Sections inside Sections, however deep the videos are', async () => {
     const h = await createHarness();
     const course = await h.folder('Course', {
-      'Part A/Chapter 1/deep/er/still/lesson.mp4': 'v',
-      'Part A/Chapter 1/deep/er/other.mp4': 'v',
-      'Part A/Chapter 1/one.mp4': 'v',
-      'Part A/Chapter 2/two.webm': 'v',
-      'Part B/three.mp4': 'v',
+      'Group A/Section 1/deep/er/still/lesson.mp4': 'v',
+      'Group A/Section 1/deep/er/other.mp4': 'v',
+      'Group A/Section 1/one.mp4': 'v',
+      'Group A/Section 2/two.webm': 'v',
+      'Group B/three.mp4': 'v',
     });
 
     await h.core.openCourse(course);
 
     expect(outline(h.ui.lessonTree?.nodes)).toEqual([
       {
-        'Part A': [
+        'Group A': [
           {
-            'Chapter 1': ['one', { deep: ['other', { still: ['lesson'] }] }],
+            'Section 1': ['one', { deep: ['other', { still: ['lesson'] }] }],
           },
-          { 'Chapter 2': ['two'] },
+          { 'Section 2': ['two'] },
         ],
       },
-      { 'Part B': ['three'] },
+      { 'Group B': ['three'] },
     ]);
   });
 
@@ -178,7 +183,7 @@ describe('the Lesson tree of an opened Course', () => {
     h.core.playLesson('Section 2/03 Setup.webm');
 
     expect(h.player.shown.at(-1)).toEqual({
-      title: '03 Setup',
+      title: '03 Setup.webm',
       resourceRoots: [course, h.storage.folder],
     });
     expect(h.player.sent.at(-1)).toEqual({
