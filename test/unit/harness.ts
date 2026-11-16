@@ -122,8 +122,13 @@ export class FakePlayer implements PlayerPort {
 }
 
 export class FakeClock implements Clock {
-  private time = Date.UTC(2026, 10, 15, 9, 0, 0);
+  private time: number;
   private readonly timers = new Set<{ at: number; callback: () => void }>();
+
+  /** `offsetMs`: how far this clock is ahead of the default start (another window's clock). */
+  constructor(offsetMs = 0) {
+    this.time = Date.UTC(2026, 10, 15, 9, 0, 0) + offsetMs;
+  }
 
   now(): number {
     return this.time;
@@ -656,6 +661,17 @@ export class RecordingLogger implements Logger {
   }
 }
 
+/**
+ * Another VS Code window on the same machine: its own core, player page, clock, messages and
+ * workspace, over the same disk, global storage and settings.
+ */
+export interface OtherWindow {
+  readonly core: FollowAlong;
+  readonly player: FakePlayer;
+  readonly clock: FakeClock;
+  readonly ui: RecordingUi;
+}
+
 /** A fixture tree: relative file path (with `/`) → file content. */
 export type Tree = Readonly<Record<string, string>>;
 
@@ -725,6 +741,11 @@ export interface Harness {
    * the workspace storage starts empty.
    */
   restart(options?: { readonly otherWorkspace: boolean }): void;
+  /**
+   * Opens a second VS Code window (another workspace) beside the one under test. Its clock starts
+   * `clockOffsetMs` after the first window's start.
+   */
+  openWindow(options?: { readonly clockOffsetMs: number }): OtherWindow;
 }
 
 export async function createHarness(): Promise<Harness> {
@@ -944,6 +965,24 @@ export async function createHarness(): Promise<Harness> {
         player: windowPlayer,
         ports: portsFor(windowPlayer),
       });
+    },
+    openWindow(options) {
+      const windowPlayer = new FakePlayer();
+      const windowClock = new FakeClock(options?.clockOffsetMs ?? 0);
+      const windowUi = new RecordingUi();
+      const core = createFollowAlong({
+        player: windowPlayer,
+        fileSystem,
+        storage: { global: globalStore, workspace: new MemoryStore(true), folder: storage.folder },
+        clock: windowClock,
+        converter: new FakeConverter(),
+        config,
+        ui: windowUi,
+        logger,
+        terminalSettings,
+      });
+      cores.push(core);
+      return { core, player: windowPlayer, clock: windowClock, ui: windowUi };
     },
   };
   return harness;

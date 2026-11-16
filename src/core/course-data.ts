@@ -209,17 +209,21 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
   ): Promise<T | undefined> {
     const path = join(location, file.name);
     let merged: T | undefined;
-    if (!seen.has(path) || failedToRead.has(path)) {
+    if (file.merge !== undefined) {
+      // Another window on the same Course may have written the file since this store read it
+      // (#27): read it again and merge, so what it added is kept. `value` wins a tie: it is newer.
+      const onDisk = await readFrom(location, file);
+      if (onDisk !== undefined) {
+        merged = file.merge(value, onDisk);
+      }
+    } else if (!seen.has(path) || failedToRead.has(path)) {
       // Never replace a file unseen: a read can stop at the other location's copy. A read that
       // failed (an antivirus scan holding the file, say) is tried again first.
       const hadFailed = failedToRead.has(path);
       const onDisk = await readFrom(location, file);
       if (hadFailed && onDisk !== undefined) {
-        // Its data never reached the caller, so `value` lacks it: merge it in, never replace it.
-        if (file.merge === undefined) {
-          throw new UnreadableCourseDataError(path);
-        }
-        merged = file.merge(onDisk, value);
+        // Its data never reached the caller, so `value` lacks it, and it cannot be merged in.
+        throw new UnreadableCourseDataError(path);
       }
     }
     if (unreadable.has(path)) {
