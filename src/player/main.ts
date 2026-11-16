@@ -88,6 +88,8 @@ let pauseBy: 'extension' | 'picture' | undefined;
 let playRequested = false;
 /** The playback rate last reported, so a `ratechange` that changes nothing is not. */
 let reportedRate = 1;
+/** The seconds a click that resumes a paused Lesson steps back first (Rewind, ADR 0016). */
+let resumeRewind = 0;
 
 /** Reports the Lesson's one `error`, and silences it from then on. */
 function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
@@ -221,6 +223,9 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
     case 'showNext':
       showNext(command.title, media);
       break;
+    case 'setResumeRewind':
+      resumeRewind = command.seconds;
+      break;
   }
 }
 
@@ -304,6 +309,11 @@ function togglePlayback(media: HTMLVideoElement): void {
     return;
   }
   if (media.paused) {
+    // A Lesson that ended starts again from the top, so there is nothing to rehear.
+    // At the very start there is nothing to step back to; a seek to 0 would still report `seeked`.
+    if (resumeRewind > 0 && !media.ended && media.currentTime > 0) {
+      seekBy(-resumeRewind, media);
+    }
     play(media);
   } else {
     pauseBy = 'picture';
