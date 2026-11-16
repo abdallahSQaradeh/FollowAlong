@@ -53,6 +53,8 @@ export class FakePlayer implements PlayerPort {
   private openRoots: readonly string[] | undefined;
   /** The spot the open player sits in; a show in another spot makes a new page there. */
   private openSpot: PlayerShowOptions['spot'] | undefined;
+  /** Whether the player is collapsed: its page is gone until the next `show`. */
+  hidden = false;
   /** The `loadId` of the last `load` the page received. */
   private loadId: number | undefined;
 
@@ -64,7 +66,14 @@ export class FakePlayer implements PlayerPort {
       this.openSpot === options.spot;
     this.openRoots = options.resourceRoots;
     this.openSpot = options.spot;
+    this.hidden = false;
     return same ? 'revealed' : 'created';
+  }
+
+  collapse(): void {
+    this.hidden = true;
+    this.openRoots = undefined;
+    this.openSpot = undefined;
   }
 
   resourceUri(absolutePath: string): string {
