@@ -172,6 +172,11 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.toggleAutoPause",
+        "title": "Toggle Auto-pause",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.toggleLessonDone",
         "title": "Mark done / not done",
         "category": "FollowAlong"
@@ -307,6 +312,12 @@
       },
       {
         "command": "followalong.attachToLoadedLesson",
+        "key": "ctrl+' r",
+        "mac": "cmd+' r",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.toggleAutoPause",
         "key": "ctrl+' a",
         "mac": "cmd+' a",
         "when": "editorTextFocus || terminalFocus"

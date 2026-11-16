@@ -52,7 +52,7 @@ export const commands = {
   playLesson: playLessonCommand,
   /** The "+" on a Lesson in the tree; it is run with the Lesson's tree node. */
   attachResource: 'followalong.attachResource',
-  /** `Ctrl+'` `A`: attaches a file to the Lesson that is playing. */
+  /** `Ctrl+'` `R`: attaches a file to the Lesson that is playing. */
   attachToLoadedLesson: 'followalong.attachToLoadedLesson',
   /** Run by a click on a Resource in the tree, with the Resource's id. */
   openResource: openResourceCommand,
@@ -86,6 +86,8 @@ export const commands = {
   moveVideo: 'followalong.moveVideo',
   /** `Ctrl+'` `V`: collapses the video where it is, or brings it back in the same spot. */
   toggleVideo: 'followalong.toggleVideo',
+  /** `Ctrl+'` `A`: switches auto-pause off, or back to the last mode that was on. */
+  toggleAutoPause: 'followalong.toggleAutoPause',
   /** `Ctrl+'` `D`: marks the Lesson that is playing done, or not done when it already is. */
   toggleLessonDone: 'followalong.toggleLessonDone',
   /** The tree's context menu on a Lesson: Mark done, Mark not done; run with its tree node. */
@@ -301,6 +303,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.goToLesson, () => core.goToLesson()),
     register(commands.moveVideo, (spot) => core.moveVideo(isVideoSpot(spot) ? spot : undefined)),
     register(commands.toggleVideo, () => core.toggleVideo()),
+    register(commands.toggleAutoPause, () => core.toggleAutoPause()),
     register(commands.toggleLessonDone, () => core.toggleLessonDone()),
     register(commands.markLessonDone, async (node) => {
       const lessonId = nodeId(node);
