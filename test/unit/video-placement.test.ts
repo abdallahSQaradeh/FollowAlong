@@ -296,3 +296,87 @@ describe('zoom across a move', () => {
     ]);
   });
 });
+
+/** Moves the playing, zoomed Lesson to the bottom panel; the page there is ready, nothing sent yet. */
+async function movedPlaying(h: Harness): Promise<void> {
+  await playingZoomed(h);
+  const moving = h.core.moveVideo('bottomPanel');
+  h.player.emit({
+    type: 'snapshot',
+    snapshot: {
+      rate: 1,
+      zoom: { level: 1, left: 0, top: 0 },
+      lesson: { lessonId, position: 42, playing: true },
+    },
+  });
+  await moving;
+  h.player.clearSent();
+  h.player.ready();
+}
+
+describe('a playing Lesson after a move', () => {
+  it('plays on in the new spot when VS Code lets the new page start it, without a word', async () => {
+    const h = await createHarness();
+    await movedPlaying(h);
+    expect(h.player.sent[0]).toMatchObject({ type: 'load', autoplay: true });
+
+    h.player.emit({ type: 'played', lessonId });
+
+    expect(h.ui.messages).toEqual([]);
+    expect(h.ui.statusBar.items.find((item) => item.id === 'playPause')?.icon).toBe('pause');
+  });
+
+  it('waits paused for a click when VS Code refuses the new page, and says so once', async () => {
+    const h = await createHarness();
+    await movedPlaying(h);
+
+    h.player.emit({ type: 'paused', lessonId, byUser: false });
+
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'info',
+        text: 'VS Code did not let “Intro” start by itself. Press play in the player to start it.',
+      },
+    ]);
+  });
+});
+
+describe('a Lesson that had ended, moved', () => {
+  it('lands paused at its end in the new spot', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 300, duration: 300 });
+    h.player.emit({ type: 'ended', lessonId });
+    h.player.clearSent();
+
+    const moving = h.core.moveVideo('secondarySidebar');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1.5,
+        zoom: { level: 2, left: 0.25, top: 0.5 },
+        lesson: { lessonId, position: 300, playing: false },
+      },
+    });
+    await moving;
+    h.player.clearSent();
+    h.player.ready();
+
+    expect(h.player.sent[0]).toMatchObject({ type: 'load', startAt: 300, autoplay: false });
+  });
+
+  it('lands paused at its end when the page does not answer either', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 300, duration: 300 });
+    h.player.emit({ type: 'ended', lessonId });
+
+    const moving = h.core.moveVideo('secondarySidebar');
+    h.clock.advance(1000);
+    await moving;
+    h.player.clearSent();
+    h.player.ready();
+
+    expect(h.player.sent[0]).toMatchObject({ type: 'load', startAt: 300, autoplay: false });
+  });
+});
