@@ -72,12 +72,17 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
   let target: string | undefined;
   /** Folders already created (and hidden) by this store, so later writes skip that step. */
   const prepared = new Set<string>();
-  /** Copies read and found unusable: writes never replace them (spec #12, D5). */
+  /** Copies this store has read, and those it found unusable: writes never replace one (D5). */
+  const seen = new Set<string>();
   const unreadable = new Set<string>();
 
   /** The file's value in `location`; a file that exists but cannot be used is never written over. */
   async function readFrom<T>(location: string, file: CourseDataFile<T>): Promise<T | undefined> {
     const path = join(location, file.name);
+    seen.add(path);
+    // What this read finds replaces what an earlier read found: a file fixed or removed since is
+    // writable again.
+    unreadable.delete(path);
     const ignore = (why: string): void => {
       unreadable.add(path);
       logger.log({ level: 'warn', message: `Ignoring ${path}: ${why}` });
@@ -123,8 +128,12 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     return value;
   }
 
-  async function writeTo(location: string, name: string, content: string) {
-    const path = join(location, name);
+  async function writeTo(location: string, file: CourseDataFile<unknown>, content: string) {
+    const path = join(location, file.name);
+    if (!seen.has(path)) {
+      // Never replace a file unseen: a read can stop at the other location's copy.
+      await readFrom(location, file);
+    }
     if (unreadable.has(path)) {
       throw new UnreadableCourseDataError(path);
     }
@@ -170,7 +179,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       const content = `${JSON.stringify({ version: file.version, data: value }, null, 2)}\n`;
       if (target !== fallback) {
         try {
-          await writeTo(inCourse, file.name, content);
+          await writeTo(inCourse, file, content);
           target = inCourse;
           return undefined;
         } catch (error) {
@@ -180,7 +189,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
           useFallback();
         }
       }
-      await writeTo(fallback, file.name, content);
+      await writeTo(fallback, file, content);
     },
   };
 }

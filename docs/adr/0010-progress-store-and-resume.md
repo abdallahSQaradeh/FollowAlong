@@ -87,8 +87,8 @@ it with what this window recorded.
   data store remembers each copy it read and could not use (damaged, from a newer FollowAlong, or
   failing to read), and refuses to write over that exact file (`UnreadableCourseDataError`, ADR
   0005). Progress then skips the save, logs the path and tells the learner once per open Course:
-  "FollowAlong can't update this Course's progress file: it is damaged or from a newer FollowAlong.
-  Nothing was changed." Only the file a save would replace counts: a damaged fallback copy does not
+  "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer
+  FollowAlong. Nothing was changed." Only the file a save would replace counts: a damaged fallback copy does not
   stop saves into a writable `.followalong`. The check uses what was read when the Course opened;
   a file another window rewrites during the session is #27's re-read before each write. Source:
   orchestrator, D5; code review of #25.

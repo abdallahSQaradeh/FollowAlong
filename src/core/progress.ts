@@ -158,7 +158,7 @@ export async function openProgress(
           });
           ui.showMessage({
             severity: 'warning',
-            text: "FollowAlong can't update this Course's progress file: it is damaged or from a newer FollowAlong. Nothing was changed.",
+            text: "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer FollowAlong. Nothing was changed.",
           });
         }
         return;

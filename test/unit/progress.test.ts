@@ -477,7 +477,7 @@ describe('Progress kept with the Course', () => {
 
 describe('a progress file FollowAlong cannot read', () => {
   const cannotUpdate =
-    "FollowAlong can't update this Course's progress file: it is damaged or from a newer FollowAlong. Nothing was changed.";
+    "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer FollowAlong. Nothing was changed.";
 
   for (const [what, content] of [
     ['damaged', '{"version": 1, "data": '],
