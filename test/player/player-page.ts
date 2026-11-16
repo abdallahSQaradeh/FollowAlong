@@ -32,27 +32,39 @@ export const media = {
 } as const;
 export const webmDuration = 3;
 
-/** The byte offset of each Cluster of the 8 s fixture, found by the Cluster element ID. */
-const longClusters: readonly number[] = (() => {
-  const file = readFileSync(join(root, 'test', 'fixtures', 'media', 'long.webm'));
+/** The byte offset of each Cluster of a fixture, found by the Cluster element ID. */
+function clusterOffsets(name: string): readonly number[] {
+  const file = readFileSync(join(root, 'test', 'fixtures', 'media', name));
   const clusterId = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
   const offsets: number[] = [];
   for (let at = file.indexOf(clusterId); at !== -1; at = file.indexOf(clusterId, at + 1)) {
     offsets.push(at);
   }
   return offsets;
-})();
+}
+
+function clusterOffset(name: string, offsets: readonly number[], index: number): number {
+  const offset = offsets[index];
+  if (offset === undefined) {
+    throw new Error(`${name} has no Cluster ${String(index)}`);
+  }
+  return offset;
+}
+
+const longClusters = clusterOffsets('long.webm');
+const noDurationClusters = clusterOffsets('no-duration.webm');
 
 /**
  * The byte offset of Cluster `index` of the 8 s fixture, for `holdAt`. There is one a second:
  * Cluster 3 starts at 0:02.988 (with sound), just before the keyframe at 0:03.003.
  */
 export function longClusterOffset(index: number): number {
-  const offset = longClusters[index];
-  if (offset === undefined) {
-    throw new Error(`long.webm has no Cluster ${String(index)}`);
-  }
-  return offset;
+  return clusterOffset('long.webm', longClusters, index);
+}
+
+/** The same for the 8 s fixture without a Duration element (Cluster 0 starts right after its init segment). */
+export function noDurationClusterOffset(index: number): number {
+  return clusterOffset('no-duration.webm', noDurationClusters, index);
 }
 export const mp4Duration = 3;
 
@@ -80,6 +92,12 @@ export interface PlayerOptions {
    * at once, so this is how a test fixes what is buffered when something else happens.
    */
   readonly holdAt?: number;
+  /**
+   * Hold back the first `updateend` of each source buffer until the media element has fired
+   * `loadedmetadata`. Chromium fires `loadedmetadata` before the end of a large first append about
+   * half the time (#25, H1), and after a small one; this makes the order the same every run.
+   */
+  readonly metadataBeforeFirstAppendEnds?: boolean;
   /**
    * `false`: the harness posts commands and reads state without a user gesture, as VS Code does.
    * Chromium then refuses autoplay until the learner acts in the page (#12 D3). By default the
@@ -175,10 +193,12 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       aac,
       tuning,
       holdAt,
+      metadataFirst,
     }: {
       aac: boolean | undefined;
       tuning: PlayerTuning | undefined;
       holdAt: number | undefined;
+      metadataFirst: boolean;
     }) => {
       if (tuning !== undefined) {
         window.followalongPlayerTuning = tuning;
@@ -248,6 +268,43 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
           });
         };
       }
+      if (metadataFirst) {
+        const addSourceBuffer = Object.getOwnPropertyDescriptor(
+          MediaSource.prototype,
+          'addSourceBuffer',
+        )?.value as (this: MediaSource, type: string) => SourceBuffer;
+        MediaSource.prototype.addSourceBuffer = function (this: MediaSource, type: string) {
+          const buffer = addSourceBuffer.call(this, type);
+          let metadata = false;
+          let first = true;
+          let release: (() => void) | undefined;
+          // Captured at the document, so it runs before the player's own listener on the video;
+          // the held `updateend` follows a task later, after that listener.
+          document.addEventListener(
+            'loadedmetadata',
+            () => {
+              metadata = true;
+              const held = release;
+              release = undefined;
+              if (held !== undefined) {
+                setTimeout(held, 0);
+              }
+            },
+            { capture: true, once: true },
+          );
+          // Added before the player's listeners, so it can stop the event reaching them.
+          buffer.addEventListener('updateend', (event) => {
+            if (!first || metadata) {
+              first = false;
+              return;
+            }
+            first = false;
+            event.stopImmediatePropagation();
+            release = () => buffer.dispatchEvent(new Event('updateend'));
+          });
+          return buffer;
+        };
+      }
       const sent: unknown[] = [];
       window.followalongSent = sent;
       Object.defineProperty(window, 'acquireVsCodeApi', {
@@ -261,7 +318,12 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
           type.includes('mp4a') ? (aac ? 'probably' : '') : original(type);
       }
     },
-    { aac: options.aac, tuning: options.tuning, holdAt: options.holdAt },
+    {
+      aac: options.aac,
+      tuning: options.tuning,
+      holdAt: options.holdAt,
+      metadataFirst: options.metadataBeforeFirstAppendEnds ?? false,
+    },
   );
   await page.goto(`${origin}/`);
 

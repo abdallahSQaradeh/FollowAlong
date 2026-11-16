@@ -71,6 +71,24 @@ Found with it: a Cluster the index read in a piece that is still being appended 
 lay past `appendedTo`, so a seek into it re-streamed with a Range request although the running
 stream was about to append it. The "inside" check now uses the offset the stream has read to.
 
+## Amendment: the seekable range is declared before the first append (#25, H1)
+
+Source: independent gate review of #25, H1. For a WebM without a Duration element the player
+declared `setLiveSeekableRange(0, 24 h)` (ADR 0013) on the first `updateend`, and applied `startAt`
+on `loadedmetadata`. With the default 1 MB appends, Chromium fires `loadedmetadata` before the
+first append ends in about half the runs. `seekable` was then empty or ended at the buffered end,
+so the start seek was dropped (the Lesson stayed at 0:00, with no `seeked` and no `error`), or
+landed at 0:00.1–0:04.8 and posted the `seeked` the core takes for the start seek. The reviewer's
+277 MB, 370 s file with `-live 1` failed about half of 14 runs at `startAt: 340`.
+
+The range is now declared as soon as the source buffer exists, before any append. MediaSource
+sets the duration from the init segment (Infinity without a Duration) before the media element
+has its metadata, and uses the live range only while the duration is Infinity. So `seekable`
+covers the start position whenever `loadedmetadata` runs, in either order of the events, and the
+start seek waits for the stream like any seek ahead of it, with one `seeked` once it has landed.
+A WebM with a Duration keeps `seekable` [0, duration]; `endOfStream` still fixes the duration of
+one without. MP4 plays from `<video src>` and is not affected.
+
 ## Considered options
 
 - **WebM Cues + Range for every seek (the first plan).** Our own index already knows every Cluster
@@ -81,8 +99,12 @@ stream was about to append it. The "inside" check now uses the offset the stream
   **Measured for #25, still deferred.** A 340 MB, 25-minute WebM (720p VP8 at 1.8 Mbit/s + Vorbis),
   served from local disk over HTTP with Range, in Playwright's Chromium with the default tuning:
   `load {startAt, autoplay: false}` reached the target with `readyState` 4 in 65–100 ms at 0:00,
-  1.0–1.5 s at 12:00, and 1.5–1.8 s at 24:00 and 24:55 (two runs each; the same with and without
-  a Duration element). That is about 5 ms per MB streamed past, so Cues pay off only for much
+  1.0–1.5 s at 12:00, and 1.5–1.8 s at 24:00 and 24:55 (two runs each, with a Duration element).
+  The same runs without one were only checked after the fact: they hid the race of amendment H1,
+  in which about half the start seeks were dropped or cut short. Since that fix, a 70 MB,
+  370 s WebM with `-live 1` (no Duration; 720p VP8 at 1.5 Mbit/s), same setup, landed at 5:40
+  with one `seeked` in 20 of 20 runs, in 0.54–0.65 s (before it, 17 of 30 runs ended at
+  0:01.3–0:04.8). That is about 5 ms per MB streamed past, so Cues pay off only for much
   larger Lessons or a much slower file loader than measured here; VS Code's own loader was not
   measured.
 - **Restart from byte 0 on every unbuffered seek.** Correct, but slow for a seek back near the end
@@ -105,12 +127,16 @@ Range requests. Tests cover:
 - a paused playhead that keeps its picture when the buffer fills, with keepBehindSeconds reaching
   into its group of pictures and with less than a second ahead;
 - a start position late in a group of pictures, reached though the buffer fills before it;
-- a step ahead into what the stream has read but not appended, with no Range request.
+- a step ahead into what the stream has read but not appended, with no Range request;
+- a start position in a WebM without a Duration whose `loadedmetadata` comes before the first
+  append ends, with nothing or two seconds buffered by then, at the default tuning.
 
 The harness can hold a stream at a byte offset until the test releases it (`holdAt` in
 `test/player/player-page.ts`): it wraps the page's `fetch`, so it lives only in the test harness.
 That fixes what is buffered when a seek lands or the buffer fills, which `route.fulfill` alone
-(the whole body at once) leaves to chance.
+(the whole body at once) leaves to chance. It can also hold back the first `updateend` of the
+source buffer until `loadedmetadata` (`metadataBeforeFirstAppendEnds`), the order Chromium takes
+only some of the time.
 
 The out-of-order index that gate review 2 found cannot be reproduced at Seam 2. It needs a second
 seek while a re-stream sits between a re-seen Cluster and a stale successor, and an 8 s fixture
