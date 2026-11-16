@@ -150,11 +150,28 @@ function fraction(done: number, total: number): string {
 }
 
 /** How many of the Lessons under `outline` are done, and how many there are. */
-function totalsOf(outline: Outline, progress: CourseProgress): { done: number; total: number } {
+export function totalsOf(
+  outline: Outline,
+  progress: CourseProgress,
+): { done: number; total: number } {
   const lessons = lessonsInOrder(outline);
   return {
     done: lessons.filter((lesson) => lessonStatus(progress, lesson.id) === 'done').length,
     total: lessons.length,
+  };
+}
+
+/**
+ * How far through the Course the learner is: the one rule for `27/140 · 19%`, used by the tree and
+ * the Course picker alike. `total` is at least 1.
+ */
+export function summaryOf({ done, total }: { done: number; total: number }): CourseSummary {
+  const percent = Math.floor((done * 100) / total);
+  return {
+    done,
+    total,
+    percent,
+    description: `${fraction(done, total)} · ${String(percent)}%`,
   };
 }
 
@@ -203,8 +220,6 @@ export function buildLessonTree(
   missing: ReadonlySet<string>,
 ): LessonTreeModel {
   const source: TreeSource = { folder: course.folder, resources, missing, progress };
-  const { done, total } = totalsOf(course, progress);
-  const percent = Math.floor((done * 100) / total);
   return {
     course: {
       kind: 'course',
@@ -212,12 +227,7 @@ export function buildLessonTree(
       label: basename(course.folder),
       resources: resources.course.map((record) => resourceNode(source, record)),
     },
-    summary: {
-      done,
-      total,
-      percent,
-      description: `${fraction(done, total)} · ${String(percent)}%`,
-    },
+    summary: summaryOf(totalsOf(course, progress)),
     nodes: nodesOf(course, source),
   };
 }
