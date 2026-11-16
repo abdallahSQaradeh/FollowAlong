@@ -8,6 +8,7 @@
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import type { Lesson } from './course-model.js';
 import type { Disposable, Ports } from './ports.js';
+import type { PlayheadSeen } from './lesson-status.js';
 import type { ProgressRecorder } from './progress.js';
 import {
   buildStatusBar,
@@ -18,6 +19,13 @@ import {
 
 /** How often Progress is saved while a Lesson plays (spec #12, Progress store). */
 const saveIntervalMs = 5000;
+
+/**
+ * The most the playhead may move between two `timeUpdate`s of a playing Lesson and still count as
+ * play, in seconds. A bigger jump is a seek, which plays nothing. The player reports about every
+ * 250 ms, a little more at 2× or while the page is in the background.
+ */
+const longestPlayTickSeconds = 2;
 
 export type StepSize = 'short' | 'long';
 export type StepDirection = 'back' | 'forward';
@@ -95,6 +103,10 @@ interface LessonLoad {
    * applying `startAt`, FollowAlong's own, wherever it lands (gate review of #25, H1).
    */
   startSeekPending: boolean;
+  /** Seconds of picture played since this `load`: the 10 s a Lesson needs to be in progress. */
+  playedSeconds: number;
+  /** The playhead at the last `timeUpdate` while playing, to count the play since; none after a pause or seek. */
+  lastPlayingPosition: number | undefined;
 }
 
 /** The fixed speed ladder (spec #12, story 41), slowest first. */
@@ -282,6 +294,24 @@ export function createLoadedLesson(
     saveTimer = undefined;
   }
 
+  /** What the player reported about `shown`, for Progress. */
+  function seenOf(shown: LessonLoad, ended: boolean): PlayheadSeen {
+    return { position, duration, playedSeconds: shown.playedSeconds, ended };
+  }
+
+  /** Counts the play between the last `timeUpdate` of a playing Lesson and this one at `at`. */
+  function countPlay(shown: LessonLoad, at: number): void {
+    if (!playback.playing) {
+      return;
+    }
+    const before = shown.lastPlayingPosition;
+    shown.lastPlayingPosition = at;
+    const played = before === undefined ? 0 : at - before;
+    if (played > 0 && played <= longestPlayTickSeconds) {
+      shown.playedSeconds += played;
+    }
+  }
+
   /**
    * The Lesson the player shows now, if `event` is about it and not a late one about the last. The
    * same Lesson id is not enough: the page outlives a Course (ADR 0022), and another Course can
@@ -347,6 +377,7 @@ export function createLoadedLesson(
           ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
         }
         stopSaving();
+        shown.lastPlayingPosition = undefined;
         if (shown.engaged) {
           void course.progress()?.save();
         }
@@ -358,6 +389,7 @@ export function createLoadedLesson(
           // Also ends a run of refusals: the player did what it was asked.
           playback = { ...freshPlayback(false), playing: true };
           shown.engaged = true;
+          shown.lastPlayingPosition = undefined;
           startSaving();
         }
         break;
@@ -375,10 +407,11 @@ export function createLoadedLesson(
       case 'timeUpdate': {
         const shown = shownLesson(event);
         if (shown !== undefined) {
+          countPlay(shown, event.position);
           position = event.position;
           duration = event.duration;
           if (shown.engaged) {
-            course.progress()?.record(shown.lesson.id, event.position, event.duration);
+            course.progress()?.record(shown.lesson.id, seenOf(shown, false));
           }
         }
         break;
@@ -400,8 +433,9 @@ export function createLoadedLesson(
           break;
         }
         shown.engaged = true;
+        shown.lastPlayingPosition = undefined;
         const progress = course.progress();
-        progress?.record(shown.lesson.id, position, duration);
+        progress?.record(shown.lesson.id, seenOf(shown, false));
         void progress?.save();
         break;
       }
@@ -494,7 +528,15 @@ export function createLoadedLesson(
     // A safety net: every caller has left the Lesson before (`leave`), which stops its saves. A
     // timer still running would write the Lesson before into this Lesson's Course.
     stopSaving();
-    current = { lesson, startAt, autoplay, engaged: false, startSeekPending: false };
+    current = {
+      lesson,
+      startAt,
+      autoplay,
+      engaged: false,
+      startSeekPending: false,
+      playedSeconds: 0,
+      lastPlayingPosition: undefined,
+    };
     // Nothing is known about this Lesson until the player loads it and reports.
     resetPlayhead(false);
     const shown = player.show({ title: lesson.title, resourceRoots });

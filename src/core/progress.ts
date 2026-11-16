@@ -7,6 +7,13 @@
 import { basename } from 'node:path';
 
 import { openCourseData, UnreadableCourseDataError, type CourseDataFile } from './course-data.js';
+import {
+  startPosition,
+  statusAfter,
+  type LessonStatus,
+  type PlayheadSeen,
+  type StoredStatus,
+} from './lesson-status.js';
 import { FileSystemError, type Ports } from './ports.js';
 
 /** What is kept for one Lesson. */
@@ -17,6 +24,8 @@ export interface LessonProgress {
   readonly duration: number;
   /** When this entry was saved (ms since the epoch), so the newer of two copies wins. */
   readonly savedAt: number;
+  /** Whether the Lesson is in progress or done (ADR 0030); no mark means not started. */
+  readonly status?: StoredStatus;
 }
 
 /** The Lesson played last in the Course. */
@@ -32,9 +41,6 @@ export interface CourseProgress {
   readonly last?: LastLesson;
 }
 
-/** How far before the saved position a Lesson starts again (spec #12, Resume). */
-const secondsBeforeSavedPosition = 5;
-
 function isFields(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -47,9 +53,15 @@ function parseLesson(raw: unknown): LessonProgress | undefined {
   if (!isFields(raw)) {
     return undefined;
   }
-  const { position, duration, savedAt } = raw;
-  return isSeconds(position) && isSeconds(duration) && isSeconds(savedAt)
-    ? { position, duration, savedAt }
+  const { position, duration, savedAt, status } = raw;
+  if (!isSeconds(position) || !isSeconds(duration) || !isSeconds(savedAt)) {
+    return undefined;
+  }
+  if (status === undefined) {
+    return { position, duration, savedAt };
+  }
+  return status === 'inProgress' || status === 'done'
+    ? { position, duration, savedAt, status }
     : undefined;
 }
 
@@ -107,18 +119,28 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
   return last === undefined ? { lessons } : { lessons, last };
 }
 
-/** Where a Lesson starts when the learner comes back to it: 5 s before its saved position. */
+/** A Lesson's state: not started, in progress or done (ADR 0030). */
+export function lessonStatus(progress: CourseProgress, lessonId: string): LessonStatus {
+  return entryOf(progress.lessons, lessonId)?.status ?? 'notStarted';
+}
+
+/**
+ * Where a Lesson starts when the learner comes back to it: 5 s before its saved position, or 0:00
+ * for a done Lesson saved in its last 5 %.
+ */
 export function resumePosition(progress: CourseProgress, lessonId: string): number {
-  const saved = entryOf(progress.lessons, lessonId);
-  return Math.max(0, (saved?.position ?? 0) - secondsBeforeSavedPosition);
+  return startPosition(entryOf(progress.lessons, lessonId), lessonStatus(progress, lessonId));
 }
 
 /** One open Course's Progress: read once when the Course opens, saved as the learner goes. */
 export interface ProgressRecorder {
   /** What is known now, including what is not saved yet. */
   current(): CourseProgress;
-  /** Notes where the playhead is in a Lesson; it is written by the next `save`. */
-  record(lessonId: string, position: number, duration: number): void;
+  /**
+   * Notes what the player reported about a Lesson: where its playhead is, how long it played, and
+   * whether it ended. The Lesson's status follows (ADR 0030); it is written by the next `save`.
+   */
+  record(lessonId: string, seen: PlayheadSeen): void;
   /** Writes what was recorded since the last save, after any save already under way. */
   save(): Promise<void>;
 }
@@ -206,10 +228,20 @@ export async function openProgress(
 
   return {
     current: () => progress,
-    record(lessonId, position, duration) {
+    record(lessonId, seen) {
       const savedAt = clock.now();
+      const { position, duration } = seen;
+      const status = statusAfter(lessonStatus(progress, lessonId), seen);
       progress = {
-        lessons: { ...progress.lessons, [lessonId]: { position, duration, savedAt } },
+        lessons: {
+          ...progress.lessons,
+          [lessonId]: {
+            position,
+            duration,
+            savedAt,
+            ...(status === 'notStarted' ? {} : { status }),
+          },
+        },
         last: { lessonId, savedAt },
       };
       unsaved = true;
