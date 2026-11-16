@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { LessonTreeNode, ResourceNode } from '../../src/core/lesson-tree.js';
+import type { UserMessage } from '../../src/core/ports.js';
 import { createHarness, type Harness } from './harness.js';
+import { makeReadOnly } from './read-only.js';
 
 /** The Resources shown under a Lesson, as the learner sees them in the tree. */
 function resourceNodes(h: Harness, lessonId: string): readonly ResourceNode[] {
@@ -277,5 +279,118 @@ describe('relinking a Resource', () => {
 
     expect(h.ui.fileDialogs).toBe(0);
     expect(await h.listFiles(course)).toEqual(['intro.webm']);
+  });
+});
+
+describe('when the Course’s own Resources file cannot be read', () => {
+  const kept: UserMessage = {
+    severity: 'warning',
+    text: "FollowAlong can't update the Resources file of “Course” (it is damaged, unreadable or from a newer FollowAlong), so FollowAlong keeps its Resources in its own storage for now.",
+  };
+  const resourceFile = (id: string, path: string): string =>
+    JSON.stringify({
+      version: 1,
+      data: { course: [], lessons: { 'intro.webm': [{ id, kind: 'file', path, relative: true }] } },
+    });
+
+  it.each([
+    ['damaged', '{"version": 1, "data": '],
+    ['from a newer FollowAlong', JSON.stringify({ version: 9, data: { lessons: {} } })],
+  ])(
+    'leaves a file that is %s as it is, and keeps the new Resource in the extension storage',
+    async (_why, unreadable) => {
+      const h = await createHarness();
+      const course = await h.folder('Course', {
+        'intro.webm': 'video',
+        'a.md': '#',
+        '.followalong/resources.json': unreadable,
+      });
+      await h.core.openCourse(course);
+
+      await h.core.attachResource('intro.webm', join(course, 'a.md'));
+
+      expect(await readFile(join(course, '.followalong', 'resources.json'), 'utf8')).toBe(
+        unreadable,
+      );
+      expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual(['a.md']);
+      expect(await h.listFiles(h.storage.folder)).toEqual([
+        expect.stringMatching(/^courses\/Course-[0-9a-f]{16}\/resources\.json$/),
+      ]);
+      expect(h.ui.messages).toEqual([kept]);
+    },
+  );
+
+  it('tells the learner once, not at every change', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'a.md': '#',
+      'b.md': '#',
+      '.followalong/resources.json': 'not json',
+    });
+    await h.core.openCourse(course);
+
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+    await h.core.attachResource('intro.webm', join(course, 'b.md'));
+    await h.core.detachResource(resourceNamed(h, 'intro.webm', 'a.md').id);
+
+    expect(h.ui.messages).toEqual([kept]);
+    expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual(['b.md']);
+  });
+
+  it('shows what was kept in the extension storage, and the repaired file, once the file is fixed', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'a.md': '#',
+      'b.md': '#',
+      '.followalong/resources.json': 'not json',
+    });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+
+    await writeFile(join(course, '.followalong', 'resources.json'), resourceFile('b1', 'b.md'));
+    await h.core.openCourse(course);
+
+    expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual([
+      'b.md',
+      'a.md',
+    ]);
+  });
+});
+
+describe('in a read-only Course whose fallback Resources file cannot be read either', () => {
+  it.each([
+    ['detaching', (h: Harness, id: string) => h.core.detachResource(id)],
+    ['relinking', (h: Harness, id: string, to: string) => h.core.relinkResource(id, to)],
+  ])('changes nothing, and says so, when %s', async (_change, change) => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { 'intro.webm': 'video', 'a.md': '#', 'b.md': '#' });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+    makeReadOnly(join(course, '.followalong'));
+    makeReadOnly(course);
+    h.restart();
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'b.md'));
+    const [fallbackCopy] = await h.listFiles(h.storage.folder);
+    const fallback = join(h.storage.folder, fallbackCopy ?? '');
+    const newer = JSON.stringify({ version: 9, data: {} });
+    await writeFile(fallback, newer);
+    h.restart();
+    await h.core.openCourse(course);
+    h.ui.messages.length = 0;
+    const id = resourceNamed(h, 'intro.webm', 'a.md').id;
+
+    await change(h, id, join(course, 'b.md'));
+
+    expect(await readFile(fallback, 'utf8')).toBe(newer);
+    expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual(['a.md']);
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'warning',
+        text: "FollowAlong can't update the Resources file of “Course” (it is damaged or from a newer version). Nothing was changed.",
+      },
+    ]);
   });
 });

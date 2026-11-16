@@ -7,8 +7,8 @@
 import { randomUUID } from 'node:crypto';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { courseDataFolderName, type CourseDataFile } from './course-data.js';
-import { FileSystemError, type FileSystem, type ResourceTarget } from './ports.js';
+import type { CourseDataFile } from './course-data.js';
+import type { FileSystem, ResourceTarget } from './ports.js';
 
 export interface ResourceRecord {
   readonly id: string;
@@ -52,6 +52,27 @@ function parseRecords(value: unknown): ResourceRecord[] {
     : [];
 }
 
+/** The records of `a`, then those of `b` whose id `a` does not have. */
+function unionById(
+  a: readonly ResourceRecord[],
+  b: readonly ResourceRecord[],
+): readonly ResourceRecord[] {
+  const known = new Set(a.map((record) => record.id));
+  return [...a, ...b.filter((record) => !known.has(record.id))];
+}
+
+/** Both copies of the Resources file (ADR 0005): per Lesson, every Resource of either copy. */
+function mergeResources(a: ResourcesData, b: ResourcesData): ResourcesData {
+  const lessons: Record<string, readonly ResourceRecord[]> = { ...a.lessons };
+  for (const [lessonId, records] of Object.entries(b.lessons)) {
+    lessons[lessonId] = unionById(
+      Object.hasOwn(lessons, lessonId) ? (lessons[lessonId] ?? []) : [],
+      records,
+    );
+  }
+  return { course: unionById(a.course, b.course), lessons };
+}
+
 /** `resources.json`, version 1. A malformed Resource is dropped; a malformed file is ignored. */
 export const resourcesFile: CourseDataFile<ResourcesData> = {
   name: 'resources.json',
@@ -76,6 +97,7 @@ export const resourcesFile: CourseDataFile<ResourcesData> = {
     }
     return { course: parseRecords(course), lessons: parsed };
   },
+  merge: mergeResources,
 };
 
 /** Makes the stored reference to `absolutePath` for a Course in `courseFolder`. */
@@ -93,30 +115,6 @@ export function newResource(courseFolder: string, absolutePath: string): Resourc
 /** The file a Resource points to now, for a Course that may have been moved. */
 export function resourcePath(courseFolder: string, record: ResourceRecord): string {
   return record.relative ? join(courseFolder, ...record.path.split('/')) : record.path;
-}
-
-/**
- * Whether the Course already has a Resources file in `.followalong`. `CourseData.read` answers
- * `undefined` both for "no file" and for a file it ignored (damaged, or from a newer FollowAlong),
- * so this tells the two apart before anything is written over a file the learner may still need.
- * Only a file that is not there counts as absent: any other failure to look counts as present.
- */
-export async function resourcesFileExists(
-  fileSystem: FileSystem,
-  courseFolder: string,
-): Promise<boolean> {
-  try {
-    await fileSystem.readText(join(courseFolder, courseDataFolderName, resourcesFile.name));
-    return true;
-  } catch (error) {
-    if (FileSystemError.is(error, 'notFound')) {
-      return false;
-    }
-    if (error instanceof FileSystemError) {
-      return true;
-    }
-    throw error;
-  }
 }
 
 /** The ids of the Resources whose file is no longer where they point (Course `folder` as opened). */

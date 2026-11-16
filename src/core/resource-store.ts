@@ -5,7 +5,12 @@
  */
 import { basename } from 'node:path';
 
-import { openCourseData, UnreadableCourseDataError, type CourseData } from './course-data.js';
+import {
+  openCourseData,
+  UnreadableCourseDataError,
+  type CourseData,
+  type CourseDataWritten,
+} from './course-data.js';
 import type { Ports } from './ports.js';
 import {
   findResource,
@@ -13,7 +18,6 @@ import {
   newResource,
   noResources,
   resourcesFile,
-  resourcesFileExists,
   withRelinkedResource,
   withoutResource,
   withResource,
@@ -61,10 +65,12 @@ export async function openResources(
     });
   }
   let missing: ReadonlySet<string> = await missingResources(fileSystem, folder, resources);
+  /** The learner is told once per open Course that its Resources went to the extension storage. */
+  let keptElsewhereShown = false;
   /** Changes run one at a time, so two quick ones never overwrite each other. */
   let changing: Promise<unknown> = Promise.resolve();
 
-  /** The Resources file is there but cannot be used: writing would replace what it holds. */
+  /** Neither copy of the Resources file can be used: writing would replace what it holds. */
   function refuse(what: string): void {
     logger.log({
       level: 'warn',
@@ -94,31 +100,37 @@ export async function openResources(
     update: (stored: ResourcesData) => ResourcesData | undefined,
   ): Promise<boolean> {
     const run = async (): Promise<boolean> => {
-      const read = await data.read(resourcesFile);
-      if (read === undefined && (await resourcesFileExists(fileSystem, folder))) {
-        // The file is there but was ignored (damaged, or from a newer FollowAlong): writing
-        // would replace data the learner, or a newer version, still needs.
-        refuse(what);
-        return false;
-      }
-      const stored = read ?? noResources;
+      const stored = (await data.read(resourcesFile)) ?? noResources;
       const next = update(stored);
       if (next === undefined) {
         resources = stored;
         await checkFiles();
         return false;
       }
+      let written: CourseDataWritten<ResourcesData>;
       try {
-        await data.write(resourcesFile, next);
+        written = await data.write(resourcesFile, next);
       } catch (error) {
-        // The copy the write would replace (the fallback one, in a read-only Course) is unusable.
+        // Both copies are unusable: neither is replaced (spec #12, D5), and nothing is changed.
         if (error instanceof UnreadableCourseDataError) {
           refuse(what);
           return false;
         }
         throw error;
       }
-      resources = next;
+      // A copy that could not be read before could be now: what it held is in the file written.
+      resources = written.merged ?? next;
+      if (written.keptElsewhere !== undefined && !keptElsewhereShown) {
+        keptElsewhereShown = true;
+        logger.log({
+          level: 'warn',
+          message: `${written.keptElsewhere} cannot be read: keeping the Resources of ${folder} in the extension storage.`,
+        });
+        ui.showMessage({
+          severity: 'warning',
+          text: `FollowAlong can't update the Resources file of “${basename(folder)}” (it is damaged, unreadable or from a newer FollowAlong), so FollowAlong keeps its Resources in its own storage for now.`,
+        });
+      }
       await checkFiles();
       return true;
     };
