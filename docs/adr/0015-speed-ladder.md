@@ -14,11 +14,13 @@ player message out, nothing read until the key is pressed).
   the first. It remembers the rates it asked for and not yet heard back: the answer to a press
   settles that press and the ones before it, so a late answer never undoes later presses, while a
   rate nobody asked for replaces them. The rate belongs to the player, not to a Lesson, so the core
-  does not drop a `rateChanged` from another Lesson. The player reports every change, whoever made it, including a rate picked in the
-  video's own menu, so the core never works from a stale number. It starts at 1 and starts again
-  at 1 when the player page reports `ready` (a new page plays at 1).
-- **A rate between rungs** (1.1×, from the video's own menu) steps to the next rung in the
-  direction pressed: up goes to 1.25×, down to 1×. A rate beyond the ends comes back onto the
+  does not drop a `rateChanged` from another Lesson. The player reports every change, whoever
+  made it, so the core never works from a stale number. (Since ADR 0009 hides the video's own
+  speed menu, `setRate` is the only change in practice; the handling of a rate nobody asked for
+  stays as a safeguard. Noted at CP1.) It starts at 1 and starts again at 1 when the player page
+  reports `ready` (a new page plays at 1).
+- **A rate between rungs** (1.1×, from the video's own menu before ADR 0009 hid it) steps to the
+  next rung in the direction pressed: up goes to 1.25×, down to 1×. A rate beyond the ends comes back onto the
   ladder: up from 3× goes to 2×.
 - **The rate stays from Lesson to Lesson.** A new `src` resets `playbackRate` to
   `defaultPlaybackRate`, so the player sets both. The learner who picked 1.5× keeps it for the

@@ -863,7 +863,7 @@ test.describe('the player', () => {
       expect((await player.video()).playbackRate).toBe(2);
     });
 
-    test('reports a rate the learner picked in the video’s own menu', async ({ page }) => {
+    test('reports a rate the extension did not set', async ({ page }) => {
       const player = await openPlayer(page);
       await player.post(load({ videoUri: media.webm, autoplay: false }));
 

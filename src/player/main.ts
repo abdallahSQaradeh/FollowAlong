@@ -287,7 +287,8 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   on('seeked', ({ about }) => {
     post({ type: 'seeked', ...about });
   });
-  // Also for a rate the learner picks in the video's own menu, so the extension never drifts.
+  // Every change is reported, whoever made it, so the extension never drifts. The video's own
+  // speed menu is hidden (`noplaybackrate`, ADR 0009), so today only `setRate` changes it.
   // `ratechange` also fires for a change of `defaultPlaybackRate`, which `setRate` makes too, and
   // it is tracked even when nothing can be reported (no Lesson, or a failed one).
   media.addEventListener('ratechange', () => {
