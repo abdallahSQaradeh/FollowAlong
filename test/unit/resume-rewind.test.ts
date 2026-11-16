@@ -99,6 +99,18 @@ describe('resume with rewind', () => {
     ).toEqual([{ type: 'play' }]);
   });
 
+  it('rewinds on a resume from the status bar too', async () => {
+    const h = await createHarness();
+    await openPausedLesson(h);
+    h.config.set('resumeRewind', 3);
+
+    expect(
+      sentBy(h, () => {
+        h.core.statusBarClick('playPause');
+      }),
+    ).toEqual([{ type: 'seekBy', seconds: -3 }, { type: 'play' }]);
+  });
+
   it('rewinds once when the key is pressed again before the player answers', async () => {
     const h = await createHarness();
     await openPausedLesson(h);
