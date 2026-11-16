@@ -182,6 +182,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** The `followalong.ffmpegPath` values the learner was told are ignored in this window. */
   const warnedFfmpegPaths = new Set<string>();
 
+  /** The audio sidecars of the Course in `folder` replace the open Course's, which stop. */
+  function openSoundOf(folder: string): void {
+    sidecarSound?.stop();
+    sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
+  }
+
   /** What the Lesson tree shows now (as JSON), so a redraw that would change nothing is skipped. */
   let shownTree: string | undefined;
 
@@ -226,6 +232,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       sidecarSound === undefined
         ? Promise.reject(new Error('No Course is open.'))
         : sidecarSound.prepare(lesson, request),
+    prepareSoundAhead: (lesson, pageDecodes) => {
+      sidecarSound?.prepareAhead(
+        lesson,
+        openedCourse === undefined ? [] : lessonsInOrder(openedCourse),
+        pageDecodes,
+      );
+    },
     progressChanged: refreshTree,
   });
 
@@ -530,7 +543,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         openedCourse = course;
         resourceStore = store;
         progress = recorder;
-        sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
+        openSoundOf(folder);
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         drawTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
@@ -546,7 +559,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       openedCourse = course;
       resourceStore = store;
       progress = recorder;
-      sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
+      openSoundOf(folder);
       drawTree(buildLessonTree(course, store.current(), recorder.current(), store.missing()));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       await rememberRecent(folder);
@@ -1139,6 +1152,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await opening;
       await loaded.leave();
       loaded.dispose();
+      sidecarSound?.stop();
     },
     nextLesson() {
       moveToLesson(1);
@@ -1148,6 +1162,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     dispose() {
       loaded.dispose();
+      sidecarSound?.stop();
     },
   };
 }

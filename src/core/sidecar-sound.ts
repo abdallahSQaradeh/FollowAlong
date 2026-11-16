@@ -13,6 +13,9 @@ import { basename, extname, join } from 'node:path';
 import { openCourseData, type CourseData } from './course-data.js';
 import { isFullPath } from './courses-roots.js';
 import type { Lesson } from './course-model.js';
+import { createSoundQueue, type PreparedSound, type SoundRequest } from './sound-queue.js';
+
+export type { PreparedSound, SoundRequest } from './sound-queue.js';
 import {
   FileSystemError,
   type ConversionRequest,
@@ -211,41 +214,28 @@ async function probeSound(
   }
 }
 
-/**
- * What an MP4 Lesson's sound needs:
- * - `sidecar`: its sound as an MP3 at `path`;
- * - `none`: no sidecar, because the Lesson has no sound (`silent`), or its sound is one the page
- *   decodes itself (`ownSound`).
- */
-export type PreparedSound =
-  | { readonly kind: 'sidecar'; readonly path: string }
-  | { readonly kind: 'none'; readonly why: 'silent' | 'ownSound' };
-
-/** What preparing a Lesson's sound is told, and tells back. */
-export interface SoundRequest {
-  /** Aborting it stops the preparation, and rejects it. */
-  readonly signal: AbortSignal;
-  /**
-   * How far a conversion is, in whole percent: 0 when it starts, then as ffmpeg reports. Never
-   * called for a sound that was prepared before, or that needs no sidecar.
-   */
-  readonly onProgress: (percent: number) => void;
-  /**
-   * The sound codecs, by ffmpeg's names, the player page decodes in an MP4 besides AAC: what it
-   * reported in `ready` (ADR 0056). A Lesson with such sound plays its own track: a sidecar would
-   * play the sound twice (ADR 0034). Any other codec is converted, so a Lesson never stays silent
-   * because of a guess here.
-   */
-  readonly pageDecodes: ReadonlySet<string>;
-}
-
 /** The audio sidecars of one Course, kept in its Course data. */
 export interface SidecarSound {
   /**
-   * Resolves with what `lesson`'s sound needs: the MP3 prepared before, if any, else a new
-   * conversion, unless it needs none. Rejects when the conversion fails or the request is aborted.
+   * Resolves with what the opened `lesson`'s sound needs: the MP3 prepared before, if any, else a
+   * new conversion, unless it needs none. It goes first in the queue (see {@link prepareAhead}).
+   * Rejects when the conversion fails or the request is aborted.
    */
   prepare(lesson: Lesson, request: SoundRequest): Promise<PreparedSound>;
+  /**
+   * Prepares the sound of the 3 Lessons after `opened` in `lessonsInOrder`, once the opened
+   * Lesson's is done, one at a time and at low process priority. A Lesson with its sound prepared
+   * before, or that needs none, is passed over. Work for Lessons no longer among the next 3 is
+   * stopped; `undefined` stops all of it. A sound that fails here shows nothing: the Lesson tries
+   * again when it is opened.
+   */
+  prepareAhead(
+    opened: Lesson | undefined,
+    lessonsInOrder: readonly Lesson[],
+    pageDecodes: ReadonlySet<string>,
+  ): void;
+  /** Stops all preparation: the Course is closed. */
+  stop(): void;
 }
 
 /**
@@ -259,9 +249,10 @@ export function openSidecarSound(
   warnedPaths: Set<string>,
 ): SidecarSound {
   const data = openCourseData(folder, ports);
-  return {
-    prepare: (lesson, request) => prepareSound(ports, data, lesson, request, warnedPaths),
-  };
+  return createSoundQueue(
+    (lesson, request) => prepareSound(ports, data, lesson, request, warnedPaths),
+    ports.logger,
+  );
 }
 
 async function prepareSound(
@@ -298,6 +289,8 @@ async function prepareSound(
       program,
       input: lesson.path,
       output,
+      // Whoever waits for the sound, the machine and the editor come first.
+      lowPriority: true,
       onProgress,
       signal,
     });

@@ -58,6 +58,12 @@ export interface OpenCourseView {
    */
   prepareSound(lesson: Lesson, request: SoundRequest): Promise<PreparedSound>;
   /**
+   * `lesson` is open, and the page needs sound prepared for MP4 Lessons: the sound of the next 3
+   * Lessons is prepared ahead, once this Lesson's is. `undefined` when none is open, or the page
+   * plays AAC itself; nothing is then prepared ahead, and what was is stopped.
+   */
+  prepareSoundAhead(lesson: Lesson | undefined, pageDecodes: ReadonlySet<string>): void;
+  /**
    * What the Lesson tree shows of the Progress may have changed: a Lesson's state changed, or
    * Progress was saved (every 5 s while playing, on pause and seek). Never called for every
    * `timeUpdate`.
@@ -367,6 +373,8 @@ export function createLoadedLesson(
     if (lesson.container === 'mp4' && !aacSupported) {
       sendSoundWhenPrepared(lesson, loads);
     }
+    // After the opened Lesson's own sound was asked for, so it goes first in the queue.
+    course.prepareSoundAhead(aacSupported ? undefined : lesson, pageDecodes);
   }
 
   /**
@@ -770,6 +778,7 @@ export function createLoadedLesson(
     current = undefined;
     feedAutoPause({ type: 'lessonOver' });
     stopSound();
+    course.prepareSoundAhead(undefined, pageDecodes);
     resetPlayhead(false);
     refreshStatusBar();
   }
