@@ -209,7 +209,9 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
 
   /**
    * Takes the lock of the file at `path` (ADR 0074), so that two windows on the Course never read
-   * and rewrite it at the same time. A lock not had in time is logged, and the write goes ahead.
+   * and rewrite it at the same time. A lock that cannot be made because the location is read-only
+   * or gone fails like the write would; any other failure (held too long, say) is logged, and the
+   * write goes ahead without it.
    */
   async function lockFile(path: string): Promise<() => Promise<void>> {
     let release: () => Promise<void>;
@@ -239,7 +241,10 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     };
   }
 
-  /** Writes `value` to `location`, and returns what was written when it had to merge a copy in. */
+  /**
+   * Writes `value` to `location` under the file's lock. For a file with `merge`, resolves with what
+   * was written when a copy was on disk to merge with; otherwise with `undefined`.
+   */
   async function writeTo<T>(
     location: string,
     file: CourseDataFile<T>,
@@ -253,7 +258,13 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       if (file.merge !== undefined) {
         // Another window on the same Course may have written the file since this store read it
         // (#27): read it again and merge, so what it added is kept. `value` wins a tie: it is newer.
+        const failedBefore = failedToRead.has(path);
         const onDisk = await readFrom(location, file);
+        if (!failedBefore && failedToRead.has(path)) {
+          // It read fine until now: something holds it for a moment (an antivirus scan). Neither
+          // written over nor sent elsewhere: this write fails, and the next one reads it again.
+          throw new FileSystemError('other', path, `${path} could not be read just now`);
+        }
         if (onDisk !== undefined) {
           merged = file.merge(value, onDisk);
         }

@@ -380,6 +380,30 @@ describe('Course data another window changes while this one has the Course open'
     ]);
   });
 
+  it('saves into .followalong again after a read before a save failed for a moment', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { [intro]: 'video' });
+    const progressFile = join(course, '.followalong', 'progress.json');
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h.player, intro, 100);
+    pause(h.player, intro);
+    await h.settle();
+
+    // An antivirus scan holds the file while the next save reads it, then lets it go.
+    h.makeUnreadable(progressFile);
+    playTo(h.player, intro, 150);
+    pause(h.player, intro);
+    await h.settle();
+    h.makeReadable(progressFile);
+    playTo(h.player, intro, 200);
+    pause(h.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 195 });
+    expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
+    expect(h.ui.messages.filter((message) => message.text.includes('damaged'))).toEqual([]);
+  });
+
   it('keeps the Resources both windows attach at the same moment', async () => {
     const h = await createHarness();
     const course = await h.folder('course', {
