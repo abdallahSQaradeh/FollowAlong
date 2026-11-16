@@ -190,6 +190,22 @@ test.describe('a click while zoomed', () => {
     await player.waitForEvent({ type: 'played', lessonId });
   });
 
+  test('alone starts a Lesson whose autoplay VS Code refused, on a page that kept its zoom (#12 D3)', async ({
+    page,
+  }) => {
+    const player = await zoomedPaused(page, { userGestures: false });
+    // A new page: the drag's user activation is gone, the zoom is not.
+    await page.reload();
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+    await player.post(load({ autoplay: true }));
+    await player.waitForEvent({ type: 'paused', lessonId, byUser: false });
+    expect((await player.video()).controls).toBe(false);
+
+    await page.mouse.click(600, 300);
+
+    await player.waitForEvent({ type: 'played', lessonId });
+  });
+
   test('starts a Lesson whose autoplay VS Code refused (#12 D3)', async ({ page }) => {
     const player = await openPlayer(page, { userGestures: false });
     await player.post(load({ autoplay: true }));

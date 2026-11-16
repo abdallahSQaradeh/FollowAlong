@@ -88,6 +88,10 @@ _Avoid_: Hotkey, shortcut, single key
 The Lesson the player holds: it is set when the learner picks a Lesson or opens a Course, and gone when the learner closes the player. Controls that only make sense with a Lesson, such as the status bar items, show only while one is loaded.
 _Avoid_: Active Lesson, current video
 
+**Zoom**:
+Showing an area of the Lesson's picture enlarged to fill the player, so the learner can read the instructor's code. It belongs to the player, not to a Lesson: it stays while the Lesson plays and when the next one loads, until the learner resets it.
+_Avoid_: Magnify, crop, close-up
+
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.
 _Avoid_: Context switch, tab switch, window switch

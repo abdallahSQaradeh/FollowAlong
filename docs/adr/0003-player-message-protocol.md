@@ -66,3 +66,7 @@ about the Lesson (`timeUpdate`, `played`, `paused`, `ended`, `seeked`, `rateChan
 enough when one player page started to outlive a Course (ADR 0022): two Courses can both hold
 `01.mp4`, and a late `timeUpdate` or `ended` from the first one would count for the second. It is
 optional on both sides, so a `load` without it gets events without it.
+
+Ticket #46 added `zoom {action}` (extension → player; `reset` only, until #48) and
+`zoomChanged {level}` (player → extension, without `lessonId`: zoom belongs to the page); see
+ADR 0037.
