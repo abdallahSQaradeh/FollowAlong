@@ -207,9 +207,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         const next = withResource(stored, lessonId, newResource(course.folder, absolutePath));
         await data.write(resourcesFile, next);
         logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });
-        if (openedCourse === course) {
+        // The Course may have been opened again while this attach was writing.
+        if (openedCourse?.folder === course.folder) {
           resources = next;
-          ui.showLessonTree(buildLessonTree(course, resources));
+          ui.showLessonTree(buildLessonTree(openedCourse, resources));
         }
       };
       const done = attaching.then(attach, attach);

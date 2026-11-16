@@ -47,8 +47,8 @@ read-only fallback without any code of its own. The file is version 1:
   play without them. Attaching reads again and lets such a failure through as a command error,
   because writing after a failed read could drop what was there.
 - **Opening a file is a UI sink method** (`UiSink.openFile`), not a new port: the list of ports in
-  spec #12 stays as it is. The VS Code adapter runs `vscode.open` with `ViewColumn.Beside`: VS Code picks the editor for the file (text and code in
-  the text editor), in the group beside the code. The player is `retainContextWhenHidden`, so a
+  spec #12 stays as it is. The VS Code adapter runs `vscode.open` with `ViewColumn.Beside`: VS Code picks the
+  editor for the file (text and code in the text editor), in the group beside the code. The player is `retainContextWhenHidden`, so a
   Resource tab in front of it does not stop the Lesson, but the learner cannot see it while the tab
   is in front: where the Resource should sit so both are visible is a Manual QA question (#64).
   The core sends the player nothing when a Resource opens, and says so in a message when the file
@@ -70,9 +70,9 @@ read-only fallback without any code of its own. The file is version 1:
 - The Resources of a read-only Course live in the extension storage, keyed by the Course's absolute
   path (ADR 0005), so they do not follow it when it is moved. Paths are not resolved through
   symbolic links: a Course reached through a link is "inside" by the path it was opened with.
-
 - Nothing checks that a file still exists when it is attached or listed. Dimming a missing file and
-  Relink (story 97) are a later ticket; until then clicking a Resource whose file is gone shows
-  VS Code's own "file not found".
+  Relink (story 97) are a later ticket. Until then, clicking a Resource whose file is gone shows
+  one error message from the core (“could not open … Is the file still there?”) instead of a
+  failed command.
 - A learner who attaches a file that is not text (an image, a PDF) gets whatever editor VS Code has
   for it, until the preview and PDF tickets add their targets.
