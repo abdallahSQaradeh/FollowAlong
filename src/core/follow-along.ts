@@ -42,7 +42,7 @@ import {
 import { readFolderListing } from './folder-listing.js';
 import { lessonStatus, openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
-import { leavePendingCourse, takePendingCourse, withdrawPendingCourse } from './pending-course.js';
+import { leavePendingCourse, readPendingCourse, withdrawPendingCourse } from './pending-course.js';
 import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
@@ -800,7 +800,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         severity: 'error',
         text: `FollowAlong could not open “${basename(folder)}” in a new window.`,
       });
-      await withdrawPendingCourse(storage.global).catch(() => undefined);
+      await withdrawPendingCourse(storage.global).catch(() => {
+        // Nothing more to do: the note expires by itself after 30 seconds.
+      });
     }
   }
 
@@ -824,15 +826,25 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return openInTurn(folder, false);
     },
     async restoreCourse() {
+      // A fresh Course hand-off means this window is the new one another window asked for. It
+      // wins over a remembered Course: VS Code may share one workspace state between empty windows.
+      const note = readPendingCourse(storage.global, clock.now());
+      if (note.present) {
+        // Cleared first, so the note is used once; a failure to clear is not a reason to not open.
+        await withdrawPendingCourse(storage.global).catch((error: unknown) => {
+          logger.log({
+            level: 'warn',
+            message: `Could not clear the Course hand-off: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        });
+        if (note.folder !== undefined) {
+          await openInTurn(note.folder, false);
+          return;
+        }
+      }
       const folder = storage.workspace.get(openCourseKey);
       if (typeof folder === 'string') {
         await openInTurn(folder, true);
-        return;
-      }
-      // A window that remembers no Course may be the new window another one asked for.
-      const asked = await takePendingCourse(storage.global, clock.now()).catch(() => undefined);
-      if (asked !== undefined) {
-        await openInTurn(asked, false);
       }
     },
     playLesson,

@@ -10,10 +10,11 @@ was told them before the build.
   folder), so the Practice area is never changed and the Course folder is not opened as a workspace
   (story 20). The core first leaves a note in the global storage, key `pendingCourse`, as
   `{ folder, at }` (`src/core/pending-course.ts`), `at` from the Clock port.
-- **The new window takes the note once.** At activation `restoreCourse` looks at the note only when
-  its workspace remembers no Course (story 21: a restored Course is never replaced). The note is
-  cleared before the Course is opened, so it is used at most once. The Course then opens like any
-  other, so the new window remembers it per workspace.
+- **The new window takes the note once.** At activation `restoreCourse` takes the note first, and a
+  fresh one wins over the Course the workspace remembers: VS Code may give every empty window the
+  same workspace state, so a remembered Course cannot tell a new empty window from a restored one.
+  The note is cleared before the Course is opened, so it is used at most once. The Course then
+  opens like any other, so the new window remembers it per workspace (story 21).
 - **A note lives 30 seconds.** An older note, or one with a future time or a damaged value, is
   dropped unused, so a stray note never opens a Course in a window opened later.
 - **A refused window is undone.** If opening the window fails, the note is taken back, the error is
@@ -34,7 +35,9 @@ any pick. A missing Recent Course keeps _Locate…_ and _Remove_.
 
 ## Consequences
 
-- Two windows opened within 30 seconds of the button may race for the note; the first activation
-  that remembers no Course takes it.
+- The first window to activate within 30 seconds of the button takes the note. If another window
+  starts or reloads in that time it may take it instead and open the Course there; that is the
+  price of a hand-off with no window identity, and it is bounded by the 30 seconds.
+- Recorded as the Course hand-off in GLOSSARY.md.
 - The smoke test cannot open a second window reliably; the intent is tested at Seam 1 and the
   window by manual QA.

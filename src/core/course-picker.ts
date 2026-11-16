@@ -102,6 +102,10 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
     icon: 'multiple-windows',
     intent: { type: 'openCourseInNewWindow', folder } as const,
   });
+  const courseButtons = (folder: string, name: string) => [
+    newWindowButton(folder),
+    hideButton(folder, name),
+  ];
   const recent = input.recent
     .filter((course) => !isHidden(course.folder))
     .map((course): Entry => ({
@@ -125,7 +129,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
               intent: { type: 'removeRecentCourse', folder: course.folder },
             },
           ]
-        : [newWindowButton(course.folder), hideButton(course.folder, course.name)],
+        : courseButtons(course.folder, course.name),
     }));
   // A Recent Course is listed once, in Recent: the A–Z list is for the Courses not opened lately.
   const recentKeys = new Set(input.recent.map((course) => keyOf(course.folder)));
@@ -137,7 +141,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
       ...description(course.categories, course.folder, false),
       ...detail(course.folder, false),
       intent: { type: 'openCourse', folder: course.folder },
-      buttons: [newWindowButton(course.folder), hideButton(course.folder, course.name)],
+      buttons: courseButtons(course.folder, course.name),
     }));
   return {
     title: 'Open Course',
