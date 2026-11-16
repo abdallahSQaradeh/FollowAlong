@@ -10,7 +10,11 @@ import type { Page } from '@playwright/test';
 
 import { renderPlayerHtml } from '../../src/player/page.js';
 import type { PlayerTuning } from '../../src/player/tuning.js';
-import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
+import {
+  pageSoundCodecs,
+  type PlayerCommand,
+  type PlayerEvent,
+} from '../../src/protocol/player-messages.js';
 import { expect } from './fixtures.js';
 
 const root = resolve(__dirname, '..', '..');
@@ -86,6 +90,11 @@ declare global {
 export interface PlayerOptions {
   /** Forces the AAC capability the page reports (stock Chromium's own answer otherwise). */
   readonly aac?: boolean;
+  /**
+   * Forces which of the other sound codecs the page decodes in an MP4 (`mp3`, `opus`, `flac`);
+   * stock Chromium's own answer otherwise.
+   */
+  readonly soundCodecs?: readonly string[];
   /** Test-only player knobs (src/player/tuning.ts). */
   readonly tuning?: PlayerTuning;
   /** Answer Range requests with bytes that are not WebM, as a file changed on disk would. */
@@ -217,11 +226,15 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
   await page.addInitScript(
     ({
       aac,
+      soundCodecs,
+      otherCodecs,
       tuning,
       holdAt,
       metadataFirst,
     }: {
       aac: boolean | undefined;
+      soundCodecs: readonly string[] | undefined;
+      otherCodecs: readonly (readonly [string, string])[];
       tuning: PlayerTuning | undefined;
       holdAt: number | undefined;
       metadataFirst: boolean;
@@ -349,16 +362,24 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
           },
         }),
       });
-      if (aac !== undefined) {
-        const original = HTMLMediaElement.prototype.canPlayType.bind(
-          document.createElement('video'),
-        );
-        HTMLMediaElement.prototype.canPlayType = (type: string) =>
-          type.includes('mp4a') ? (aac ? 'probably' : '') : original(type);
-      }
+      const original = HTMLMediaElement.prototype.canPlayType.bind(document.createElement('video'));
+      HTMLMediaElement.prototype.canPlayType = (type: string) => {
+        if (aac !== undefined && type.includes('mp4a.40')) {
+          return aac ? 'probably' : '';
+        }
+        const codec = otherCodecs.find(
+          ([, string]) => type.startsWith('audio/mp4') && type.includes(`"${string}"`),
+        )?.[0];
+        if (soundCodecs !== undefined && codec !== undefined) {
+          return soundCodecs.includes(codec) ? 'probably' : '';
+        }
+        return original(type);
+      };
     },
     {
       aac: options.aac,
+      soundCodecs: options.soundCodecs,
+      otherCodecs: pageSoundCodecs,
       tuning: options.tuning,
       holdAt: options.holdAt,
       metadataFirst: options.metadataBeforeFirstAppendEnds ?? false,

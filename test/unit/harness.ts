@@ -22,6 +22,7 @@ import {
   type Clock,
   Config,
   ConversionRequest,
+  SoundProbe,
   Converter,
   Disposable,
   FileDialog,
@@ -111,9 +112,12 @@ export class FakePlayer implements PlayerPort {
     }
   }
 
-  /** The player page finished loading (stock Chromium in VS Code cannot play AAC). */
-  ready(aacSupported = false): void {
-    this.emit({ type: 'ready', aacSupported });
+  /**
+   * The player page finished loading (stock Chromium in VS Code cannot play AAC). Without
+   * `soundCodecs` it reports what VS Code's Chromium decodes in an MP4 besides AAC (ADR 0056).
+   */
+  ready(aacSupported = false, soundCodecs: readonly string[] = ['mp3', 'opus', 'flac']): void {
+    this.emit({ type: 'ready', aacSupported, soundCodecs });
   }
 }
 
@@ -159,12 +163,21 @@ export class FakeConverter implements Converter {
    */
   audioCodec: string | undefined = 'aac';
 
-  soundCodec(): Promise<string | undefined> {
-    return Promise.resolve(this.audioCodec);
+  /** Every probe asked for, so a test can see which program ran it and whether it was aborted. */
+  readonly probes: SoundProbe[] = [];
+
+  /** Set to make every probe hang for good, as ffmpeg does on a stalled mount, even when aborted. */
+  stallProbes = false;
+
+  soundCodec(probe: SoundProbe): Promise<string | undefined> {
+    this.probes.push(probe);
+    return this.stallProbes ? new Promise(() => undefined) : Promise.resolve(this.audioCodec);
   }
 
   readonly requests: {
     request: ConversionRequest;
+    /** Reports the percent ffmpeg has converted, as its progress lines do. */
+    progress(percent: number): void;
     /** Writes the sound file, as ffmpeg does, then resolves the request. */
     succeed(): Promise<void>;
     fail(reason: string): void;
@@ -189,6 +202,9 @@ export class FakeConverter implements Converter {
     return new Promise((resolve, reject) => {
       this.requests.push({
         request,
+        progress: (percent) => {
+          request.onProgress(percent);
+        },
         succeed: async () => {
           await writeFile(request.output, fakeSound);
           resolve();

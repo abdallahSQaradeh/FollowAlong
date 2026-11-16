@@ -3,11 +3,14 @@
  * chose (`followalong.ffmpegPath`, or ffmpeg on PATH until the bundled one lands), always with an
  * argument array and never through a shell. It reads which sound a Lesson has, and converts the
  * first sound track to MP3. ffmpeg writes a temp file beside the output, renamed over it once
- * whole, so a conversion cut short never looks like a finished one.
+ * whole, so a conversion cut short never looks like a finished one. It stops an ffmpeg it was told
+ * to stop, with SIGKILL when SIGTERM is not enough, and gives up waiting for one that cannot be
+ * killed (ADR 0056). What it throws never names its temp file (ADR 0057).
  */
 import { spawn } from 'node:child_process';
 import { open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import type { Readable } from 'node:stream';
 
 import {
   FileSystemError,
@@ -47,24 +50,60 @@ interface Run {
   readonly tail: readonly string[];
 }
 
+/** The part of a child process the converter uses: what a test stands in for ffmpeg with. */
+export interface FfmpegProcess {
+  /** What ffmpeg writes to its error output, where it reports. */
+  readonly stderr: Readable;
+  on(event: 'error', listener: (error: Error) => void): unknown;
+  on(event: 'close', listener: (code: number | null) => void): unknown;
+  kill(signal: 'SIGTERM' | 'SIGKILL'): unknown;
+}
+
+/** Starts ffmpeg, through an argument array and never a shell. */
+export type StartFfmpeg = (program: string, args: readonly string[]) => FfmpegProcess;
+
+export interface ConverterOptions {
+  /** Starts the process: `child_process.spawn` unless a test stands in for ffmpeg. */
+  readonly start?: StartFfmpeg;
+  /**
+   * How long a stopped ffmpeg gets to exit, and then, once killed, to be gone, before the stop is
+   * settled anyway.
+   */
+  readonly killGraceMs?: number;
+}
+
+const startProcess: StartFfmpeg = (program, args) =>
+  spawn(program, [...args], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+
+/**
+ * A single SIGTERM does not end ffmpeg while it is blocked opening a file on a stalled network mount
+ * (or a FIFO): it is killed after this long. A process that survives even that, stuck in the
+ * kernel, is waited for no longer than this again.
+ */
+const defaultKillGraceMs = 5000;
+
+/** The reason a stopped run rejects with. */
+function stopReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('ffmpeg was stopped.');
+}
+
 /**
  * Runs ffmpeg and hands each line of its error output (where it reports) to `onLine`. Resolves
  * once ffmpeg has exited, whatever its code: on Windows a file a running ffmpeg still holds cannot
  * be removed, so a cancel or a failure must wait for it before cleaning up. Rejects when ffmpeg
- * cannot be started, or `signal` stopped it.
+ * cannot be started, or `signal` stopped it: ffmpeg is asked to stop (SIGTERM), then killed, and
+ * the run settles when it has exited, or once it has had time to after the kill.
  */
 function runFfmpeg(
+  { start, killGraceMs }: Required<ConverterOptions>,
   program: string,
   args: readonly string[],
   signal: AbortSignal,
   onLine: (line: string) => void,
 ): Promise<Run> {
   return new Promise((resolve, reject) => {
-    const child = spawn(program, args, {
-      windowsHide: true,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      signal,
-    });
+    signal.throwIfAborted();
+    const child = start(program, args);
     let tail: string[] = [];
     let pending = '';
     child.stderr.setEncoding('utf8');
@@ -80,6 +119,33 @@ function runFfmpeg(
       }
     });
     let failure: Error | undefined;
+    let settled = false;
+    const timers: NodeJS.Timeout[] = [];
+    const settle = (action: () => void): void => {
+      if (!settled) {
+        settled = true;
+        timers.forEach(clearTimeout);
+        signal.removeEventListener('abort', stop);
+        action();
+      }
+    };
+    function stop(): void {
+      failure ??= stopReason(signal);
+      child.kill('SIGTERM');
+      timers.push(
+        setTimeout(() => {
+          child.kill('SIGKILL');
+          timers.push(
+            setTimeout(() => {
+              settle(() => {
+                reject(failure ?? stopReason(signal));
+              });
+            }, killGraceMs),
+          );
+        }, killGraceMs),
+      );
+    }
+    signal.addEventListener('abort', stop, { once: true });
     child.on('error', (error) => {
       const code = 'code' in error ? error.code : undefined;
       failure ??=
@@ -90,26 +156,50 @@ function runFfmpeg(
           : error;
     });
     child.on('close', (code) => {
-      if (failure === undefined) {
-        resolve({ code, tail });
-      } else {
-        reject(failure);
-      }
+      settle(() => {
+        if (failure === undefined) {
+          resolve({ code, tail });
+        } else {
+          reject(failure);
+        }
+      });
     });
   });
 }
 
 /** The reason ffmpeg gave, without the name of a temp file the learner never sees. */
 function reason(run: Run, temporary: string, shownAs: string): string {
-  return `ffmpeg exited with code ${String(run.code)}: ${run.tail.join(' ').replaceAll(temporary, shownAs)}`;
+  return `ffmpeg exited with code ${String(run.code)}: ${withoutTemporary(run.tail.join(' '), temporary, shownAs)}`;
 }
 
-/** Removes temp files that conversions which died with their window left in `folder`. */
-async function sweepStaleParts(folder: string): Promise<void> {
+/**
+ * `text` with the temp file named as the sound file instead, whether it is written with its folder
+ * (in any spelling of it) or by its own name, which is unique to the run.
+ */
+function withoutTemporary(text: string, temporary: string, shownAs: string): string {
+  return text.replaceAll(temporary, shownAs).replaceAll(basename(temporary), shownAs);
+}
+
+/**
+ * Removes temp files that conversions which died with their window left in `folder`. "Untouched
+ * for 10 minutes" is measured against `reference`, a file just made in the same folder, not against
+ * this machine's clock: a network folder stamps files with its own server's clock, which may be
+ * hours away from ours (ADR 0057).
+ */
+async function sweepStaleParts(folder: string, reference: string): Promise<void> {
+  const now = await stat(reference).then(
+    (found) => found.mtimeMs,
+    () => undefined,
+  );
+  if (now === undefined) {
+    return;
+  }
   const names = await readdir(folder).catch(() => []);
-  const now = Date.now();
   for (const name of names.filter((entry) => entry.startsWith('.') && entry.endsWith('.part'))) {
     const path = join(folder, name);
+    if (path === reference) {
+      continue;
+    }
     const changed = await stat(path).then(
       (found) => found.mtimeMs,
       () => now,
@@ -131,11 +221,7 @@ async function createTemporary(temporary: string): Promise<void> {
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? error.code : undefined;
     if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') {
-      throw new FileSystemError(
-        'readOnly',
-        dirname(temporary),
-        error instanceof Error ? error.message : String(error),
-      );
+      throw new FileSystemError('readOnly', dirname(temporary), 'the folder is read-only');
     }
     throw error;
   }
@@ -144,19 +230,52 @@ async function createTemporary(temporary: string): Promise<void> {
 /** Numbers the temp files, so a new conversion never writes where a cancelled one may still be. */
 let conversions = 0;
 
-async function convert(request: ConversionRequest, temporary: string): Promise<void> {
+/**
+ * What the learner may read of a failure to write the sound: plain words, never the name of the
+ * temp file, which they never see and cannot act on.
+ */
+function plainFailure(error: unknown, temporary: string, output: string): unknown {
+  if (!(error instanceof Error) || error instanceof FileSystemError) {
+    return error;
+  }
+  const code = 'code' in error ? error.code : undefined;
+  switch (code) {
+    case 'ENAMETOOLONG':
+      return new Error(
+        `the file name of the sound is too long for this folder (${basename(output)})`,
+      );
+    case 'ENOSPC':
+      return new Error('the disk is full');
+    default:
+      return new Error(withoutTemporary(error.message, temporary, basename(output)), {
+        cause: error,
+      });
+  }
+}
+
+async function convert(
+  runner: Required<ConverterOptions>,
+  request: ConversionRequest,
+  temporary: string,
+): Promise<void> {
   const { program, input, output, onProgress, signal } = request;
   let duration = 0;
-  const run = await runFfmpeg(program, soundArguments(input, temporary), signal, (line) => {
+  const run = await runFfmpeg(runner, program, soundArguments(input, temporary), signal, (line) => {
     const durationMatch = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
     if (durationMatch !== null && duration === 0) {
       const [, hours = '0', minutes = '0', rest = '0'] = durationMatch;
       duration = seconds(hours, minutes, rest);
     }
     const timeMatch = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
-    if (timeMatch !== null && duration > 0) {
+    if (timeMatch !== null) {
       const [, hours = '0', minutes = '0', rest = '0'] = timeMatch;
-      onProgress(Math.min(100, Math.floor((seconds(hours, minutes, rest) / duration) * 100)));
+      // A Lesson whose length ffmpeg cannot read still reports 0: the core takes no progress for
+      // 60 s to mean the conversion is stuck (ADR 0056).
+      onProgress(
+        duration > 0
+          ? Math.min(100, Math.floor((seconds(hours, minutes, rest) / duration) * 100))
+          : 0,
+      );
     }
   });
   if (run.code !== 0) {
@@ -165,7 +284,11 @@ async function convert(request: ConversionRequest, temporary: string): Promise<v
   onProgress(100);
 }
 
-export function createFfmpegConverter(): Converter {
+export function createFfmpegConverter(options: ConverterOptions = {}): Converter {
+  const runner: Required<ConverterOptions> = {
+    start: options.start ?? startProcess,
+    killGraceMs: options.killGraceMs ?? defaultKillGraceMs,
+  };
   return {
     async soundCodec({ program, input, signal }: SoundProbe) {
       // `ffmpeg -i <file>` with no output lists the file's streams, then exits 1: that is the probe.
@@ -175,6 +298,7 @@ export function createFfmpegConverter(): Converter {
         codec: undefined,
       };
       const run = await runFfmpeg(
+        runner,
         program,
         ['-hide_banner', '-nostdin', '-i', input],
         signal,
@@ -193,7 +317,6 @@ export function createFfmpegConverter(): Converter {
     async extractSound(request) {
       const { output, signal } = request;
       signal.throwIfAborted();
-      await sweepStaleParts(dirname(output));
       conversions += 1;
       const temporary = join(
         dirname(output),
@@ -201,11 +324,12 @@ export function createFfmpegConverter(): Converter {
       );
       try {
         await createTemporary(temporary);
-        await convert(request, temporary);
+        await sweepStaleParts(dirname(output), temporary);
+        await convert(runner, request, temporary);
         await rename(temporary, output);
       } catch (error) {
         await rm(temporary, { force: true }).catch(() => undefined);
-        throw error;
+        throw plainFailure(error, temporary, output);
       }
     },
   };

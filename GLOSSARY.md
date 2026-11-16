@@ -73,7 +73,7 @@ How far the learner has got through a Course: each Lesson is not started, in pro
 _Avoid_: History, completion
 
 **Reset**:
-To take away a Lesson's done mark and saved position, so it reads as never played. Offered for a Section's Lessons (_Reset Section_) and for the whole Course (_Reset Course progress_, after a confirmation; the Course then reopens on its first Lesson). It never touches Resources or prepared sound. _Mark all done_ on a Section is its counterpart for that Section: every Lesson in it is marked done, each keeping its saved position.
+To take away a Lesson's done mark and saved position, so it reads as never played. Offered for a Section's Lessons (_Reset Section_) and for the whole Course (_Reset Course progress_, after a confirmation; the Course then reopens on its first Lesson). It never touches Resources or prepared sound. _Mark all done_ on a Section is its counterpart for that Section: every Lesson in it is marked done, each keeping its saved position. For one Lesson, _Mark done_ and _Mark not done_ (the tree's Lesson menu) and the `Ctrl+'` `D` toggle (which does one or the other, by the Lesson's state) work on one Lesson: "not done" is a reset of that Lesson.
 _Avoid_: Clear, wipe, restart
 
 **Resource**:
@@ -111,6 +111,14 @@ _Avoid_: Metadata, cache, settings
 **Audio sidecar**:
 An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
 _Avoid_: Soundtrack, audio copy, audio cache
+
+**Sound notice**:
+The words over the first frame of an MP4 Lesson that waits for its Audio sidecar: "Preparing sound… N%" while the sound is converted (the status bar says the same), or the error and the _Play without sound_ button when preparing failed. The Lesson starts by itself when the sound is ready, or when the learner presses play if that is later.
+_Avoid_: Loading screen, spinner, splash
+
+**Play without sound**:
+The button on the error of a failed Sound notice. It plays the picture alone, and nothing else plays the Lesson until it is pressed, so the learner is never stuck and never left with a silent Lesson they did not choose.
+_Avoid_: Skip sound, mute, continue anyway
 
 **Practice area**:
 Where the learner types and runs code while following a Lesson.

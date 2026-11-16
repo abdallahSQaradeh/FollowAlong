@@ -155,21 +155,6 @@ test.describe('sound for an MP4 Lesson when AAC does not play', () => {
     await expectSoundInStep(player);
   });
 
-  test('plays the video, without a sidecar, when the sound could not be prepared', async ({
-    page,
-  }) => {
-    const player = await openPlayer(page, { aac: false });
-    await player.post(loadMp4());
-    await aMoment();
-    await player.post({ type: 'soundFailed', message: 'spawn ffmpeg ENOENT' });
-    await player.waitForEvent({ type: 'played', lessonId });
-
-    expect((await player.video()).paused).toBe(false);
-    const sound = await player.sound();
-    expect(sound.source).toBe('');
-    expect(sound.paused).toBe(true);
-  });
-
   test('stays paused, sound and all, until a click when VS Code refuses to play sound', async ({
     page,
   }) => {
@@ -356,6 +341,20 @@ test('hides the native control bar while the sound is awaited, also after a zoom
 
 test('never plays the sound of a Lesson whose video failed', async ({ page }) => {
   const player = await openPlayer(page, { aac: false });
+  // The sidecar must never be given a source, nor asked to play, whatever the extension sends.
+  await page.evaluate(() => {
+    const sidecar = document.querySelector('audio');
+    const sources: string[] = [];
+    let plays = 0;
+    new MutationObserver(() => {
+      sources.push(sidecar?.getAttribute('src') ?? '');
+    }).observe(sidecar ?? document, { attributes: true, attributeFilter: ['src'] });
+    sidecar?.addEventListener('play', () => {
+      plays += 1;
+    });
+    Object.assign(window, { followalongSidecarSources: sources });
+    Object.defineProperty(window, 'followalongSidecarPlays', { get: () => plays });
+  });
   // An MP4 the page cannot play (another codec, a broken file), while its sound was prepared.
   await player.post(loadMp4({ videoUri: media.notAVideo }));
   await player.waitForEvent({ type: 'error', lessonId });
@@ -367,6 +366,14 @@ test('never plays the sound of a Lesson whose video failed', async ({ page }) =>
 
   expect((await player.sound()).paused).toBe(true);
   expect((await player.events()).map((event) => event.type)).not.toContain('played');
+  const touched = await page.evaluate(() => ({
+    sources: (window as unknown as { followalongSidecarSources: string[] })
+      .followalongSidecarSources,
+    plays: (window as unknown as { followalongSidecarPlays: number }).followalongSidecarPlays,
+  }));
+  expect(touched.sources.filter((source) => source !== '')).toEqual([]);
+  expect(touched.plays).toBe(0);
+  expect((await player.sound()).source).toBe('');
 });
 
 test('moves the sound back to the picture when it drifts more than 0.1 s away', async ({
