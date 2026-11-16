@@ -151,6 +151,10 @@ export async function openProgress(
     try {
       const written = await data.write(progressFile, progress);
       failing = false;
+      if (written.merged !== undefined) {
+        // The file held Lessons this session could not read when the Course opened.
+        progress = mergeProgress(written.merged, progress);
+      }
       if (written.keptElsewhere !== undefined && !keptElsewhereShown) {
         keptElsewhereShown = true;
         logger.log({

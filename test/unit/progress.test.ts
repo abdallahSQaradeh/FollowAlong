@@ -587,7 +587,14 @@ describe('a progress file FollowAlong cannot read', () => {
     h.player.ready();
     playTo(h, '01 Intro.webm', 40);
     pause(h, '01 Intro.webm');
+    playTo(h, '01 Intro.webm', 41);
+    pause(h, '01 Intro.webm');
     await h.core.close();
+
+    // Every save reads the failing copy again, but the log says so once.
+    expect(h.logger.entries.filter((entry) => entry.message.startsWith('Ignoring'))).toHaveLength(
+      1,
+    );
 
     expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: '01 Intro.webm' }]);
     expect(
@@ -596,12 +603,22 @@ describe('a progress file FollowAlong cannot read', () => {
     expect(h.ui.messages).toEqual([{ severity: 'warning', text: keptElsewhere }]);
   });
 
-  it('saves into .followalong again once a read that failed for a moment succeeds', async () => {
+  it('saves into .followalong again once a read that failed for a moment succeeds, keeping what it holds', async () => {
     const h = await createHarness();
     const progressPath = join('.followalong', 'progress.json');
+    const earlier = Date.UTC(2026, 10, 1);
     const course = await h.folder('course', {
       ...lessons,
-      '.followalong/progress.json': JSON.stringify({ version: 1, data: { lessons: {} } }),
+      '.followalong/progress.json': JSON.stringify({
+        version: 1,
+        data: {
+          lessons: {
+            '02 Setup.webm': { position: 200, duration: 600, savedAt: earlier },
+            '03 Closures.webm': { position: 300, duration: 600, savedAt: earlier },
+          },
+          last: { lessonId: '03 Closures.webm', savedAt: earlier },
+        },
+      }),
     });
     // An antivirus scan holds the file while the Course opens, then lets it go.
     h.makeUnreadable(join(course, progressPath));
@@ -610,10 +627,16 @@ describe('a progress file FollowAlong cannot read', () => {
     h.makeReadable(join(course, progressPath));
     playTo(h, '01 Intro.webm', 40);
     pause(h, '01 Intro.webm');
+    // Once that save has merged in what the file holds, this session knows those Lessons too.
+    await h.settle();
+    h.core.playLesson('02 Setup.webm');
     await h.core.close();
 
     expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
     expect(h.ui.messages).toEqual([]);
+    expect(h.player.sent.at(-1)).toMatchObject({ lessonId: '02 Setup.webm', startAt: 195 });
     expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 35 });
+    h.core.playLesson('03 Closures.webm');
+    expect(h.player.sent.at(-1)).toMatchObject({ lessonId: '03 Closures.webm', startAt: 295 });
   });
 });

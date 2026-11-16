@@ -97,7 +97,8 @@ it with what this window recorded.
   copy may be replaced does `write` reject (`UnreadableCourseDataError`, ADR 0005): the save is
   skipped and the learner is told "… Nothing was changed." A copy whose read failed outright (an
   antivirus scan holding it) is read again before each write, so a passing lock does not divert
-  saves. The check uses what was read; a file another window rewrites during the session is
+  saves. What it holds then is merged into that write and into this session's Progress, so the Lessons
+  the Course opened without are not lost (review of the gate round 1 fixes). The check uses what was read; a file another window rewrites during the session is
   #27's re-read before each write. Source: orchestrator, D5 and its amendment; code review and
   gate review of #25.
 - **A failed save is saved again** at the next save (the 5 s timer, a pause, a switch,

@@ -50,6 +50,9 @@ readable.
   `write` rejects with `UnreadableCourseDataError`. A write first reads the file it would replace
   when this store has not read it yet (a read can stop at the other location's copy) or its last
   read failed outright, and a later read that finds the file usable or gone makes it writable
-  again. A read error no longer fails `read`: that copy is skipped like a damaged one.
+  again. When a copy whose read had failed reads fine at write time, its data never reached the
+  caller: a file with `merge` has it merged into the write (`write` resolves with `merged`, so the
+  caller can catch up), and one without `merge` is not written this time. A read error no longer
+  fails `read`: that copy is skipped like a damaged one, and logged once while it stays unusable.
 - `.followalong` is created without its parents (ADR 0010), so a write never makes a Course folder
   that moved away while open; it fails with `notFound` instead.

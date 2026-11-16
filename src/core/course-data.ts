@@ -44,12 +44,17 @@ export class UnreadableCourseDataError extends Error {
 }
 
 /** Where a write went, when it was not where it would usually go. */
-export interface CourseDataWritten {
+export interface CourseDataWritten<T> {
   /**
    * The copy in `.followalong` could not be read, so it was left as it was and the data went to the
    * fallback storage instead (spec #12, D5 as amended); reads then use the fallback copy.
    */
   readonly keptElsewhere?: string;
+  /**
+   * What was written, when it is more than the value given: a copy whose earlier read had failed
+   * could be read now, and its data was merged in (`CourseDataFile.merge`) rather than replaced.
+   */
+  readonly merged?: T;
 }
 
 export interface CourseData {
@@ -59,7 +64,7 @@ export interface CourseData {
    * data to the fallback storage; such a copy where the data must go rejects with
    * {@link UnreadableCourseDataError}.
    */
-  write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten>;
+  write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten<T>>;
 }
 
 type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
@@ -91,14 +96,18 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
   /** The file's value in `location`; a file that exists but cannot be used is never written over. */
   async function readFrom<T>(location: string, file: CourseDataFile<T>): Promise<T | undefined> {
     const path = join(location, file.name);
+    const wasUnreadable = unreadable.has(path);
     seen.add(path);
     // What this read finds replaces what an earlier read found: a file fixed or removed since is
     // writable again.
     unreadable.delete(path);
     failedToRead.delete(path);
     const ignore = (why: string): void => {
+      // Logged once while it stays unusable: a write reads a failing copy again every time.
+      if (!wasUnreadable) {
+        logger.log({ level: 'warn', message: `Ignoring ${path}: ${why}` });
+      }
       unreadable.add(path);
-      logger.log({ level: 'warn', message: `Ignoring ${path}: ${why}` });
     };
     let text: string;
     try {
@@ -142,12 +151,26 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     return value;
   }
 
-  async function writeTo(location: string, file: CourseDataFile<unknown>, content: string) {
+  /** Writes `value` to `location`, and returns what was written when it had to merge a copy in. */
+  async function writeTo<T>(
+    location: string,
+    file: CourseDataFile<T>,
+    value: T,
+  ): Promise<T | undefined> {
     const path = join(location, file.name);
+    let merged: T | undefined;
     if (!seen.has(path) || failedToRead.has(path)) {
       // Never replace a file unseen: a read can stop at the other location's copy. A read that
       // failed (an antivirus scan holding the file, say) is tried again first.
-      await readFrom(location, file);
+      const hadFailed = failedToRead.has(path);
+      const onDisk = await readFrom(location, file);
+      if (hadFailed && onDisk !== undefined) {
+        // Its data never reached the caller, so `value` lacks it: merge it in, never replace it.
+        if (file.merge === undefined) {
+          throw new UnreadableCourseDataError(path);
+        }
+        merged = file.merge(onDisk, value);
+      }
     }
     if (unreadable.has(path)) {
       throw new UnreadableCourseDataError(path);
@@ -159,7 +182,12 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       await fileSystem.makeDirectory(location, { hidden: inTheCourse, parents: !inTheCourse });
       prepared.add(location);
     }
-    await fileSystem.writeText(path, content);
+    const data = merged ?? value;
+    await fileSystem.writeText(
+      path,
+      `${JSON.stringify({ version: file.version, data }, null, 2)}\n`,
+    );
+    return merged;
   }
 
   function useFallback(): void {
@@ -190,18 +218,20 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       return undefined;
     },
 
-    async write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten> {
-      const content = `${JSON.stringify({ version: file.version, data: value }, null, 2)}\n`;
+    async write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten<T>> {
+      const result = (merged: T | undefined, keptElsewhere?: string): CourseDataWritten<T> => ({
+        ...(merged === undefined ? {} : { merged }),
+        ...(keptElsewhere === undefined ? {} : { keptElsewhere }),
+      });
       if (target !== fallback) {
         try {
-          await writeTo(inCourse, file, content);
+          const merged = await writeTo(inCourse, file, value);
           target = inCourse;
-          return {};
+          return result(merged);
         } catch (error) {
           if (error instanceof UnreadableCourseDataError) {
             // Left as it is, for whoever can read it; this data goes to the fallback for now.
-            await writeTo(fallback, file, content);
-            return { keptElsewhere: error.path };
+            return result(await writeTo(fallback, file, value), error.path);
           }
           if (!FileSystemError.is(error, 'readOnly')) {
             throw error;
@@ -209,8 +239,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
           useFallback();
         }
       }
-      await writeTo(fallback, file, content);
-      return {};
+      return result(await writeTo(fallback, file, value));
     },
   };
 }
