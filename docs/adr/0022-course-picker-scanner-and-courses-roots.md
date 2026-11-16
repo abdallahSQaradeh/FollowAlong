@@ -67,9 +67,10 @@ the setting, the scanner and the picker model. These are the choices spec #12 le
 - **Order and duplicates.** Courses are sorted A–Z by name with the natural order of ADR 0007
   (`lesson2` before `lesson10`, the fixed `en` collator), ties by path. A folder found twice (one
   root inside another) is listed once.
-- **Names.** In this slice a Course is named after its folder. #34 changes the naming (the
-  outermost single-child wrapper), adds the category path and the known-Course and zip-only rules,
-  inside this same function and contract.
+- **Names.** #33 named a Course after its folder. #34 names it after its outermost single-child
+  wrapper, adds the category path, and counts known Courses (a folder holding `.followalong`),
+  inside this same function and contract: see ADR 0032. A Course at a drive root is labelled
+  with the drive, and `\\?\` and `\\.\` roots are not full paths: see ADR 0033.
 
 ## The Course picker model (`src/core/course-picker.ts`)
 
