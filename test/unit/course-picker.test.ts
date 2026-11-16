@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { QuickPickModel } from '../../src/core/quick-pick.js';
@@ -75,5 +77,56 @@ describe('the Course picker', () => {
     await settle();
 
     expect(rows(h.ui.picker)).toEqual(['Node Course', 'Add Courses root…']);
+  });
+
+  it('skips hidden folders, node_modules and .git', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Real Course/01 Intro.mp4': 'v',
+      '.hidden course/01 Intro.mp4': 'v',
+      'project/node_modules/some-package/demo.mp4': 'v',
+      'project/.git/objects/clip.webm': 'v',
+      '.followalong/sound.webm': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+
+    void h.core.pickCourse();
+    await settle();
+
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+  });
+
+  it('lists the Courses of the other roots, and says which root it cannot read', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Real Course/01 Intro.mp4': 'v' });
+    const unplugged = join(h.root, 'Unplugged drive');
+    h.config.set('coursesRoots', [unplugged, learning]);
+
+    void h.core.pickCourse();
+    await settle();
+
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'warning',
+        text: `FollowAlong can't read the Courses root “${unplugged}”. Is the folder or drive still there?`,
+      },
+    ]);
+  });
+
+  it('leaves out a folder under a root that it cannot read, and lists the rest', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Real Course/01 Intro.mp4': 'v',
+      'System Volume Information/clip.mp4': 'v',
+    });
+    h.makeUnreadable(join(learning, 'System Volume Information'));
+    h.config.set('coursesRoots', [learning]);
+
+    void h.core.pickCourse();
+    await settle();
+
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+    expect(h.ui.messages).toEqual([]);
   });
 });

@@ -481,6 +481,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   async function pickCourse(): Promise<void> {
     const roots = coursesRoots();
     const scan = await scanCourses(ports, roots);
+    for (const root of scan.unreadableRoots) {
+      ui.showMessage({
+        severity: 'warning',
+        text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
+      });
+    }
     const intent = await ui.pick(
       buildCoursePicker({ hasRoots: roots.length > 0, courses: scan.courses }),
     );
