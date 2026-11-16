@@ -71,9 +71,18 @@ export class FileSystemError extends Error {
   }
 }
 
+/** What `stat` tells about a file. */
+export interface FileStat {
+  readonly size: number;
+  /** When the file was last changed, in milliseconds since the epoch. */
+  readonly modifiedMs: number;
+}
+
 /** Every method rejects with a {@link FileSystemError}. */
 export interface FileSystem {
   readDirectory(path: string): Promise<readonly DirectoryEntry[]>;
+  /** The size and last change of a file or folder. */
+  stat(path: string): Promise<FileStat>;
   readText(path: string): Promise<string>;
   /** Writes the whole file at once: readers see the old or the new content, never a mix. */
   writeText(path: string, content: string): Promise<void>;
@@ -114,6 +123,8 @@ export interface Clock {
 // --- Converter ----------------------------------------------------------------------------------
 
 export interface ConversionRequest {
+  /** The ffmpeg to run: a path, or a command name looked up on PATH. */
+  readonly program: string;
   /** The Lesson video to read the sound from. */
   readonly input: string;
   /** The sound file to write. */
@@ -123,7 +134,11 @@ export interface ConversionRequest {
 }
 
 export interface Converter {
-  /** Writes `output` and resolves, or rejects with the reason it could not. */
+  /**
+   * Writes `output` and resolves, or rejects with the reason it could not. `output` appears only
+   * once it is whole, so a file found there is a finished conversion. Aborting `signal` stops the
+   * conversion, leaves no `output`, and rejects.
+   */
   extractSound(request: ConversionRequest): Promise<void>;
 }
 

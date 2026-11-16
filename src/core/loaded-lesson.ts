@@ -34,6 +34,11 @@ export interface OpenCourseView {
   lessonAfter(lesson: Lesson): Lesson | undefined;
   /** The learner clicked the Next overlay of the Loaded Lesson: `next` is the Lesson it names. */
   nextClicked(next: Lesson): void;
+  /**
+   * The path of `lesson`'s sound as an MP3, prepared now or before (the audio sidecar, ADR 0034).
+   * Rejects when it cannot be prepared, or once `signal` aborts.
+   */
+  prepareSound(lesson: Lesson, signal: AbortSignal): Promise<string>;
 }
 
 /** Where and how a Lesson is loaded. */
@@ -95,6 +100,13 @@ interface LessonLoad {
    * applying `startAt`, FollowAlong's own, wherever it lands (gate review of #25, H1).
    */
   startSeekPending: boolean;
+}
+
+/** The sound being prepared for a Lesson, so a page reload or a second load does not start again. */
+interface SoundPreparation {
+  readonly lesson: Lesson;
+  readonly stop: AbortController;
+  readonly path: Promise<string>;
 }
 
 /** The fixed speed ladder (spec #12, story 41), slowest first. */
@@ -188,6 +200,10 @@ export function createLoadedLesson(
   let saveTimer: Disposable | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
+  /** Whether the open player page can decode AAC, the sound of MP4 Lessons (its `ready`). */
+  let aacSupported = false;
+  /** The sound being prepared for the Loaded Lesson, or prepared for it. */
+  let sound: SoundPreparation | undefined;
   /** The Rewind the open player page holds; 0 for a page that has just started. */
   let playerResumeRewind = 0;
   /** What the player last said about the current Lesson; starts again with every `load`. */
@@ -251,6 +267,44 @@ export function createLoadedLesson(
     loads += 1;
     currentLoad = loads;
     sendResumeRewind();
+    if (lesson.container === 'mp4' && !aacSupported) {
+      sendSoundWhenPrepared(lesson, loads);
+    }
+  }
+
+  /**
+   * Prepares `lesson`'s sound, unless it is already under way, and sends it to the player once
+   * prepared, if load `loadId` is still the current one: a later `load` gets its own.
+   */
+  function sendSoundWhenPrepared(lesson: Lesson, loadId: number): void {
+    if (sound?.lesson !== lesson) {
+      stopSound();
+      const stop = new AbortController();
+      sound = { lesson, stop, path: course.prepareSound(lesson, stop.signal) };
+    }
+    const preparation = sound;
+    preparation.path.then(
+      (path) => {
+        if (currentLoad === loadId && current?.lesson === lesson) {
+          player.send({ type: 'soundReady', audioUri: player.resourceUri(path) });
+        }
+      },
+      (error: unknown) => {
+        if (preparation.stop.signal.aborted) {
+          return;
+        }
+        logger.log({
+          level: 'error',
+          message: `Could not prepare the sound of ${lesson.id}: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      },
+    );
+  }
+
+  /** Stops preparing sound for a Lesson the learner has left. */
+  function stopSound(): void {
+    sound?.stop.abort();
+    sound = undefined;
   }
 
   /**
@@ -299,6 +353,7 @@ export function createLoadedLesson(
     switch (event.type) {
       case 'ready':
         playerReady = true;
+        aacSupported = event.aacSupported;
         playerResumeRewind = 0;
         rate = normalRate;
         askedRates = [];
@@ -450,6 +505,7 @@ export function createLoadedLesson(
 
   function leave(): Promise<void> {
     stopSaving();
+    stopSound();
     // From now on its late events are ignored, so none is recorded into the next Course.
     current = undefined;
     // Also waits for a save still under way, such as the one of the Lesson before.
@@ -461,6 +517,7 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
+    stopSound();
     resetPlayhead(false);
     refreshStatusBar();
   }
@@ -494,6 +551,9 @@ export function createLoadedLesson(
     // A safety net: every caller has left the Lesson before (`leave`), which stops its saves. A
     // timer still running would write the Lesson before into this Lesson's Course.
     stopSaving();
+    if (sound?.lesson !== lesson) {
+      stopSound();
+    }
     current = { lesson, startAt, autoplay, engaged: false, startSeekPending: false };
     // Nothing is known about this Lesson until the player loads it and reports.
     resetPlayhead(false);
@@ -617,6 +677,7 @@ export function createLoadedLesson(
     },
     dispose() {
       saveTimer?.dispose();
+      stopSound();
       for (const subscription of subscriptions) {
         subscription.dispose();
       }

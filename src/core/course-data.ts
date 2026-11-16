@@ -65,6 +65,17 @@ export interface CourseData {
    * {@link UnreadableCourseDataError}.
    */
   write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten<T>>;
+  /**
+   * The folders a subfolder of Course data (such as prepared sound) may be in, in the order reads
+   * look in them: the one in `.followalong`, then the fallback one, or the other way round after a
+   * fall back, as for files.
+   */
+  folders(name: string): readonly string[];
+  /**
+   * Makes the subfolder `name` where Course data goes now, and resolves with its path: in
+   * `.followalong`, or in the fallback storage when the Course is read-only, as `write` decides.
+   */
+  prepareFolder(name: string): Promise<string>;
 }
 
 type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
@@ -159,6 +170,17 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     return value;
   }
 
+  /** Makes `location` once per store: hidden in the Course, with its parents in the fallback. */
+  async function prepare(location: string): Promise<void> {
+    if (!prepared.has(location)) {
+      // Only `.followalong` itself is made in the Course: were the Course folder gone (moved while
+      // open), making its parents would bring back an empty Course at the old path.
+      const inTheCourse = location === inCourse;
+      await fileSystem.makeDirectory(location, { hidden: inTheCourse, parents: !inTheCourse });
+      prepared.add(location);
+    }
+  }
+
   /** Writes `value` to `location`, and returns what was written when it had to merge a copy in. */
   async function writeTo<T>(
     location: string,
@@ -183,13 +205,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     if (unreadable.has(path)) {
       throw new UnreadableCourseDataError(path);
     }
-    if (!prepared.has(location)) {
-      // Only `.followalong` itself is made in the Course: were the Course folder gone (moved while
-      // open), making its parents would bring back an empty Course at the old path.
-      const inTheCourse = location === inCourse;
-      await fileSystem.makeDirectory(location, { hidden: inTheCourse, parents: !inTheCourse });
-      prepared.add(location);
-    }
+    await prepare(location);
     const data = merged ?? value;
     await fileSystem.writeText(
       path,
@@ -248,6 +264,31 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
         }
       }
       return result(await writeTo(fallback, file, value));
+    },
+
+    folders(name) {
+      const locations = target === fallback ? [fallback, inCourse] : [inCourse, fallback];
+      return locations.map((location) => join(location, name));
+    },
+
+    async prepareFolder(name) {
+      if (target !== fallback) {
+        try {
+          await prepare(inCourse);
+          const folder = join(inCourse, name);
+          await fileSystem.makeDirectory(folder, { hidden: false, parents: false });
+          target = inCourse;
+          return folder;
+        } catch (error) {
+          if (!FileSystemError.is(error, 'readOnly')) {
+            throw error;
+          }
+          useFallback();
+        }
+      }
+      const folder = join(fallback, name);
+      await fileSystem.makeDirectory(folder, { hidden: false, parents: true });
+      return folder;
     },
   };
 }

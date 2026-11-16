@@ -38,6 +38,7 @@ import {
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
+import { prepareSound } from './sidecar-sound.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
@@ -122,6 +123,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     nextClicked: (next) => {
       playLesson(next.id);
     },
+    prepareSound: (lesson, signal) =>
+      courseData === undefined
+        ? Promise.reject(new Error('No Course is open.'))
+        : prepareSound(ports, courseData, lesson, signal),
   });
 
   /**

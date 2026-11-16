@@ -144,16 +144,26 @@ export class FakeClock implements Clock {
   }
 }
 
+/** A converted sound file, as the fake converter writes it. */
+export const fakeSound = 'ID3 mp3 sound';
+
 /** Each request waits for the test to report progress, succeed or fail it. */
 export class FakeConverter implements Converter {
-  readonly requests: { request: ConversionRequest; succeed(): void; fail(reason: string): void }[] =
-    [];
+  readonly requests: {
+    request: ConversionRequest;
+    /** Writes the sound file, as ffmpeg does, then resolves the request. */
+    succeed(): Promise<void>;
+    fail(reason: string): void;
+  }[] = [];
 
   extractSound(request: ConversionRequest): Promise<void> {
     return new Promise((resolve, reject) => {
       this.requests.push({
         request,
-        succeed: resolve,
+        succeed: async () => {
+          await writeFile(request.output, fakeSound);
+          resolve();
+        },
         fail: (reason) => {
           reject(new Error(reason));
         },
@@ -531,6 +541,7 @@ export async function createHarness(): Promise<Harness> {
           : hold.released.then(() => nodeFileSystem.readText(path)),
       );
     },
+    stat: (path) => track(nodeFileSystem.stat(path)),
     writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
   };

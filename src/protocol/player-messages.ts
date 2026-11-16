@@ -43,7 +43,13 @@ export type PlayerCommand =
    * Shows the "Next: <title>" overlay over the picture of the Lesson that has ended (ADR 0019). The
    * player hides it again when a Lesson loads, plays or seeks.
    */
-  | { readonly type: 'showNext'; readonly title: string };
+  | { readonly type: 'showNext'; readonly title: string }
+  /**
+   * The loaded MP4 Lesson's sound, converted to MP3 because the player cannot decode AAC (ADR 0034).
+   * The player plays it in a hidden `<audio>` that follows the muted video. Sent after the `load`
+   * it belongs to, and only while that `load` is the current one.
+   */
+  | { readonly type: 'soundReady'; readonly audioUri: string };
 
 /**
  * What every event about a Lesson carries, so late events are recognisable: the Lesson's id, and
@@ -144,6 +150,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return isRate(raw.rate) ? { type: 'setRate', rate: raw.rate } : undefined;
     case 'showNext':
       return isText(raw.title) ? { type: 'showNext', title: raw.title } : undefined;
+    case 'soundReady':
+      return isText(raw.audioUri) ? { type: 'soundReady', audioUri: raw.audioUri } : undefined;
     default:
       return undefined;
   }
