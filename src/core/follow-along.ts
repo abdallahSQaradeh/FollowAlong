@@ -859,25 +859,27 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return openInTurn(folder, false);
     },
     async restoreCourse() {
+      // Only a window with no workspace may be the new one another window asked for (ADR 0077):
+      // a window with a workspace never takes the Course hand-off, whatever it remembers.
+      if (storage.workspaceIsEmpty) {
+        const note = readPendingCourse(storage.global, clock.now());
+        if (note.present) {
+          // Cleared first, so the note is used once; a failure to clear does not stop the open.
+          await withdrawPendingCourse(storage.global).catch((error: unknown) => {
+            logger.log({
+              level: 'warn',
+              message: `Could not clear the Course hand-off: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          });
+          if (note.folder !== undefined) {
+            await openInTurn(note.folder, false);
+            return;
+          }
+        }
+      }
       const folder = storage.workspace.get(openCourseKey);
       if (typeof folder === 'string') {
-        // A workspace that remembers a Course keeps it, and leaves the Course hand-off alone.
         await openInTurn(folder, true);
-        return;
-      }
-      // A window that remembers no Course may be the new one another window asked for.
-      const note = readPendingCourse(storage.global, clock.now());
-      if (note.present) {
-        // Cleared first, so the note is used once; a failure to clear is not a reason to not open.
-        await withdrawPendingCourse(storage.global).catch((error: unknown) => {
-          logger.log({
-            level: 'warn',
-            message: `Could not clear the Course hand-off: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        });
-        if (note.folder !== undefined) {
-          await openInTurn(note.folder, false);
-        }
       }
     },
     playLesson,

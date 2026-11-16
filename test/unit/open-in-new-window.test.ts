@@ -79,7 +79,7 @@ describe('opening a Course in a new window', () => {
     const { beta } = await windowWithAlphaOpen(h);
     await openBetaInNewWindow(h);
 
-    h.restart({ otherWorkspace: true });
+    h.restart({ emptyWindow: true });
     await h.core.restoreCourse();
     h.player.ready();
 
@@ -96,10 +96,10 @@ describe('opening a Course in a new window', () => {
     const h = await createHarness();
     await windowWithAlphaOpen(h);
     await openBetaInNewWindow(h);
-    h.restart({ otherWorkspace: true });
+    h.restart({ emptyWindow: true });
     await h.core.restoreCourse();
 
-    h.restart({ otherWorkspace: true });
+    h.restart({ emptyWindow: true });
     await h.core.restoreCourse();
 
     expect(h.player.shown).toEqual([]);
@@ -111,25 +111,52 @@ describe('opening a Course in a new window', () => {
     await openBetaInNewWindow(h);
     h.clock.advance(31_000);
 
-    h.restart({ otherWorkspace: true });
+    h.restart({ emptyWindow: true });
     await h.core.restoreCourse();
 
     expect(h.player.shown).toEqual([]);
   });
 
-  it('leaves the hand-off alone in a workspace that remembers a Course, for the new window', async () => {
+  it('leaves the hand-off untouched in a window with a workspace, even one that remembers nothing', async () => {
     const h = await createHarness();
-    const { alpha, beta } = await windowWithAlphaOpen(h);
+    const { beta } = await windowWithAlphaOpen(h);
+    await openBetaInNewWindow(h);
+
+    h.restart({ otherWorkspace: true });
+    await h.core.restoreCourse();
+    expect(h.player.shown).toEqual([]);
+
+    h.restart({ emptyWindow: true });
+    await h.core.restoreCourse();
+    h.player.ready();
+    expect(loadedVideo(h)).toBe(h.player.resourceUri(join(beta, 'intro.mp4')));
+  });
+
+  it('keeps the Course of the window that asked, also when it reloads at once', async () => {
+    const h = await createHarness();
+    const { alpha } = await windowWithAlphaOpen(h);
     await openBetaInNewWindow(h);
 
     h.restart();
     await h.core.restoreCourse();
     h.player.ready();
-    expect(loadedVideo(h)).toBe(h.player.resourceUri(join(alpha, 'intro.mp4')));
 
-    h.restart({ otherWorkspace: true });
+    expect(loadedVideo(h)).toBe(h.player.resourceUri(join(alpha, 'intro.mp4')));
+  });
+
+  it('opens the requested Course in an empty window even where it remembers another one', async () => {
+    const h = await createHarness();
+    const { alpha, beta } = await windowWithAlphaOpen(h);
+    await openBetaInNewWindow(h);
+    // An empty window whose state remembers Alpha: it was used for it before.
+    h.restart({ emptyWindow: true });
+    await h.core.openCourse(alpha);
+    await h.core.close();
+
+    h.restart();
     await h.core.restoreCourse();
     h.player.ready();
+
     expect(loadedVideo(h)).toBe(h.player.resourceUri(join(beta, 'intro.mp4')));
   });
 
@@ -139,7 +166,7 @@ describe('opening a Course in a new window', () => {
     h.ui.failNewWindow = true;
 
     await openBetaInNewWindow(h);
-    h.restart({ otherWorkspace: true });
+    h.restart({ emptyWindow: true });
     await h.core.restoreCourse();
 
     expect(h.player.shown).toEqual([]);

@@ -764,7 +764,11 @@ export interface Harness {
    * `otherWorkspace` it is another workspace of the same machine: the global storage is kept and
    * the workspace storage starts empty.
    */
-  restart(options?: { readonly otherWorkspace: boolean }): void;
+  restart(options?: {
+    readonly otherWorkspace?: boolean;
+    /** VS Code opens a new empty window: no folder, no workspace file, its own workspace state. */
+    readonly emptyWindow?: boolean;
+  }): void;
 }
 
 export async function createHarness(): Promise<Harness> {
@@ -777,11 +781,15 @@ export async function createHarness(): Promise<Harness> {
   const logger = new RecordingLogger();
   const terminalSettings = new FakeTerminalSettings();
   let workspace = new MemoryStore(true);
+  let emptyWindow = false;
   const globalStore = new MemoryStore();
   const storage: Storage = {
     global: globalStore,
     get workspace() {
       return workspace;
+    },
+    get workspaceIsEmpty() {
+      return emptyWindow;
     },
     folder: join(root, 'extension-storage'),
   };
@@ -980,9 +988,10 @@ export async function createHarness(): Promise<Harness> {
     },
     restart(options) {
       harness.core.dispose();
-      if (options?.otherWorkspace === true) {
+      if (options?.otherWorkspace === true || options?.emptyWindow === true) {
         // The same machine, so the same global storage; the workspace state starts empty.
         workspace = new MemoryStore(true);
+        emptyWindow = options.emptyWindow === true;
       }
       const windowPlayer = new FakePlayer();
       Object.assign(harness, {

@@ -120,6 +120,8 @@ export interface KeyValueStore {
 export interface Storage {
   readonly global: KeyValueStore;
   readonly workspace: KeyValueStore;
+  /** Whether this window has no folder and no workspace file open (a new empty window). */
+  readonly workspaceIsEmpty: boolean;
   /** The extension's own storage folder (absolute), shared by every workspace. */
   readonly folder: string;
 }

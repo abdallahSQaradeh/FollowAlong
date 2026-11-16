@@ -23,6 +23,12 @@ export function createStorage(context: vscode.ExtensionContext): Storage {
   return {
     global: store(context.globalState),
     workspace: store(context.workspaceState),
+    get workspaceIsEmpty() {
+      return (
+        (vscode.workspace.workspaceFolders?.length ?? 0) === 0 &&
+        vscode.workspace.workspaceFile === undefined
+      );
+    },
     folder: context.globalStorageUri.fsPath,
   };
 }
