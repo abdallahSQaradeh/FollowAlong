@@ -435,10 +435,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /** The Recent Courses as the picker shows them: named and filed as the scan has them. */
-  async function recentCourses(scanned: readonly ScannedCourse[]): Promise<RecentCourse[]> {
+  async function recentCourses(
+    folders: readonly string[],
+    scanned: readonly ScannedCourse[],
+  ): Promise<RecentCourse[]> {
     const byFolder = new Map(scanned.map((course) => [keyOf(course.folder), course]));
     return Promise.all(
-      readRecent(storage.global).map(async (folder): Promise<RecentCourse> => {
+      folders.map(async (folder): Promise<RecentCourse> => {
         const found = byFolder.get(keyOf(folder));
         return {
           folder,
@@ -455,7 +458,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
     warnNotAbsolute(notAbsolute);
-    const scan = await scanCourses(ports, roots);
+    const recent = readRecent(storage.global);
+    // A Recent Course is a known Course: listed as itself, not as its Sections (ADR 0032).
+    const scan = await scanCourses(ports, roots, recent);
     // Once per window: a drive that stays unplugged would otherwise be named at every open.
     for (const root of scan.unreadableRoots.filter((unread) => !warnedUnreadable.has(unread))) {
       warnedUnreadable.add(root);
@@ -468,7 +473,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       buildCoursePicker({
         hasRoots: roots.length > 0,
         courses: scan.courses,
-        recent: await recentCourses(scan.courses),
+        recent: await recentCourses(recent, scan.courses),
         openFolder: openedCourse?.folder,
       }),
     );

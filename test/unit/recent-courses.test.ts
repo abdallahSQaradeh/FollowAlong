@@ -143,6 +143,49 @@ describe('Recent Courses in the Course picker', () => {
   });
 });
 
+describe('Recent Courses are known Courses for the scan', () => {
+  async function sectionsOnlyCourse(h: Harness): Promise<string> {
+    const root = await h.folder('Learning', {
+      'Algorithms/Part 1/01 Intro.webm': 'v',
+      'Algorithms/Part 2/02 Sorting.webm': 'v',
+      'Other Course/01 Hello.webm': 'v',
+    });
+    h.config.set('coursesRoots', [root]);
+    return join(root, 'Algorithms');
+  }
+
+  it('lists a Course whose Lessons are only in Sections as its Sections until it is opened', async () => {
+    const h = await createHarness();
+    await sectionsOnlyCourse(h);
+
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual([
+      'Other Course',
+      'Part 1 — Algorithms',
+      'Part 2 — Algorithms',
+      'Add Courses root…',
+    ]);
+  });
+
+  it('lists it as itself once it was opened, for example through a folder URI or Browse…', async () => {
+    const h = await createHarness();
+    await h.core.openCourse(await sectionsOnlyCourse(h));
+    await h.core.openCourse(join(h.root, 'Learning', 'Other Course'));
+
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual([
+      '── Recent Courses',
+      'Other Course — (open)',
+      'Algorithms',
+      'Add Courses root…',
+    ]);
+  });
+});
+
 describe('a Recent Course whose folder has moved', () => {
   async function movedCourse(h: Harness): Promise<{ old: string; moved: string }> {
     const folders = await learning(h, ['A', 'B']);
