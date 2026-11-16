@@ -349,7 +349,6 @@ export class WebmSource {
     }
   }
 
-  /** Drops media well behind the playhead, or waits for the playhead to move on. */
   /**
    * Frees room in a full buffer. While the Lesson plays, only media more than keepBehindSeconds
    * behind the playhead goes, and never the group of pictures the playhead is in (see

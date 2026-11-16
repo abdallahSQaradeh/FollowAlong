@@ -15,7 +15,8 @@ import { onTestFinished } from 'vitest';
 
 const everyone = '*S-1-1-0';
 
-export function makeReadOnly(folder: string): void {
+/** Returns a function that makes the folder writable again (also done when the test finishes). */
+export function makeReadOnly(folder: string): () => void {
   let undo: () => void;
   if (process.platform === 'win32') {
     execFileSync('icacls', [folder, '/deny', `${everyone}:(WD,AD,WEA,WA,DC)`], { stdio: 'ignore' });
@@ -29,7 +30,14 @@ export function makeReadOnly(folder: string): void {
       chmodSync(folder, 0o755);
     };
   }
-  onTestFinished(undo);
+  let undone = false;
+  const undoOnce = () => {
+    if (!undone) {
+      undone = true;
+      undo();
+    }
+  };
+  onTestFinished(undoOnce);
 
   const probe = join(folder, 'write-probe');
   let writable = true;
@@ -42,6 +50,7 @@ export function makeReadOnly(folder: string): void {
   if (writable) {
     throw new Error(`makeReadOnly: ${folder} is still writable in this environment.`);
   }
+  return undoOnce;
 }
 
 /** Whether a file or folder is hidden: the Windows hidden attribute, or a leading dot elsewhere. */

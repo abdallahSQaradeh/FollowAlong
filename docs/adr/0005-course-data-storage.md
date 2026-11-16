@@ -43,8 +43,9 @@ readable.
   In a later session, reads prefer them over the newer fallback files until a write falls back
   again, unless the file defines a `merge`: then both copies are read and merged. Progress does
   (ADR 0010).
-- `load` returns the value together with the copies that exist but were ignored (`unreadable`), so
-  a writer can refuse to replace a file it cannot read (spec #12, D5; ADR 0010). `read` is `load`'s
-  value.
+- A copy that exists but cannot be used (damaged, from a newer FollowAlong, or failing to read with
+  anything but `notFound`) is remembered by the store, and `write` rejects with
+  `UnreadableCourseDataError` instead of replacing it (spec #12, D5; ADR 0010). A read error no
+  longer fails `read`: that copy is skipped like a damaged one.
 - `.followalong` is created without its parents (ADR 0010), so a write never makes a Course folder
   that moved away while open; it fails with `notFound` instead.

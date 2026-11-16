@@ -61,7 +61,11 @@ took the group's keyframe, so the target never came. `makeRoom` now ends a remov
 the start of the Cluster before the one at the playhead: a Cluster starts at or just before a
 keyframe (re-streaming relies on that too), but its timecode can be an audio block's a few ms
 before the keyframe. That keeps at most two Clusters behind the playhead, so room runs out only if
-two Clusters and a second fill the quota. With a `broken` index the old limits apply.
+two Clusters and a second fill the quota. With a `broken` index the old limits apply. If they did
+fill it (two groups of pictures of about 75 MB each, for example 30 Mbit/s with keyframes 20 s
+apart), the stream would wait for a playhead that cannot move: a stall without an `error`. No
+Lesson measured in research 01 comes near that. It was kept over the old limit, which in that
+case drops the playhead's own frame and stalls as well (code review of #25).
 
 Found with it: a Cluster the index read in a piece that is still being appended (waiting for room)
 lay past `appendedTo`, so a seek into it re-streamed with a Range request although the running

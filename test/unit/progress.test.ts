@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { mkdir, readFile, rename } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -514,4 +514,49 @@ describe('a progress file FollowAlong cannot read', () => {
       ]);
     });
   }
+
+  it('keeps saving into .followalong when only the fallback copy cannot be read', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    const writable = makeReadOnly(course);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 30);
+    pause(h, '01 Intro.webm');
+    await h.settle();
+    // The Course is writable again; the copy left in the fallback storage is damaged.
+    writable();
+    const [fallbackCopy] = await h.listFiles(h.storage.folder);
+    const damaged = join(h.storage.folder, fallbackCopy ?? '');
+    await writeFile(damaged, '{"version": 1, "data": ');
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 0 });
+    playTo(h, '01 Intro.webm', 90);
+    pause(h, '01 Intro.webm');
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 85 });
+    expect(await readFile(damaged, 'utf8')).toBe('{"version": 1, "data": ');
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('opens the Course and never writes over a progress file it may not read', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      ...lessons,
+      '.followalong/progress.json': JSON.stringify({ version: 1, data: { lessons: {} } }),
+    });
+    h.makeUnreadable(join(course, '.followalong', 'progress.json'));
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 40);
+    pause(h, '01 Intro.webm');
+    await h.core.close();
+
+    expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: '01 Intro.webm' }]);
+    expect(
+      JSON.parse(await readFile(join(course, '.followalong', 'progress.json'), 'utf8')),
+    ).toEqual({ version: 1, data: { lessons: {} } });
+    expect(h.ui.messages).toEqual([{ severity: 'warning', text: cannotUpdate }]);
+  });
 });

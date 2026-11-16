@@ -6,7 +6,7 @@
  */
 import { basename } from 'node:path';
 
-import { openCourseData, type CourseDataFile } from './course-data.js';
+import { openCourseData, UnreadableCourseDataError, type CourseDataFile } from './course-data.js';
 import { FileSystemError, type Ports } from './ports.js';
 
 /** What is kept for one Lesson. */
@@ -131,13 +131,7 @@ export async function openProgress(
 ): Promise<ProgressRecorder> {
   const { clock, ui, logger } = ports;
   const data = openCourseData(course, ports);
-  const loaded = await data.load(progressFile);
-  let progress: CourseProgress = loaded.value ?? { lessons: {} };
-  /**
-   * A copy FollowAlong cannot read (damaged, or from a newer FollowAlong) is never written over
-   * (spec #12, D5): this Course's Progress is then kept only for this session.
-   */
-  const unreadable = loaded.unreadable;
+  let progress: CourseProgress = (await data.read(progressFile)) ?? { lessons: {} };
   /** Whether something was recorded since the last write. */
   let unsaved = false;
   /** Saves run one after another, so an older one never lands after a newer one. */
@@ -150,23 +144,25 @@ export async function openProgress(
       return;
     }
     unsaved = false;
-    if (unreadable.length > 0) {
-      if (!failureShown) {
-        failureShown = true;
-        logger.log({
-          level: 'warn',
-          message: `Not saving Progress: ${unreadable.join(', ')} cannot be read.`,
-        });
-        ui.showMessage({
-          severity: 'warning',
-          text: "FollowAlong can't update this Course's progress file: it is damaged or from a newer FollowAlong. Nothing was changed.",
-        });
-      }
-      return;
-    }
     try {
       await data.write(progressFile, progress);
     } catch (error) {
+      if (error instanceof UnreadableCourseDataError) {
+        // The copy a save would replace could not be read: it stays as it is (spec #12, D5), and
+        // this Course's Progress lives only for this session.
+        if (!failureShown) {
+          failureShown = true;
+          logger.log({
+            level: 'warn',
+            message: `Not saving Progress: ${error.path} cannot be read.`,
+          });
+          ui.showMessage({
+            severity: 'warning',
+            text: "FollowAlong can't update this Course's progress file: it is damaged or from a newer FollowAlong. Nothing was changed.",
+          });
+        }
+        return;
+      }
       const reason = FileSystemError.is(error, 'notFound')
         ? 'the Course folder is missing'
         : error instanceof Error
