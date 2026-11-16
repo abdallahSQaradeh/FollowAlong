@@ -22,7 +22,7 @@ describe('opening a Course', () => {
     h.player.ready();
 
     expect(h.player.shown).toEqual([
-      { title: 'Welcome', resourceRoots: [course, h.storage.folder] },
+      { title: 'Welcome', resourceRoots: [course, join(h.storage.folder, 'courses')] },
     ]);
     expect(h.player.sent).toEqual([
       {

@@ -292,7 +292,7 @@ describe('attaching a file Resource to a Lesson', () => {
 
   const cannotUpdate: UserMessage = {
     severity: 'warning',
-    text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+    text: "FollowAlong can't update the Resources file of “Course” (it is damaged or from a newer version). Nothing was changed.",
   };
 
   it('opens the Course without Resources when the Resources file is damaged', async () => {
@@ -343,6 +343,65 @@ describe('attaching a file Resource to a Lesson', () => {
   });
 });
 
+describe('attaching from the tree’s “+” without a file yet', () => {
+  it('asks for a file and attaches it to the Lesson the “+” belongs to', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { '01 One.webm': 'v', 'notes.md': '# notes' });
+    await h.core.openCourse(course);
+
+    const attached = h.core.attachResource('01 One.webm');
+    expect(h.ui.fileDialogOpen).toBe(true);
+    h.ui.answerFileDialog(join(course, 'notes.md'));
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+  });
+
+  it('attaches to the Lesson of the Course it was clicked in, if another Course opens meanwhile', async () => {
+    const h = await createHarness();
+    const first = await h.folder('First', { '01 One.webm': 'v', 'notes.md': '# notes' });
+    const other = await h.folder('Other', { '01 One.webm': 'v' });
+    await h.core.openCourse(first);
+
+    const attached = h.core.attachResource('01 One.webm');
+    await h.core.openCourse(other);
+    h.ui.answerFileDialog(join(first, 'notes.md'));
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+    expect(h.ui.messages).toContainEqual({
+      severity: 'info',
+      text: 'FollowAlong attached “notes.md” to “One” in “First”, which is no longer open.',
+    });
+    await h.core.openCourse(first);
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+  });
+
+  it('writes nothing when the learner closes the dialog without a file', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { '01 One.webm': 'v', 'notes.md': '# notes' });
+    await h.core.openCourse(course);
+
+    const attached = h.core.attachResource('01 One.webm');
+    h.ui.answerFileDialog(undefined);
+    await attached;
+
+    expect(await h.listFiles(course)).toEqual(['01 One.webm', 'notes.md']);
+    expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+  });
+
+  it('opens no dialog with no Course open, or for a Lesson the open Course does not have', async () => {
+    const h = await createHarness();
+    await h.core.attachResource('01 One.webm');
+    const course = await h.folder('Course', { '01 One.webm': 'v' });
+    await h.core.openCourse(course);
+    await h.core.attachResource('missing.webm');
+
+    expect(h.ui.fileDialogs).toBe(0);
+    expect(await h.listFiles(course)).toEqual(['01 One.webm']);
+  });
+});
+
 describe('attaching to a read-only Course whose fallback Resources file cannot be read', () => {
   it('attaches nothing, and says so, instead of failing the command', async () => {
     const h = await createHarness();
@@ -367,7 +426,7 @@ describe('attaching to a read-only Course whose fallback Resources file cannot b
     expect(h.ui.messages).toEqual([
       {
         severity: 'warning',
-        text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+        text: "FollowAlong can't update the Resources file of “Read-only course” (it is damaged or from a newer version). Nothing was changed.",
       },
     ]);
   });

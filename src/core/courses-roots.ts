@@ -2,7 +2,7 @@
  * The Courses roots (ADR 0022): the `followalong.coursesRoots` setting, read and written through
  * the Config port, and the folders the player may read media from, which follow from it.
  */
-import { isAbsolute, resolve, sep } from 'node:path';
+import { posix, resolve, sep } from 'node:path';
 
 import type { Config } from './ports.js';
 
@@ -11,6 +11,9 @@ const coursesRootsSetting = 'coursesRoots';
 
 /** On Windows, two spellings that differ only in letter case name the same folder. */
 const caseInsensitive = process.platform === 'win32';
+
+/** The path rules a Courses root follows: those of the OS VS Code runs on. */
+const hostFlavour = process.platform === 'win32' ? 'win32' : 'posix';
 
 /** What the setting holds, as the core uses it. */
 export interface CoursesRoots {
@@ -35,12 +38,12 @@ function normalisedRoot(path: string): string | undefined {
 /**
  * Whether `path` names one folder wherever VS Code runs. On Windows that takes a drive (`D:\`) or
  * a share (`\\server\share`): `\Learning` counts as absolute there, but on whichever drive
- * VS Code happens to run from.
+ * VS Code happens to run from. `flavour` is the host's; tests give each one on every OS.
  */
-function isFullPath(path: string): boolean {
-  return caseInsensitive
+export function isFullPath(path: string, flavour: 'win32' | 'posix' = hostFlavour): boolean {
+  return flavour === 'win32'
     ? /^([a-zA-Z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)/.test(path)
-    : isAbsolute(path);
+    : posix.isAbsolute(path);
 }
 
 /** What two spellings of one folder share, for comparing roots. */
@@ -91,16 +94,17 @@ export async function addCoursesRoot(config: Config, root: string): Promise<bool
 
 /**
  * The folders the player may read media from: the Courses roots, the Course folder when it is
- * outside them, and the extension storage. A change reloads the player page, which loses the
- * click that lets it start playback (#12 D3), so Courses under the same roots share them.
+ * outside them, and the fallback root of Course data (`<storage>/courses`, ADR 0025), not the
+ * whole extension storage. A change reloads the player page, which loses the click that lets it
+ * start playback (#12 D3), so Courses under the same roots share them.
  */
 export function playerFolders(
   roots: readonly string[],
   courseFolder: string,
-  storageFolder: string,
+  courseDataFallbackRoot: string,
 ): string[] {
   const underARoot = roots.some((root) => isSpelledInside(courseFolder, root));
-  return [...roots, ...(underARoot ? [] : [courseFolder]), storageFolder];
+  return [...roots, ...(underARoot ? [] : [courseFolder]), courseDataFallbackRoot];
 }
 
 /**

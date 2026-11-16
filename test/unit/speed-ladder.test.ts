@@ -53,7 +53,7 @@ describe('speed commands', () => {
     ]).toEqual([1.25, 1.5, 2, 1.5, 1.25, 1, 0.75]);
   });
 
-  it('follow the rate the player reports, such as one picked in the video’s own menu', async () => {
+  it('follow the rate the player reports, even one the core did not ask for', async () => {
     const h = await createHarness();
     await openLesson(h);
 

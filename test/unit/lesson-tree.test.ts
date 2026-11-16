@@ -179,7 +179,7 @@ describe('the Lesson tree of an opened Course', () => {
 
     expect(h.player.shown.at(-1)).toEqual({
       title: 'Setup',
-      resourceRoots: [course, h.storage.folder],
+      resourceRoots: [course, join(h.storage.folder, 'courses')],
     });
     expect(h.player.sent.at(-1)).toEqual({
       type: 'load',

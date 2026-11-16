@@ -111,7 +111,7 @@ at every switch, and moved the tab. Two changes:
   43813403964): the reload loses the click. Accepted by the orchestrator (#12 D3/D9). The picked Course's Lesson was refused autoplay
   (`paused {byUser: false}`) in the kept panel. So the core now gives the player the **Courses
   roots** as its folders, plus the Course folder only when it is outside every root, plus the
-  extension storage. Switching between Courses under the roots keeps the same roots: `show`
+  extension storage (narrowed to `<storage>/courses` by ADR 0025). Switching between Courses under the roots keeps the same roots: `show`
   answers `revealed`, the same page loads the next Lesson, and it still has the click. The smoke
   test asserts it: after one click, a Course picked under the same root starts by itself. A
   Course outside the roots, or a changed `coursesRoots` setting, reloads the page once.

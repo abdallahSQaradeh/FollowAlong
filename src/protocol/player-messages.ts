@@ -67,7 +67,7 @@ export type PlayerEvent =
   | (AboutLesson & { readonly type: 'ended' })
   /** The playhead has arrived at the place a seek asked for (also after a seek bar drag). */
   | (AboutLesson & { readonly type: 'seeked' })
-  /** The playback rate is now `rate`, whoever changed it (a `setRate` or the video's own menu). */
+  /** The playback rate is now `rate`, whoever changed it (today only `setRate`: ADR 0009). */
   | (AboutLesson & { readonly type: 'rateChanged'; readonly rate: number })
   | (AboutLesson & { readonly type: 'error'; readonly message: string })
   /** The learner clicked the "Next: <title>" overlay shown for this Lesson's end. */

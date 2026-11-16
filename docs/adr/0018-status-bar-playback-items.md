@@ -18,8 +18,8 @@ open. These are the choices.
     keep counting past 59 (`65:30 / 90:05`), because Lessons run past an hour. The length reads
     `--:--` until the player knows it (a WebM streamed through MediaSource reports 0 at first, ADR
     0003). The time starts at `00:00` for every loaded Lesson.
-  - Speed: the rate as the core tracks it (`1.25×`), so a rate picked in the video's own menu shows
-    too.
+  - Speed: the rate as the core tracks it (`1.25×`), so any rate the player reports shows too
+    (the video's own speed menu is hidden since ADR 0009).
   - Back: the short step (`5s`), read from the setting and refreshed when the setting changes.
 - **A click is one core command.** The items name a `StatusBarCommand` (`playPause`,
   `speedCycle`, `seekBackShort`), and the adapter runs one VS Code command,

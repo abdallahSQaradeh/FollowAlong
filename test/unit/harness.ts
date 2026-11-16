@@ -448,6 +448,11 @@ export interface Harness {
    */
   holdReads(folder: string): () => void;
   /**
+   * Holds every read of the file at `path` until the returned function is called, as a slow disk
+   * would; `reached` settles once a read has started.
+   */
+  holdFileReads(path: string): { readonly reached: Promise<void>; release(): void };
+  /**
    * Holds the next write to the workspace state (a Course open stores its folder there) until
    * `release` is called; `reached` settles once the write has started.
    */
@@ -489,6 +494,10 @@ export async function createHarness(): Promise<Harness> {
   const nodeFileSystem = createNodeFileSystem();
   const unreadable = new Set<string>();
   const held = new Map<string, Promise<void>>();
+  const heldFiles = new Map<
+    string,
+    { readonly reach: () => void; readonly released: Promise<void> }
+  >();
   const inFlight = new Set<Promise<unknown>>();
   /** Counts a call until it settles, so `settle()` can wait for it. */
   const track = <T>(call: Promise<T>): Promise<T> => {
@@ -514,7 +523,13 @@ export async function createHarness(): Promise<Harness> {
           new FileSystemError('readOnly', path, `EACCES: permission denied, open '${path}'`),
         );
       }
-      return track(nodeFileSystem.readText(path));
+      const hold = heldFiles.get(path);
+      hold?.reach();
+      return track(
+        hold === undefined
+          ? nodeFileSystem.readText(path)
+          : hold.released.then(() => nodeFileSystem.readText(path)),
+      );
     },
     writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
@@ -577,6 +592,24 @@ export async function createHarness(): Promise<Harness> {
       return () => {
         release();
       };
+    },
+    holdFileReads(path) {
+      let reach = (): void => undefined;
+      let release = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = () => {
+          // Only this hold: a later hold of the same file stays until its own release.
+          if (heldFiles.get(path)?.released === released) {
+            heldFiles.delete(path);
+          }
+          resolve();
+        };
+      });
+      heldFiles.set(path, { reach, released });
+      return { reached, release };
     },
     makeReadable(path) {
       unreadable.delete(path);

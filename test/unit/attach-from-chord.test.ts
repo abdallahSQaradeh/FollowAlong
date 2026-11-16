@@ -72,6 +72,25 @@ describe('attaching a Resource from the chord', () => {
     expect(resourceLabels(h, '02 Two.webm')).toEqual([]);
   });
 
+  it('attaches to the Lesson of the Course it was pressed in, if another Course opens meanwhile', async () => {
+    const { h, notes } = await playingFirstLesson();
+    const other = await h.folder('other', { '01 One.webm': 'v' });
+
+    const attached = h.core.attachToLoadedLesson();
+    await h.core.openCourse(other);
+    h.ui.answerFileDialog(notes);
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+    // The tree shows the other Course, so the learner is told where the Resource went.
+    expect(h.ui.messages).toContainEqual({
+      severity: 'info',
+      text: 'FollowAlong attached “notes.md” to “One” in “course”, which is no longer open.',
+    });
+    await h.core.openCourse(join(notes, '..'));
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+  });
+
   it('never pauses or otherwise commands the player', async () => {
     const { h, notes } = await playingFirstLesson();
     h.player.clearSent();

@@ -4,21 +4,27 @@
  */
 import { basename } from 'node:path';
 
-import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
-import { FileSystemError, type Disposable, type Ports } from './ports.js';
-import { openCourseData, UnreadableCourseDataError, type CourseData } from './course-data.js';
+import { FileSystemError, type Ports } from './ports.js';
+import {
+  fallbackRoot,
+  openCourseData,
+  UnreadableCourseDataError,
+  type CourseData,
+} from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
 import { scanCourses } from './course-scanner.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
-  buildStatusBar,
-  hiddenStatusBar,
-  type StatusBarCommand,
-  type StatusBarModel,
-} from './status-bar.js';
+  createLoadedLesson,
+  noLessonText,
+  type SpeedDirection,
+  type StepDirection,
+  type StepSize,
+} from './loaded-lesson.js';
+import type { StatusBarCommand } from './status-bar.js';
 import {
   findResource,
   newResource,
@@ -32,13 +38,10 @@ import {
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
+import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
 const openCourseKey = 'openCourse';
-
-/** How often Progress is saved while a Lesson plays (spec #12, Progress store). */
-const saveIntervalMs = 5000;
-import { createTerminalKeysOffer } from './terminal-keys.js';
 
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
@@ -47,8 +50,12 @@ export interface FollowAlong {
   restoreCourse(): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
-  /** Attaches a file, from anywhere on disk, as a Resource of a Lesson of the open Course. */
-  attachResource(lessonId: string, absolutePath: string): Promise<void>;
+  /**
+   * Attaches a file, from anywhere on disk, as a Resource of a Lesson of the open Course: the
+   * tree's "+". Without `absolutePath` it first asks for the file; the Lesson and its Course are
+   * fixed when the command runs, so a Course opened while the dialog is up never receives it.
+   */
+  attachResource(lessonId: string, absolutePath?: string): Promise<void>;
   /**
    * The attach command from the chord or the Command Palette: asks for a file and attaches it to
    * the Loaded Lesson when the command runs. The Lesson keeps playing meanwhile.
@@ -93,442 +100,43 @@ export interface FollowAlong {
   dispose(): void;
 }
 
-/** The Lesson the player shows, and how it was loaded. */
-interface CurrentLesson {
-  readonly lesson: Lesson;
-  readonly startAt: number;
-  readonly autoplay: boolean;
-  /**
-   * Set once the Lesson has played or the learner moved its playhead. Until then the playhead is
-   * where FollowAlong put it, and nothing is saved, so opening a Lesson never moves its position.
-   */
-  engaged: boolean;
-  /**
-   * Set by a `load` with a start position, until the player's next `seeked`: that seek is the one
-   * applying `startAt`, FollowAlong's own, wherever it lands (gate review of #25, H1).
-   */
-  startSeekPending: boolean;
-}
-
-export type StepSize = 'short' | 'long';
-export type StepDirection = 'back' | 'forward';
-export type SpeedDirection = 'up' | 'down';
-
-/** The fixed speed ladder (spec #12, story 41), slowest first. */
-const slowest = 0.75;
-const fastest = 2;
-const speedLadder = [slowest, 1, 1.25, 1.5, fastest] as const;
-const normalRate = 1;
-
-/** The rung one step from `rate`: the next one beyond it, or the end of the ladder. */
-function nextRate(rate: number, direction: SpeedDirection): number {
-  return direction === 'up'
-    ? (speedLadder.find((rung) => rung > rate) ?? fastest)
-    : (speedLadder.findLast((rung) => rung < rate) ?? slowest);
-}
-
-/** The rung a click on the status bar speed item goes to: one up, and round to the slowest. */
-function cycledRate(rate: number): number {
-  return rate >= fastest ? slowest : nextRate(rate, 'up');
-}
-
-/** The settings' defaults, in seconds (spec #12, Settings). */
-const defaultStepSeconds = { short: 5, long: 30 } as const;
-const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
-
-/** What the player reported about the current Lesson since its last `load`. */
-interface Playback {
-  /** Whether the Lesson is playing. */
-  readonly playing: boolean;
-  /** Whether the Lesson played to its end; a resume then restarts it, so it is not rewound. */
-  readonly ended: boolean;
-  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
-  readonly awaitingAutoplay: boolean;
-  /** Set when the play/pause command sent `play`, until the player answers it. */
-  readonly awaitingPlayAnswer: boolean;
-  /** Whether the learner was told, in this run of refusals, to press play in the player. */
-  readonly toldToPressPlay: boolean;
-}
-
-function freshPlayback(autoplay: boolean): Playback {
-  return {
-    playing: false,
-    ended: false,
-    awaitingAutoplay: autoplay,
-    awaitingPlayAnswer: false,
-    toldToPressPlay: false,
-  };
-}
-
-/**
- * What a `paused` event does to the record, and whether the learner is to be told to press play.
- * - A refused autoplay is told on its own: the `load` that asked for it started the run.
- * - A refused `play` from the command is told once per run of refusals, so repeated keypresses
- *   do not stack messages. A `played` or `ended` (see `onPlayerEvent`) or a `load` ends the run.
- */
-function afterPause(
-  playback: Playback,
-  byUser: boolean,
-): { readonly playback: Playback; readonly tellToPressPlay: boolean } {
-  const refused = !byUser;
-  const autoplayRefused = playback.awaitingAutoplay && refused;
-  const commandRefused = playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
-  return {
-    tellToPressPlay: autoplayRefused || commandRefused,
-    playback: {
-      ...freshPlayback(false),
-      toldToPressPlay: playback.toldToPressPlay || commandRefused,
-    },
-  };
-}
-
-/** A seconds setting: any finite number above 0, else `fallback` (a hand-edited value may be bad). */
-function positiveSetting(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function pressPlayText(lesson: Lesson): string {
-  return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
-}
+export type { SpeedDirection, StepDirection, StepSize } from './loaded-lesson.js';
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, storage, clock, ui, logger, config } = ports;
-
-  let current: CurrentLesson | undefined;
-  /** How many `load`s were sent, and the `loadId` of the one that loaded `current`, if any. */
-  let loads = 0;
-  let currentLoad: number | undefined;
-  /** The open Course's Progress. */
-  let progress: ProgressRecorder | undefined;
-  /** The next save while the Lesson plays. */
-  let saveTimer: Disposable | undefined;
-  /** Whether the open player page has posted `ready` and takes commands. */
-  let playerReady = false;
-  /** The Rewind the open player page holds; 0 for a page that has just started. */
-  let playerResumeRewind = 0;
-  /** What the player last said about the current Lesson; starts again with every `load`. */
-  let playback = freshPlayback(false);
-  /** The playback rate: what the player last reported, or what the core last asked for. */
-  let rate: number = normalRate;
-  /** Rates asked of the player that it has not reported yet, oldest first. */
-  let askedRates: number[] = [];
-
-  /** The playhead and length the player last reported for the current Lesson, in seconds. */
-  let position = 0;
-  let duration = 0;
-  /** What the status bar shows now; a new model is sent to the UI only when it differs. */
-  let statusBar: StatusBarModel = hiddenStatusBar;
-
-  function refreshStatusBar(): void {
-    const next =
-      current === undefined
-        ? hiddenStatusBar
-        : buildStatusBar({
-            playing: playback.playing,
-            position,
-            duration,
-            rate,
-            shortStep: stepSeconds('short'),
-          });
-    if (JSON.stringify(next) === JSON.stringify(statusBar)) {
-      return;
-    }
-    statusBar = next;
-    ui.showStatusBar(next);
-  }
-
-  /** Starts what the player reported about a Lesson again: nothing yet. */
-  function resetPlayhead(autoplay: boolean): void {
-    playback = freshPlayback(autoplay);
-    position = 0;
-    duration = 0;
-    // Until the next `load`, no event is about the Lesson the player should show.
-    currentLoad = undefined;
-  }
-
-  function loadCurrent(): void {
-    if (current === undefined) {
-      return;
-    }
-    const { lesson, startAt, autoplay } = current;
-    const command: Extract<PlayerCommand, { type: 'load' }> = {
-      type: 'load',
-      lessonId: lesson.id,
-      videoUri: player.resourceUri(lesson.path),
-      container: lesson.container,
-      startAt,
-      autoplay,
-      loadId: loads + 1,
-    };
-    player.send(command);
-    // The player seeks to a start position once it can: that `seeked` is not the learner's.
-    current.startSeekPending = startAt > 0;
-    resetPlayhead(command.autoplay);
-    loads += 1;
-    currentLoad = loads;
-    sendResumeRewind();
-  }
-
-  /**
-   * Tells the player the Rewind for the click that resumes a Lesson there (ADR 0016), when it
-   * differs from what the player holds. A fresh player page holds 0, so the default sends nothing.
-   */
-  function sendResumeRewind(): void {
-    const seconds = resumeRewindSeconds();
-    if (seconds !== playerResumeRewind) {
-      playerResumeRewind = seconds;
-      player.send({ type: 'setResumeRewind', seconds });
-    }
-  }
-
-  /** Saves every 5 s from now on, until the Lesson stops playing. */
-  function startSaving(): void {
-    saveTimer ??= clock.schedule(saveIntervalMs, () => {
-      saveTimer = undefined;
-      void progress?.save();
-      if (playback.playing) {
-        startSaving();
-      }
-    });
-  }
-
-  /** The Lesson stopped playing (paused, ended, failed or left): no more saves on the clock. */
-  function stopSaving(): void {
-    saveTimer?.dispose();
-    saveTimer = undefined;
-  }
-
-  /**
-   * The Lesson the player shows now, if `event` is about it and not a late one about the last. The
-   * same Lesson id is not enough: the page outlives a Course (ADR 0022), and another Course can
-   * hold a Lesson with the same id, so the event must also come from the current `load`.
-   */
-  function shownLesson(event: AboutLesson): CurrentLesson | undefined {
-    return event.lessonId === current?.lesson.id &&
-      currentLoad !== undefined &&
-      event.loadId === currentLoad
-      ? current
-      : undefined;
-  }
-
-  function onPlayerEvent(event: PlayerEvent): void {
-    switch (event.type) {
-      case 'ready':
-        playerReady = true;
-        playerResumeRewind = 0;
-        rate = normalRate;
-        askedRates = [];
-        logger.log({
-          level: 'debug',
-          message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
-        });
-        if (current?.engaged === true) {
-          // A page that reloaded mid-Lesson starts again where the playhead was, not where the
-          // Lesson first started: its start seek then saves nothing and moves nothing back.
-          current = {
-            ...current,
-            startAt: position,
-            autoplay: playback.playing,
-            engaged: false,
-          };
-        }
-        loadCurrent();
-        break;
-      case 'error': {
-        logger.log({
-          level: 'error',
-          message: `Player error in ${event.lessonId}: ${event.message}`,
-        });
-        const shown = shownLesson(event);
-        if (shown !== undefined) {
-          // The player posts nothing more for a failed Lesson (ADR 0003), not even a pause.
-          stopSaving();
-          ui.showMessage({
-            severity: 'error',
-            text: `FollowAlong could not play “${shown.lesson.title}”: ${event.message}`,
-          });
-        }
-        break;
-      }
-      case 'paused': {
-        const shown = shownLesson(event);
-        if (shown === undefined) {
-          break;
-        }
-        // A pause the learner did not ask for after a `load` with autoplay, or after the command's
-        // `play`: VS Code refused it. Without a word the learner would face a stopped video.
-        const after = afterPause(playback, event.byUser);
-        playback = after.playback;
-        if (after.tellToPressPlay) {
-          ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
-        }
-        stopSaving();
-        if (shown.engaged) {
-          void progress?.save();
-        }
-        break;
-      }
-      case 'played': {
-        const shown = shownLesson(event);
-        if (shown !== undefined) {
-          // Also ends a run of refusals: the player did what it was asked.
-          playback = { ...freshPlayback(false), playing: true };
-          shown.engaged = true;
-          startSaving();
-        }
-        break;
-      }
-      case 'ended':
-        if (shownLesson(event) !== undefined) {
-          // Ended: a resume then restarts the Lesson, so it is not rewound (ADR 0016).
-          playback = { ...freshPlayback(false), ended: true };
-          stopSaving();
-          offerNextLesson();
-        }
-        break;
-      case 'timeUpdate': {
-        const shown = shownLesson(event);
-        if (shown !== undefined) {
-          position = event.position;
-          duration = event.duration;
-          if (shown.engaged) {
-            progress?.record(shown.lesson.id, event.position, event.duration);
-          }
-        }
-        break;
-      }
-      case 'seeked': {
-        // A seek is the learner moving the playhead, playing or not: it counts, and saves now.
-        // The player's timeUpdate at the new position comes before it (HTML seek steps).
-        const shown = shownLesson(event);
-        if (shown === undefined) {
-          break;
-        }
-        if (playback.ended) {
-          // A Lesson moved off its end (a step back, the seek bar) is no longer ended.
-          playback = { ...playback, ended: false };
-        }
-        if (shown.startSeekPending) {
-          // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
-          shown.startSeekPending = false;
-          break;
-        }
-        shown.engaged = true;
-        progress?.record(shown.lesson.id, position, duration);
-        void progress?.save();
-        break;
-      }
-      case 'nextClicked':
-        // A click for a Lesson the learner has left, or one no Course holds any more, is stale.
-        if (shownLesson(event) !== undefined) {
-          const next = lessonBeside(1)?.target;
-          if (next !== undefined) {
-            // A Lesson switch like any other: the Lesson left is saved, the next resumes 5 s back.
-            playLesson(next.id);
-          }
-        }
-        break;
-      case 'rateChanged': {
-        // The answer to a press still counts it and every press before it; a late answer must not
-        // undo the presses after it. A rate nobody asked for (the video's own menu) replaces them.
-        const answered = askedRates.indexOf(event.rate);
-        if (answered === -1) {
-          askedRates = [];
-          rate = event.rate;
-        } else {
-          askedRates = askedRates.slice(answered + 1);
-          rate = askedRates.at(-1) ?? event.rate;
-        }
-        break;
-      }
-      case 'userInteracted':
-        ui.returnFocus();
-        break;
-    }
-    refreshStatusBar();
-  }
-
-  /**
-   * The Lesson `offset` places from the current one in Course order. `undefined` when the current
-   * Lesson is not in the open Course (a Course with no Lessons was opened after it): there is no
-   * place to count from. `target` is `undefined` beyond either end of the Course.
-   */
-  function lessonBeside(
-    offset: number,
-  ): { readonly course: Course; readonly target: Lesson | undefined } | undefined {
-    const course = openedCourse;
-    const lessons = course === undefined ? [] : lessonsInOrder(course);
-    const here = lessons.findIndex((lesson) => lesson.id === current?.lesson.id);
-    return course === undefined || here === -1
-      ? undefined
-      : { course, target: lessons[here + offset] };
-  }
-
-  /**
-   * The Lesson has ended: the player stops on its last frame and, when a Lesson follows in Course
-   * order, shows "Next: <title>". The core never loads it by itself (spec #12, story 50); that is
-   * the learner's click on the overlay, or `nextLesson`.
-   */
-  function offerNextLesson(): void {
-    const next = lessonBeside(1)?.target;
-    if (next !== undefined) {
-      player.send({ type: 'showNext', title: next.title });
-    }
-  }
-
-  /** Forgets the loaded Lesson: nothing is loaded now, so the commands find no Lesson. */
-  function unloadLesson(): void {
-    current = undefined;
-    resetPlayhead(false);
-    refreshStatusBar();
-  }
-
-  /** The learner closed the player: a new page starts from scratch, at normal speed. */
-  function onPlayerClosed(): void {
-    playerReady = false;
-    rate = normalRate;
-    askedRates = [];
-    // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
-    void leaveCurrent();
-    unloadLesson();
-  }
-
-  const subscriptions: Disposable[] = [
-    player.onEvent(onPlayerEvent),
-    player.onDidClose(onPlayerClosed),
-    // The back item names the short step, so a changed setting shows at once.
-    config.onDidChange((affects) => {
-      if (affects(stepSettings.short)) {
-        refreshStatusBar();
-      }
-      if (playerReady && affects('resumeRewind')) {
-        sendResumeRewind();
-      }
-    }),
-  ];
-
-  function dispose(): void {
-    saveTimer?.dispose();
-    for (const subscription of subscriptions) {
-      subscription.dispose();
-    }
-  }
+  const { storage, ui, logger, config } = ports;
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
   /** The open Course's Course data, and the Resources read from it. */
   let courseData: CourseData | undefined;
   let resources: ResourcesData = noResources;
+  /** The open Course's Progress. */
+  let progress: ProgressRecorder | undefined;
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
   let attaching: Promise<unknown> = Promise.resolve();
 
-  /** The learner leaves the current Lesson (another Lesson, another Course, the window closes). */
-  function leaveCurrent(): Promise<void> {
-    stopSaving();
-    // From now on its late events are ignored, so none is recorded into the next Course.
-    current = undefined;
-    // Also waits for a save still under way, such as the one of the Lesson before.
-    return progress?.save() ?? Promise.resolve();
+  /** The Lesson the player holds, and the playback commands. */
+  const loaded = createLoadedLesson(ports, {
+    progress: () => progress,
+    lessonAfter: (lesson) => lessonBeside(lesson, 1)?.target,
+    nextClicked: (next) => {
+      playLesson(next.id);
+    },
+  });
+
+  /**
+   * The Lesson `offset` places from `lesson` in the open Course's Course order. `undefined` when
+   * `lesson` is not one of the open Course's Lessons: there is no place to count from. `target`
+   * is `undefined` beyond either end of the Course.
+   */
+  function lessonBeside(
+    lesson: Lesson | undefined,
+    offset: number,
+  ): { readonly target: Lesson | undefined } | undefined {
+    const lessons = openedCourse === undefined ? [] : lessonsInOrder(openedCourse);
+    // The Lesson itself, not its id: another Course can hold a Lesson with the same id.
+    const here = lesson === undefined ? -1 : lessons.indexOf(lesson);
+    return here === -1 ? undefined : { target: lessons[here + offset] };
   }
 
   /** Offers, once, to add the one-press commands to the terminal's skip-shell setting. */
@@ -536,27 +144,97 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
-    // A save timer left from the Lesson before must not write into this Lesson's Course.
-    stopSaving();
-    current = { lesson, startAt, autoplay, engaged: false, startSeekPending: false };
-    // Nothing is known about this Lesson until the player loads it and reports.
-    resetPlayhead(false);
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
     ui.selectLesson(lesson.id);
-    const shown = player.show({
-      title: lesson.title,
-      resourceRoots: playerFolders(readCoursesRoots(config).roots, course.folder, storage.folder),
+    loaded.load(lesson, {
+      startAt,
+      autoplay,
+      resourceRoots: playerFolders(
+        readCoursesRoots(config).roots,
+        course.folder,
+        fallbackRoot(storage.folder),
+      ),
     });
-    if (shown === 'created') {
-      // A new page is not ready and plays at normal speed.
-      playerReady = false;
-      rate = normalRate;
-      askedRates = [];
-    } else if (playerReady) {
-      loadCurrent();
-    }
-    refreshStatusBar();
     offerTerminalKeys();
+  }
+
+  /**
+   * Attaches a file to a Lesson of `course`, after any attach still under way. It writes into that
+   * Course's data even if the learner has opened another Course since, and shows it in the tree
+   * only if that Course is still the one open.
+   */
+  function attachInTurn(
+    course: Course,
+    data: CourseData,
+    lessonId: string,
+    absolutePath: string,
+  ): Promise<void> {
+    /** The Resources file is there but cannot be used: writing would replace what it holds. */
+    const refuse = (): void => {
+      logger.log({
+        level: 'warn',
+        message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
+      });
+      // The Course is named: after a switch, "this Course" would read as the one open now.
+      ui.showMessage({
+        severity: 'warning',
+        text: `FollowAlong can't update the Resources file of “${basename(course.folder)}” (it is damaged or from a newer version). Nothing was changed.`,
+      });
+    };
+    const attach = async (): Promise<void> => {
+      // Re-read first: another window may have attached to this Course since it was opened.
+      const read = await data.read(resourcesFile);
+      if (read === undefined && (await resourcesFileExists(ports.fileSystem, course.folder))) {
+        // The file is there but was ignored (damaged, or from a newer FollowAlong): writing
+        // would replace data the learner, or a newer version, still needs.
+        refuse();
+        return;
+      }
+      const stored = read ?? noResources;
+      const next = withResource(stored, lessonId, newResource(course.folder, absolutePath));
+      try {
+        await data.write(resourcesFile, next);
+      } catch (error) {
+        // The copy the write would replace (the fallback one, in a read-only Course) is unusable.
+        if (error instanceof UnreadableCourseDataError) {
+          refuse();
+          return;
+        }
+        throw error;
+      }
+      logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });
+      // The Course may have been opened again, or another one opened, while this attach wrote.
+      if (openedCourse?.folder === course.folder) {
+        resources = next;
+        ui.showLessonTree(buildLessonTree(openedCourse, resources));
+      } else {
+        // The tree shows another Course: without a word the learner might attach the file again.
+        const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+        ui.showMessage({
+          severity: 'info',
+          text: `FollowAlong attached “${basename(absolutePath)}” to “${lesson?.title ?? lessonId}” in “${basename(course.folder)}”, which is no longer open.`,
+        });
+      }
+    };
+    const done = attaching.then(attach, attach);
+    attaching = done.catch(() => undefined);
+    return done;
+  }
+
+  /**
+   * Both attach routes, once they have fixed the Lesson and its Course: asks for the file when
+   * none is given yet, then attaches it in turn. A closed dialog attaches nothing.
+   */
+  async function attachTo(
+    course: Course,
+    data: CourseData,
+    lessonId: string,
+    absolutePath?: string,
+  ): Promise<void> {
+    const path = absolutePath ?? (await ui.pickFile());
+    if (path !== undefined) {
+      await attachInTurn(course, data, lessonId, path);
+    }
   }
 
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */
@@ -620,8 +298,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     switching = true;
     try {
       // The Lesson playing now is left only once the new Course can be opened.
-      const hadLesson = current !== undefined;
-      await leaveCurrent();
+      const hadLesson = loaded.lesson() !== undefined;
+      await loaded.leave();
       // Read first, then switch, so no click sees one Course's Resources next to another's folder.
       const data = openCourseData(folder, ports);
       const stored = await readResources(data, folder);
@@ -639,10 +317,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         // The player still shows the Lesson it had, but this Course has none to offer: the
         // commands and the status bar items follow the Course the learner opened.
         // The video would play on with every control gone, so it is stopped first.
-        if (hadLesson && playerReady) {
-          player.send({ type: 'pause' });
-        }
-        unloadLesson();
+        loaded.unload(hadLesson);
         return;
       }
       await storage.workspace.set(openCourseKey, folder);
@@ -660,83 +335,6 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } finally {
       switching = false;
     }
-  }
-
-  /**
-   * Whether a playback command can be sent now. Tells the learner when no Lesson is open; ignores
-   * the command while the page is still starting, because it takes no command yet and plays the
-   * Lesson when it is ready.
-   */
-  function hasPlayableLesson(command: string): boolean {
-    if (current === undefined) {
-      ui.showMessage({
-        severity: 'info',
-        text: 'FollowAlong: no Lesson is open. Open a Course first.',
-      });
-      return false;
-    }
-    if (!playerReady) {
-      logger.log({ level: 'debug', message: `${command} ignored: the player is not ready yet.` });
-      return false;
-    }
-    return true;
-  }
-
-  /** The step in seconds, read when the command runs so a changed setting counts at once. */
-  function stepSeconds(size: StepSize): number {
-    return positiveSetting(config.get(stepSettings[size]), defaultStepSeconds[size]);
-  }
-
-  /** The seconds a manual resume steps back, read when the command runs; 0 when unset or invalid. */
-  function resumeRewindSeconds(): number {
-    return positiveSetting(config.get('resumeRewind'), 0);
-  }
-
-  /** Sends `play`, after a `seekBy` back of `rewind` seconds when that is above 0. */
-  function resume(rewind: number): void {
-    const wasAwaiting = playback.awaitingPlayAnswer;
-    playback = { ...playback, awaitingPlayAnswer: true };
-    // A second press before the player answers must not rewind again.
-    if (rewind > 0 && !playback.ended && !wasAwaiting) {
-      player.send({ type: 'seekBy', seconds: -rewind });
-    }
-    player.send({ type: 'play' });
-  }
-
-  /**
-   * The play/pause command: pauses a playing Lesson, else resumes it, first stepping back by the
-   * `followalong.resumeRewind` setting (a manual resume, ADR 0016).
-   */
-  function playPause(): void {
-    if (!hasPlayableLesson('Play/pause')) {
-      return;
-    }
-    if (playback.playing) {
-      player.send({ type: 'pause' });
-      return;
-    }
-    resume(resumeRewindSeconds());
-  }
-
-  /** The step commands. */
-  function seekStep(size: StepSize, direction: StepDirection): void {
-    if (!hasPlayableLesson('Seek step')) {
-      return;
-    }
-    const seconds = stepSeconds(size);
-    player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
-  }
-
-  /** Asks the player for `next`, the rung a speed command chose. */
-  function setRate(next: number): void {
-    // Counted at once, so presses in a row climb before the player has answered the first.
-    if (next !== rate) {
-      // The player reports only a change, so a press that changes nothing has no answer to wait for.
-      askedRates.push(next);
-    }
-    rate = next;
-    player.send({ type: 'setRate', rate });
-    refreshStatusBar();
   }
 
   /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
@@ -757,7 +355,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       });
       return;
     }
-    void leaveCurrent();
+    void loaded.leave();
     const saved = progress?.current();
     play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
   }
@@ -784,17 +382,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /**
-   * Plays the Lesson `offset` places from the current one in Course order, if there is one. The
-   * current Lesson is not in the open Course when the learner opened a Course with no Lessons
-   * after it: its player still shows the old Lesson, but there is no Lesson to move from.
+   * Plays the Lesson `offset` places from the Loaded Lesson in Course order, if there is one. With
+   * no Lesson loaded (none yet, the player was closed, or the open Course has no Lessons) there is
+   * no Lesson to move from.
    */
   function moveToLesson(offset: number): void {
-    const beside = lessonBeside(offset);
+    const beside = lessonBeside(loaded.lesson(), offset);
     if (beside === undefined) {
-      ui.showMessage({
-        severity: 'info',
-        text: 'FollowAlong: no Lesson is open. Open a Course first.',
-      });
+      ui.showMessage({ severity: 'info', text: noLessonText });
       return;
     }
     if (beside.target !== undefined) {
@@ -869,7 +464,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return true;
   }
 
-  const followAlong: FollowAlong = {
+  return {
     openCourse(folder) {
       return openInTurn(folder, false);
     },
@@ -900,68 +495,31 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
       }
     },
-    attachResource(lessonId, absolutePath) {
+    async attachResource(lessonId, absolutePath) {
       const course = openedCourse;
       const data = courseData;
       if (course === undefined || data === undefined) {
         logger.log({ level: 'warn', message: `Cannot attach to ${lessonId}: no Course is open.` });
-        return Promise.resolve();
+        return;
       }
       if (!lessonsInOrder(course).some((lesson) => lesson.id === lessonId)) {
         logger.log({
           level: 'warn',
           message: `Cannot attach to ${lessonId}: it is not a Lesson of the open Course.`,
         });
-        return Promise.resolve();
+        return;
       }
-      /** The Resources file is there but cannot be used: writing would replace what it holds. */
-      const refuse = (): void => {
-        logger.log({
-          level: 'warn',
-          message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
-        });
-        ui.showMessage({
-          severity: 'warning',
-          text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
-        });
-      };
-      const attach = async (): Promise<void> => {
-        // Re-read first: another window may have attached to this Course since it was opened.
-        const read = await data.read(resourcesFile);
-        if (read === undefined && (await resourcesFileExists(ports.fileSystem, course.folder))) {
-          // The file is there but was ignored (damaged, or from a newer FollowAlong): writing
-          // would replace data the learner, or a newer version, still needs.
-          refuse();
-          return;
-        }
-        const stored = read ?? noResources;
-        const next = withResource(stored, lessonId, newResource(course.folder, absolutePath));
-        try {
-          await data.write(resourcesFile, next);
-        } catch (error) {
-          // The copy the write would replace (the fallback one, in a read-only Course) is unusable.
-          if (error instanceof UnreadableCourseDataError) {
-            refuse();
-            return;
-          }
-          throw error;
-        }
-        logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });
-        // The Course may have been opened again while this attach was writing.
-        if (openedCourse?.folder === course.folder) {
-          resources = next;
-          ui.showLessonTree(buildLessonTree(openedCourse, resources));
-        }
-      };
-      const done = attaching.then(attach, attach);
-      attaching = done.catch(() => undefined);
-      return done;
+      await attachTo(course, data, lessonId, absolutePath);
     },
     async attachToLoadedLesson() {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
-      // learner means the Lesson they were watching, even if the next one starts meanwhile.
-      const lesson = current?.lesson;
-      if (lesson === undefined) {
+      // learner means the Lesson they were watching, even if the next one starts meanwhile. Its
+      // Course is fixed too, because another Course can hold a Lesson with the same id.
+      // The Loaded Lesson is always one of the open Course's: `open` leaves it before switching.
+      const lesson = loaded.lesson();
+      const course = openedCourse;
+      const data = courseData;
+      if (lesson === undefined || course === undefined || data === undefined) {
         ui.showMessage({
           severity: 'info',
           text: 'Open a Lesson first, then attach a Resource to it.',
@@ -969,10 +527,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       try {
-        const path = await ui.pickFile();
-        if (path !== undefined) {
-          await followAlong.attachResource(lesson.id, path);
-        }
+        await attachTo(course, data, lesson.id);
       } finally {
         // The dialog took keyboard focus: hand it back, also when the attach failed (ADR 0023).
         ui.returnFocus();
@@ -1002,43 +557,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
       }
     },
-    playPause,
-    resumeWithoutRewind() {
-      // Silent: an automatic resume must not tell the learner anything they did not ask for.
-      if (current === undefined || !playerReady || playback.playing) {
-        return;
-      }
-      resume(0);
+    playPause() {
+      loaded.playPause();
     },
-    seekStep,
+    resumeWithoutRewind() {
+      loaded.resumeWithoutRewind();
+    },
+    seekStep(size, direction) {
+      loaded.seekStep(size, direction);
+    },
+    speedStep(direction) {
+      loaded.speedStep(direction);
+    },
+    statusBarClick(command) {
+      loaded.statusBarClick(command);
+    },
     async close() {
       // An open under way leaves its Lesson and saves it first; then this window's Lesson.
       await opening;
-      await leaveCurrent();
-      dispose();
-    },
-    speedStep(direction) {
-      if (hasPlayableLesson('Speed step')) {
-        setRate(nextRate(rate, direction));
-      }
-    },
-    statusBarClick(command) {
-      switch (command) {
-        case 'playPause':
-          playPause();
-          break;
-        case 'seekBackShort':
-          seekStep('short', 'back');
-          break;
-        case 'speedCycle':
-          if (hasPlayableLesson('Speed cycle')) {
-            setRate(cycledRate(rate));
-          }
-          break;
-      }
-      // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
-      // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
-      ui.returnFocus();
+      await loaded.leave();
+      loaded.dispose();
     },
     nextLesson() {
       moveToLesson(1);
@@ -1046,7 +584,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     previousLesson() {
       moveToLesson(-1);
     },
-    dispose,
+    dispose() {
+      loaded.dispose();
+    },
   };
-  return followAlong;
 }
