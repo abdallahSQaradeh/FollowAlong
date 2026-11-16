@@ -5,15 +5,30 @@
 import * as vscode from 'vscode';
 
 import type { Logger } from '../../core/logger.js';
-import type { LessonTreeModel, LessonTreeNode } from '../../core/lesson-tree.js';
+import type { CourseNode, LessonTreeModel, LessonTreeNode } from '../../core/lesson-tree.js';
 
 export const lessonTreeViewId = 'followalong.lessons';
 export const playLessonCommand = 'followalong.playLesson';
 export const openResourceCommand = 'followalong.openResource';
+/** The scheme of the `resourceUri` of a missing Resource: the decoration below dims such rows. */
+const missingScheme = 'followalong-missing';
 
-/** What VS Code shows under a node: a Section's Lessons and Sections, a Lesson's Resources. */
-function childrenOf(node: LessonTreeNode): readonly LessonTreeNode[] {
+/** Any node of the tree: the Course node at its top, or a node of the Course below it. */
+type TreeNode = CourseNode | LessonTreeNode;
+
+/** The top of the tree: the Course node (with the Course's Resources), then the Course's nodes. */
+function rootsOf(model: LessonTreeModel): readonly TreeNode[] {
+  return model.course === undefined ? model.nodes : [model.course, ...model.nodes];
+}
+
+/**
+ * What VS Code shows under a node: a Course's Resources, a Section's Lessons and Sections, a
+ * Lesson's Resources.
+ */
+function childrenOf(node: TreeNode): readonly TreeNode[] {
   switch (node.kind) {
+    case 'course':
+      return node.resources;
     case 'section':
       return node.children;
     case 'lesson':
@@ -24,7 +39,7 @@ function childrenOf(node: LessonTreeNode): readonly LessonTreeNode[] {
 }
 
 /** The nodes from the top of the tree down to the node with this id, or none if it is not there. */
-function pathTo(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode[] {
+function pathTo(nodes: readonly TreeNode[], id: string): TreeNode[] {
   for (const node of nodes) {
     if (node.id === id) {
       return [node];
@@ -37,7 +52,7 @@ function pathTo(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode[] 
   return [];
 }
 
-export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, vscode.Disposable {
+export class LessonTreeView implements vscode.TreeDataProvider<TreeNode>, vscode.Disposable {
   private model: LessonTreeModel = { nodes: [] };
   /** The tree as the learner sees it now (the smoke test reads it). */
   get current(): LessonTreeModel {
@@ -45,14 +60,26 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
   }
 
   private readonly changed = new vscode.EventEmitter<undefined>();
-  private readonly view: vscode.TreeView<LessonTreeNode>;
+  private readonly view: vscode.TreeView<TreeNode>;
   private readonly subscription: vscode.Disposable;
+  /** Dims the label of a Resource whose file is missing, as VS Code dims a disabled item. */
+  private readonly dimming: vscode.Disposable;
   /** The Lesson the core last asked to select. */
   private selectedLessonId: string | undefined;
   readonly onDidChangeTreeData = this.changed.event;
 
   constructor(private readonly logger: Logger) {
     this.view = vscode.window.createTreeView(lessonTreeViewId, { treeDataProvider: this });
+    this.dimming = vscode.window.registerFileDecorationProvider({
+      provideFileDecoration: (uri) =>
+        uri.scheme === missingScheme
+          ? new vscode.FileDecoration(
+              undefined,
+              'The file is missing',
+              new vscode.ThemeColor('disabledForeground'),
+            )
+          : undefined,
+    });
     this.subscription = this.view.onDidChangeVisibility((event) => {
       if (event.visible) {
         this.revealSelected();
@@ -86,7 +113,7 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
     if (this.selectedLessonId === undefined || !this.view.visible) {
       return;
     }
-    const node = pathTo(this.model.nodes, this.selectedLessonId).at(-1);
+    const node = pathTo(rootsOf(this.model), this.selectedLessonId).at(-1);
     if (node === undefined) {
       return;
     }
@@ -100,18 +127,31 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
       });
   }
 
-  getParent(node: LessonTreeNode): LessonTreeNode | undefined {
-    return pathTo(this.model.nodes, node.id).at(-2);
+  getParent(node: TreeNode): TreeNode | undefined {
+    return pathTo(rootsOf(this.model), node.id).at(-2);
   }
 
-  getChildren(node?: LessonTreeNode): LessonTreeNode[] {
+  getChildren(node?: TreeNode): TreeNode[] {
     if (node === undefined) {
-      return [...this.model.nodes];
+      return [...rootsOf(this.model)];
     }
     return [...childrenOf(node)];
   }
 
-  getTreeItem(node: LessonTreeNode): vscode.TreeItem {
+  getTreeItem(node: TreeNode): vscode.TreeItem {
+    if (node.kind === 'course') {
+      // Open when it has Resources, so the cheat sheet just attached is in sight.
+      const item = new vscode.TreeItem(
+        node.label,
+        node.resources.length > 0
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.None,
+      );
+      item.id = node.id;
+      item.contextValue = 'course';
+      item.iconPath = new vscode.ThemeIcon('book');
+      return item;
+    }
     if (node.kind === 'section') {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.id = node.id;
@@ -122,9 +162,17 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
     if (node.kind === 'resource') {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.id = node.id;
-      item.contextValue = 'resource';
-      item.tooltip = node.path;
-      item.resourceUri = vscode.Uri.file(node.path);
+      item.tooltip = node.missing
+        ? `${node.path}\nThe file is missing. Use Relink… to point it at its new place.`
+        : node.path;
+      // A missing file shows dimmed, and only then offers Relink… (story 97).
+      item.contextValue = node.missing ? 'resourceMissing' : 'resource';
+      if (node.missing) {
+        item.description = 'missing';
+      }
+      item.resourceUri = node.missing
+        ? vscode.Uri.file(node.path).with({ scheme: missingScheme })
+        : vscode.Uri.file(node.path);
       item.command = { command: openResourceCommand, title: 'Open Resource', arguments: [node.id] };
       return item;
     }
@@ -146,6 +194,7 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
 
   dispose(): void {
     this.subscription.dispose();
+    this.dimming.dispose();
     this.view.dispose();
     this.changed.dispose();
   }

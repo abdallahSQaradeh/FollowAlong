@@ -34,16 +34,17 @@ and never decides what done or in progress means.
   no icon files.
 - `description` is the tree item's description (grey text after the label), for Lessons and
   Sections.
-- The Course `summary` is the tree **view's** description, beside the title "Lessons". It is not a
-  root node, so the first node of the tree stays free for the Course Resources (spec #12, story 93)
-  and #58 does not have to move around it.
+- The Course `summary` is the tree **view's** description, beside the title "Lessons". It is not
+  part of the Course node (#56, ADR 0045), which carries the Course Resources and their "+": the
+  Progress decoration and the Resource rows stay separate parts of the model, so neither ticket
+  has to move around the other.
 
 ## Considered options
 
 - **ThemeIcons per state** (codicons for done, in progress and not started). Rejected: they depend
   on the codicon set and the theme, and the stories name the glyphs.
-- **The Course summary as the first tree node.** Rejected: it competes with the Course Resources
-  node and would be selectable and highlightable like a Lesson.
+- **The Course summary as a tree node of its own.** Rejected: it would be selectable and
+  highlightable like a Lesson, and it is one line of text, which the view's description shows.
 - **Percent rounded to the nearest.** Rejected: see above, a Course at 99.6 % would show `100%`.
 - **A `current` flag in the model.** Rejected: see above; `selectLesson` already does it.
 

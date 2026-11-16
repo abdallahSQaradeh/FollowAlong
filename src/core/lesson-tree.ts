@@ -7,7 +7,7 @@ import { basename } from 'node:path';
 import { lessonsInOrder, type Course, type Outline, type Section } from './course-model.js';
 import type { LessonStatus } from './lesson-status.js';
 import { lessonEntry, lessonStatus, type CourseProgress } from './progress.js';
-import { resourcePath, type ResourcesData } from './resources.js';
+import { resourcePath, type ResourceRecord, type ResourcesData } from './resources.js';
 import { formatClock } from './status-bar.js';
 
 /** The mark before a Lesson in the tree, by its state (spec #12, story 86). */
@@ -25,6 +25,8 @@ export interface ResourceNode {
   readonly label: string;
   /** The file's full path. */
   readonly path: string;
+  /** Whether the file is no longer where the Resource points: the tree shows it dimmed. */
+  readonly missing: boolean;
 }
 
 export type LessonTreeNode =
@@ -58,6 +60,23 @@ export type LessonTreeNode =
       readonly children: readonly LessonTreeNode[];
     };
 
+/**
+ * The Course itself, shown above the Sections and Lessons: it carries the Resources of the whole
+ * Course, and the "+" that attaches one.
+ */
+export interface CourseNode {
+  readonly kind: 'course';
+  /** Never the id of a Lesson (a file name) or of a Section (it ends in `/`). */
+  readonly id: typeof courseNodeId;
+  /** The Course's name: its folder's name. */
+  readonly label: string;
+  /** The Course's Resources, in the order they were attached. */
+  readonly resources: readonly ResourceNode[];
+}
+
+/** The id of the Course node: what the "+" on it passes to the attach command. */
+export const courseNodeId = '<course>';
+
 /** How far the learner is through the whole Course (spec #12, story 86). */
 export interface CourseSummary {
   readonly done: number;
@@ -71,6 +90,8 @@ export interface CourseSummary {
 export interface LessonTreeModel {
   /** Shown instead of the tree, when there is nothing to list. */
   readonly message?: string;
+  /** The Course node, the first node of the tree; absent when the Course has no Lessons. */
+  readonly course?: CourseNode;
   /** The Course's totals; absent when the Course has no Lessons. */
   readonly summary?: CourseSummary;
   readonly nodes: readonly LessonTreeNode[];
@@ -80,7 +101,20 @@ export interface LessonTreeModel {
 interface TreeSource {
   readonly folder: string;
   readonly resources: ResourcesData;
+  /** The ids of the Resources whose file is not where they point. */
+  readonly missing: ReadonlySet<string>;
   readonly progress: CourseProgress;
+}
+
+function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode {
+  const path = resourcePath(source.folder, record);
+  return {
+    id: record.id,
+    kind: 'resource',
+    label: basename(path),
+    path,
+    missing: source.missing.has(record.id),
+  };
 }
 
 /** `12:30 / 40:05`: where the Lesson was saved and how long it is; just the position while its length is unknown. */
@@ -127,10 +161,9 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
         status,
         glyph: lessonGlyphs[status],
         description: status === 'inProgress' ? playhead(source.progress, lesson.id) : '',
-        resources: (source.resources.lessons[lesson.id] ?? []).map((record): ResourceNode => {
-          const path = resourcePath(source.folder, record);
-          return { id: record.id, kind: 'resource', label: basename(path), path };
-        }),
+        resources: (source.resources.lessons[lesson.id] ?? []).map((record) =>
+          resourceNode(source, record),
+        ),
       };
     }),
     ...outline.sections.map((section) => nodeOf(section, source)),
@@ -138,23 +171,32 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
 }
 
 /**
- * The Lesson tree of a Course: a pure function of the Course, what is attached to it and its
- * Progress. The states come from `lessonStatus`; nothing here decides what done means (ADR 0030).
+ * The Lesson tree of a Course: a pure function of the Course, what is attached to it (and which
+ * of that is missing) and its Progress. The states come from `lessonStatus`; nothing here decides
+ * what done means (ADR 0030). Only called for a Course with at least one Lesson.
  */
 export function buildLessonTree(
   course: Course,
   resources: ResourcesData,
   progress: CourseProgress,
+  missing: ReadonlySet<string>,
 ): LessonTreeModel {
+  const source: TreeSource = { folder: course.folder, resources, missing, progress };
   const { done, total } = totalsOf(course, progress);
   const percent = Math.floor((done * 100) / total);
   return {
+    course: {
+      kind: 'course',
+      id: courseNodeId,
+      label: basename(course.folder),
+      resources: resources.course.map((record) => resourceNode(source, record)),
+    },
     summary: {
       done,
       total,
       percent,
       description: `${String(done)}/${String(total)} · ${String(percent)}%`,
     },
-    nodes: nodesOf(course, { folder: course.folder, resources, progress }),
+    nodes: nodesOf(course, source),
   };
 }

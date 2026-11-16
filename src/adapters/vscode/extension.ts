@@ -11,7 +11,7 @@ import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
-import type { LessonTreeModel } from '../../core/lesson-tree.js';
+import { courseNodeId, type LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
@@ -27,6 +27,13 @@ import {
   folderPath,
 } from './ports.js';
 
+/** The id of the tree node a context menu command was run with, if it was run with one. */
+function nodeId(node: unknown): string | undefined {
+  return typeof node === 'object' && node !== null && 'id' in node && typeof node.id === 'string'
+    ? node.id
+    : undefined;
+}
+
 export const commands = {
   /**
    * `Ctrl+'` `C`: the Course picker. Run with a folder's URI as its argument, it opens that folder
@@ -41,6 +48,10 @@ export const commands = {
   attachToLoadedLesson: 'followalong.attachToLoadedLesson',
   /** Run by a click on a Resource in the tree, with the Resource's id. */
   openResource: openResourceCommand,
+  /** The tree's context menu on a Resource; run with the Resource's tree node. */
+  detachResource: 'followalong.detachResource',
+  /** The tree's Relink… on a missing Resource; run with the Resource's tree node. */
+  relinkResource: 'followalong.relinkResource',
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
   playPause: 'followalong.playPause',
   /** The step commands; their sizes are the `followalong.shortStep` and `longStep` settings. */
@@ -160,16 +171,31 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       folder instanceof vscode.Uri ? core.openCourse(folderPath(folder)) : core.pickCourse(),
     ),
     register(commands.attachResource, async (node, file) => {
-      const lessonId =
-        typeof node === 'object' && node !== null && 'id' in node ? node.id : undefined;
-      if (typeof lessonId !== 'string') {
+      const nodeKey = nodeId(node);
+      if (nodeKey === undefined) {
         return;
       }
-      // Without a file the core asks for one, so it fixes the Lesson's Course first (ADR 0024).
-      await core.attachResource(lessonId, file instanceof vscode.Uri ? file.fsPath : undefined);
+      const path = file instanceof vscode.Uri ? file.fsPath : undefined;
+      // Without a file the core asks for one, so it fixes the Course (and Lesson) first (ADR 0024).
+      await (nodeKey === courseNodeId
+        ? core.attachCourseResource(path)
+        : core.attachResource(nodeKey, path));
     }),
     register(commands.attachToLoadedLesson, async () => {
       await core.attachToLoadedLesson();
+    }),
+    register(commands.detachResource, async (node) => {
+      const resourceId = nodeId(node);
+      if (resourceId !== undefined) {
+        await core.detachResource(resourceId);
+      }
+    }),
+    register(commands.relinkResource, async (node) => {
+      const resourceId = nodeId(node);
+      if (resourceId !== undefined) {
+        // The core asks for the file, so it fixes the Resource's Course first (ADR 0024).
+        await core.relinkResource(resourceId);
+      }
     }),
     register(commands.openResource, async (resourceId) => {
       if (typeof resourceId === 'string') {

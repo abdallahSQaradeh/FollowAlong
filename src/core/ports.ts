@@ -75,6 +75,12 @@ export class FileSystemError extends Error {
 export interface FileSystem {
   readDirectory(path: string): Promise<readonly DirectoryEntry[]>;
   readText(path: string): Promise<string>;
+  /**
+   * Whether anything is at `path`. It resolves `false` only when nothing is there (`notFound`); a
+   * path that cannot be looked at for another reason counts as present, because only a file that
+   * is surely gone is shown as missing and offered for a relink.
+   */
+  exists(path: string): Promise<boolean>;
   /** Writes the whole file at once: readers see the old or the new content, never a mix. */
   writeText(path: string, content: string): Promise<void>;
   /**
@@ -179,6 +185,13 @@ export interface FolderDialog {
   readonly openLabel: string;
 }
 
+/** A dialog in which the learner chooses one file. */
+export interface FileDialog {
+  readonly title: string;
+  /** The label of the button that chooses the file. */
+  readonly openLabel: string;
+}
+
 export interface UiSink {
   showMessage(message: UserMessage): void;
   /**
@@ -207,11 +220,11 @@ export interface UiSink {
   /** Asks the learner for one folder; resolves with its absolute path, or `undefined` on cancel. */
   chooseFolder(dialog: FolderDialog): Promise<string | undefined>;
   /**
-   * Opens the file dialog for an Attach and resolves with the absolute path of the file the
-   * learner picked, or `undefined` when they closed it without picking. The dialog is not
-   * modal to the player: the Lesson keeps playing while it is open.
+   * Opens a file dialog (for an Attach, or a Relink) and resolves with the absolute path of the
+   * file the learner picked, or `undefined` when they closed it without picking. The dialog is
+   * not modal to the player: the Lesson keeps playing while it is open.
    */
-  pickFile(): Promise<string | undefined>;
+  pickFile(dialog: FileDialog): Promise<string | undefined>;
 }
 
 // --- Terminal settings ----------------------------------------------------------------------------
