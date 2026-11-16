@@ -71,6 +71,11 @@ export const commands = {
   previousLesson: 'followalong.previousLesson',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
+  /** `Ctrl+'` `D`: marks the Lesson that is playing done, or not done when it already is. */
+  toggleLessonDone: 'followalong.toggleLessonDone',
+  /** The tree's context menu on a Lesson: Mark done, Mark not done; run with its tree node. */
+  markLessonDone: 'followalong.markLessonDone',
+  markLessonNotDone: 'followalong.markLessonNotDone',
   /** The tree's context menu on a Section: Mark all done, Reset Section; run with its tree node. */
   markSectionDone: 'followalong.markSectionDone',
   resetSection: 'followalong.resetSection',
@@ -261,6 +266,19 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       core.previousLesson();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
+    register(commands.toggleLessonDone, () => core.toggleLessonDone()),
+    register(commands.markLessonDone, async (node) => {
+      const lessonId = nodeId(node);
+      if (lessonId !== undefined) {
+        await core.markLessonDone(lessonId);
+      }
+    }),
+    register(commands.markLessonNotDone, async (node) => {
+      const lessonId = nodeId(node);
+      if (lessonId !== undefined) {
+        await core.markLessonNotDone(lessonId);
+      }
+    }),
     register(commands.markSectionDone, async (node) => {
       const sectionId = nodeId(node);
       if (sectionId !== undefined) {
