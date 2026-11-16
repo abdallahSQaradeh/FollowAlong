@@ -46,4 +46,7 @@ Ticket #17 added `seekBy {seconds}` (extension → player, signed) and `seeked` 
 Ticket #18 added `setRate {rate}` (extension → player) and `rateChanged` (player → extension, with
 `lessonId` and `rate`); see ADR 0015.
 
+Ticket #21 added `showNext {title}` (extension → player) and `nextClicked {lessonId}` (player →
+extension); see ADR 0019.
+
 Ticket #19 added `setResumeRewind {seconds}` (extension → player, 0 or more); see ADR 0016.
