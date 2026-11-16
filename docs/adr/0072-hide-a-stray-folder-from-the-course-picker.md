@@ -33,7 +33,7 @@ orchestrator accepted them for #38.
 
 ## The item button that stays open
 
-`QuickPickButtonModel` gains `staysOpen`. An item button used to close the quick pick and answer with
+`QuickPickButtonModel` gains `staysOpen` (CP2 renamed it `keepsOpen`, the name the item flag of ADR 0066 has, since both mean the same). An item button used to close the quick pick and answer with
 its intent (_Locate…_, _Remove_). With `staysOpen` it does what a title bar button does: the core is
 told through the callback `openPicker` already has and may replace the model. It is generic, so
 other item buttons that keep the picker open (#40, Open in new window) reuse it.

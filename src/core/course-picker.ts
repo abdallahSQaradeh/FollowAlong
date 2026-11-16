@@ -97,7 +97,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
     label: 'Hide',
     icon: 'eye-closed',
     intent: { type: 'hideCourse', folder, name } as const,
-    staysOpen: true,
+    keepsOpen: true,
   });
   const newWindowButton = (folder: string) => ({
     label: 'Open in new window',

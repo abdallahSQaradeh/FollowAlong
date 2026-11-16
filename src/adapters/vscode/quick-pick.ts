@@ -8,6 +8,12 @@ import * as vscode from 'vscode';
 import type { LivePicker } from '../../core/ports.js';
 import type { QuickPickButtonModel, QuickPickModel } from '../../core/quick-pick.js';
 
+/** What answering with an intent does: close the quick pick, or tell the core and stay open. */
+interface Answer<Intent> {
+  readonly intent: Intent;
+  readonly keepsOpen: boolean;
+}
+
 /**
  * What the smoke test can see of the quick picks, so it never guesses how long the scan takes or
  * where the focus is: how many were shown, the label of the active item of the latest, and
@@ -19,11 +25,7 @@ export const quickPickStats: { shown: number; active: string | undefined; busy: 
   busy: false,
 };
 
-type IntentItem<Intent> = vscode.QuickPickItem & {
-  readonly intent?: Intent;
-  /** Picking it leaves the quick pick open and tells the core (a folder to drill into). */
-  readonly keepsOpen?: boolean;
-};
+type IntentItem<Intent> = vscode.QuickPickItem & { readonly answer?: Answer<Intent> };
 
 export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
   return openQuickPick(model, () => undefined).answer;
@@ -39,23 +41,18 @@ export function openQuickPick<Intent>(
   quickPick.matchOnDescription = model.matchOnDescription;
   // A refresh swaps the list under the learner's eyes: what they scrolled to stays put.
   quickPick.keepScrollPosition = true;
-  /** What pressing each button asks for: a VS Code button carries no data of ours. */
-  const buttonIntents = new Map<vscode.QuickInputButton, Intent>();
-  /** The item buttons that do not close the quick pick. */
-  const staying = new Set<vscode.QuickInputButton>();
+  /** What pressing each button answers: a VS Code button carries no data of ours. */
+  const buttonAnswers = new Map<vscode.QuickInputButton, Answer<Intent>>();
   const buttonsOf = (buttons: readonly QuickPickButtonModel<Intent>[]) =>
     buttons.map((button): vscode.QuickInputButton => {
       const drawn = { iconPath: new vscode.ThemeIcon(button.icon), tooltip: button.label };
-      buttonIntents.set(drawn, button.intent);
-      if (button.staysOpen === true) {
-        staying.add(drawn);
-      }
+      buttonAnswers.set(drawn, { intent: button.intent, keepsOpen: button.keepsOpen === true });
       return drawn;
     });
   /** The title of the list shown: another title is another list (a folder), which starts afresh. */
   let shownTitle: string | undefined;
   const draw = (shown: QuickPickModel<Intent>): void => {
-    buttonIntents.clear();
+    buttonAnswers.clear();
     const anotherList = shownTitle !== undefined && shownTitle !== shown.title;
     shownTitle = shown.title;
     quickPick.title = shown.title;
@@ -63,7 +60,6 @@ export function openQuickPick<Intent>(
       // What was typed filtered the list that is gone.
       quickPick.value = '';
     }
-    staying.clear();
     quickPick.placeholder = shown.placeholder;
     quickPick.busy = shown.busy === true;
     quickPickStats.busy = quickPick.busy;
@@ -77,8 +73,7 @@ export function openQuickPick<Intent>(
             ...(entry.description === undefined ? {} : { description: entry.description }),
             ...(entry.detail === undefined ? {} : { detail: entry.detail }),
             ...(entry.buttons === undefined ? {} : { buttons: buttonsOf(entry.buttons) }),
-            ...(entry.keepsOpen === true ? { keepsOpen: true } : {}),
-            intent: entry.intent,
+            answer: { intent: entry.intent, keepsOpen: entry.keepsOpen === true },
           },
     );
     // The learner's highlighted item and scroll position stay when the list is replaced under it;
@@ -86,8 +81,8 @@ export function openQuickPick<Intent>(
     // told to keep the scroll position, so the first item is set, not left to chance.
     quickPick.keepScrollPosition = !anotherList;
     const wanted = anotherList
-      ? quickPick.items.find((item) => item.intent !== undefined)
-      : quickPick.items.find((item) => item.label === kept && item.intent !== undefined);
+      ? quickPick.items.find((item) => item.answer !== undefined)
+      : quickPick.items.find((item) => item.label === kept && item.answer !== undefined);
     if (wanted !== undefined) {
       quickPick.activeItems = [wanted];
     }
@@ -104,35 +99,29 @@ export function openQuickPick<Intent>(
         quickPick.dispose();
       }
     };
-    quickPick.onDidAccept(() => {
-      // Enter with nothing to pick (the typed text matches no item) keeps the quick pick open.
-      const picked = quickPick.selectedItems[0];
-      if (picked?.intent !== undefined) {
-        if (picked.keepsOpen === true) {
-          onStayOpen(picked.intent);
-        } else {
-          finish(picked.intent);
-        }
-      }
-    });
-    quickPick.onDidTriggerItemButton(({ button }) => {
-      const intent = buttonIntents.get(button);
-      if (intent === undefined || answered) {
+    /** An item or an item button answers: the quick pick closes, unless it keeps open. */
+    const answerWith = (answer: Answer<Intent> | undefined): void => {
+      if (answer === undefined || answered) {
         return;
       }
-      if (staying.has(button)) {
-        onStayOpen(intent);
+      if (answer.keepsOpen) {
+        onStayOpen(answer.intent);
       } else {
-        finish(intent);
+        finish(answer.intent);
       }
+    };
+    quickPick.onDidAccept(() => {
+      // Enter with nothing to pick (the typed text matches no item) keeps the quick pick open.
+      answerWith(quickPick.selectedItems[0]?.answer);
+    });
+    quickPick.onDidTriggerItemButton(({ button }) => {
+      answerWith(buttonAnswers.get(button));
     });
     quickPick.onDidTriggerButton((button) => {
-      if (!answered && buttonIntents.has(button)) {
-        buttonIntents.forEach((intent, drawn) => {
-          if (drawn === button) {
-            onStayOpen(intent);
-          }
-        });
+      // A title bar button never closes the quick pick.
+      const answer = buttonAnswers.get(button);
+      if (answer !== undefined && !answered) {
+        onStayOpen(answer.intent);
       }
     });
     quickPick.onDidHide(() => {
