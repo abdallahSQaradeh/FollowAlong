@@ -60,6 +60,10 @@ _Avoid_: Skip, jump, scrub
 The seconds the video jumps back when the learner resumes a paused Lesson by hand, so they rehear the last words (the `resumeRewind` setting, 0 by default). Automatic resumes never rewind.
 _Avoid_: Replay, back-up
 
+**Speed ladder**:
+The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
+_Avoid_: Speed slider, rate list
+
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.
 _Avoid_: Context switch, tab switch, window switch
