@@ -134,7 +134,7 @@ function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode 
 }
 
 /** `12:30 / 40:05`: where the Lesson was saved and how long it is; just the position while its length is unknown. */
-function playheadText(progress: CourseProgress, lessonId: string): string {
+export function playheadText(progress: CourseProgress, lessonId: string): string {
   const saved = lessonEntry(progress.lessons, lessonId);
   if (saved === undefined) {
     return '';

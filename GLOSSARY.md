@@ -37,7 +37,7 @@ A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
 
 **Lesson picker**:
-The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing.
+The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing. Each item shows the Lesson's state (✓/◐/○) and, for one in progress, its saved position, as the Lesson tree does; a _Start from beginning_ button on the item plays that Lesson from 0:00.
 _Avoid_: Lesson search, jump list
 
 **Course order**:
