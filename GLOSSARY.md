@@ -60,6 +60,10 @@ _Avoid_: History, completion
 A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along. It is a reference to the file, never a copy.
 _Avoid_: Material, attachment
 
+**URL Resource**:
+A Resource that is the address of a web page (`http` or `https` only), attached with “URL…” next to “File…”. It opens in Simple Browser beside the code. It has no file, so it is never missing and cannot be relinked; it can be detached.
+_Avoid_: Link, bookmark
+
 **Course Resource**:
 A Resource attached to the whole Course, such as a cheat sheet, with the "+" on the Course node at the top of the Lesson tree. It shows above the Sections and opens like a Lesson's Resource.
 _Avoid_: Global Resource, shared Resource
@@ -77,7 +81,7 @@ To point a Resource at another file, keeping it where it is in its Lesson. Offer
 _Avoid_: Re-attach, repair
 
 **Resource tab**:
-The tab a Resource opens in, beside the code and never in the player's group, so the video stays in sight. The kind of tab follows the file's type: the editor for text and code, VS Code's image preview for images, a FollowAlong preview for HTML and Markdown, and the FollowAlong PDF viewer for PDFs.
+The tab a Resource opens in, beside the code and never in the player's group, so the video stays in sight. The kind of tab follows the file's type: the editor for text and code, VS Code's image preview for images, a FollowAlong preview for HTML and Markdown, the FollowAlong PDF viewer for PDFs, and Simple Browser for a URL Resource.
 _Avoid_: Attachment view, Resource panel
 
 **Course data**:
