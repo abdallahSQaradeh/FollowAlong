@@ -30,7 +30,8 @@ Two deliberate additions to the spec's shapes:
 
   A `paused {byUser: false}` before the Lesson ever played, after a `load` with `autoplay`, means
   VS Code refused autoplay. The core then shows an info message ("Press play in the player to
-  start it"), so the learner is not left facing a silently stopped video.
+  start it"), so the learner is not left facing a silently stopped video. The same answer to a
+  `play` the core sent from the play/pause command is told too (ADR 0008).
 
 - **`error`** is posted once per Lesson, whether the stream or the media element failed first.
   After it the player posts nothing more for that Lesson and pauses it.

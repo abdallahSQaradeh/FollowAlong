@@ -24,6 +24,8 @@ export interface FollowAlong {
   restoreCourse(): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
+  /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
+  playPause(): void;
   /** The window is closing: saves Progress, then stops. */
   close(): Promise<void>;
   /** Stops at once, without saving (tests use it as a crash). */
@@ -40,7 +42,6 @@ interface CurrentLesson {
    * where FollowAlong put it, and nothing is saved, so opening a Lesson never moves its position.
    */
   engaged: boolean;
-  playing: boolean;
   /** Where the player last reported the playhead, and the Lesson's length. */
   position: number;
   duration: number;
@@ -52,6 +53,53 @@ interface CurrentLesson {
  */
 const startSeekToleranceSeconds = 0.5;
 
+/** What the player reported about the current Lesson since its last `load`. */
+interface Playback {
+  /** Whether the Lesson is playing. */
+  readonly playing: boolean;
+  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
+  readonly awaitingAutoplay: boolean;
+  /** Set when the play/pause command sent `play`, until the player answers it. */
+  readonly awaitingPlayAnswer: boolean;
+  /** Whether the learner was told, in this run of refusals, to press play in the player. */
+  readonly toldToPressPlay: boolean;
+}
+
+function freshPlayback(autoplay: boolean): Playback {
+  return {
+    playing: false,
+    awaitingAutoplay: autoplay,
+    awaitingPlayAnswer: false,
+    toldToPressPlay: false,
+  };
+}
+
+/**
+ * What a `paused` event does to the record, and whether the learner is to be told to press play.
+ * - A refused autoplay is told on its own: the `load` that asked for it started the run.
+ * - A refused `play` from the command is told once per run of refusals, so repeated keypresses
+ *   do not stack messages. A `played` or `ended` (see `onPlayerEvent`) or a `load` ends the run.
+ */
+function afterPause(
+  playback: Playback,
+  byUser: boolean,
+): { readonly playback: Playback; readonly tellToPressPlay: boolean } {
+  const refused = !byUser;
+  const autoplayRefused = playback.awaitingAutoplay && refused;
+  const commandRefused = playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
+  return {
+    tellToPressPlay: autoplayRefused || commandRefused,
+    playback: {
+      ...freshPlayback(false),
+      toldToPressPlay: playback.toldToPressPlay || commandRefused,
+    },
+  };
+}
+
+function pressPlayText(lesson: Lesson): string {
+  return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
+}
+
 export function createFollowAlong(ports: Ports): FollowAlong {
   const { player, storage, clock, ui, logger } = ports;
 
@@ -62,8 +110,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let saveTimer: Disposable | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
-  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
-  let awaitingAutoplay = false;
+  /** What the player last said about the current Lesson; starts again with every `load`. */
+  let playback = freshPlayback(false);
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -79,7 +127,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay,
     };
     player.send(command);
-    awaitingAutoplay = command.autoplay;
+    playback = freshPlayback(command.autoplay);
   }
 
   /** Saves every 5 s from now on, until the Lesson stops playing. */
@@ -87,15 +135,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     saveTimer ??= clock.schedule(saveIntervalMs, () => {
       saveTimer = undefined;
       void progress?.save();
-      if (current?.playing === true) {
+      if (playback.playing) {
         startSaving();
       }
     });
   }
 
-  /** The Lesson stopped playing (paused, ended, failed or replaced): no more saves on the clock. */
-  function stopPlaying(shown: CurrentLesson): void {
-    shown.playing = false;
+  /** The Lesson stopped playing (paused, ended, failed or left): no more saves on the clock. */
+  function stopSaving(): void {
     saveTimer?.dispose();
     saveTimer = undefined;
   }
@@ -123,7 +170,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         const shown = isCurrent(event);
         if (shown !== undefined) {
           // The player posts nothing more for a failed Lesson (ADR 0003), not even a pause.
-          stopPlaying(shown);
+          stopSaving();
           ui.showMessage({
             severity: 'error',
             text: `FollowAlong could not play “${shown.lesson.title}”: ${event.message}`,
@@ -136,16 +183,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         if (shown === undefined) {
           break;
         }
-        // A pause before the Lesson ever played, not by the learner: VS Code refused autoplay.
-        // Without a word the learner would face a stopped video and not know why.
-        if (awaitingAutoplay && !event.byUser) {
-          ui.showMessage({
-            severity: 'info',
-            text: `VS Code did not let “${shown.lesson.title}” start by itself. Press play in the player to start it.`,
-          });
+        // A pause the learner did not ask for after a `load` with autoplay, or after the command's
+        // `play`: VS Code refused it. Without a word the learner would face a stopped video.
+        const after = afterPause(playback, event.byUser);
+        playback = after.playback;
+        if (after.tellToPressPlay) {
+          ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
         }
-        awaitingAutoplay = false;
-        stopPlaying(shown);
+        stopSaving();
         if (shown.engaged) {
           void progress?.save();
         }
@@ -154,16 +199,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'played': {
         const shown = isCurrent(event);
         if (shown !== undefined) {
-          awaitingAutoplay = false;
+          // Also ends a run of refusals: the player did what it was asked.
+          playback = { ...freshPlayback(false), playing: true };
           shown.engaged = true;
-          shown.playing = true;
           startSaving();
         }
         break;
       }
       case 'ended':
         if (isCurrent(event) !== undefined) {
-          awaitingAutoplay = false;
+          playback = freshPlayback(false);
+          stopSaving();
         }
         break;
       case 'timeUpdate': {
@@ -214,7 +260,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (left === undefined) {
       return Promise.resolve();
     }
-    stopPlaying(left);
+    stopSaving();
     // Also waits for a save still under way, such as the one of the Lesson before.
     return progress?.save() ?? Promise.resolve();
   }
@@ -226,7 +272,6 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       startAt,
       autoplay,
       engaged: false,
-      playing: false,
       position: startAt,
       duration: 0,
     };
@@ -317,6 +362,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       void leaveCurrent();
       const saved = progress?.current();
       play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
+    },
+    playPause() {
+      if (current === undefined) {
+        ui.showMessage({
+          severity: 'info',
+          text: 'FollowAlong: no Lesson is open. Open a Course first.',
+        });
+        return;
+      }
+      if (!playerReady) {
+        // The page is still starting: it takes no command yet, and it plays the Lesson on `ready`.
+        logger.log({ level: 'debug', message: 'Play/pause ignored: the player is not ready yet.' });
+        return;
+      }
+      playback = { ...playback, awaitingPlayAnswer: !playback.playing };
+      player.send({ type: playback.playing ? 'pause' : 'play' });
     },
     async close() {
       await leaveCurrent();
