@@ -26,7 +26,12 @@ export type PlayerCommand =
   /** Moves the playhead by `seconds` (negative: back), stopping at the start or the end. */
   | { readonly type: 'seekBy'; readonly seconds: number }
   /** Sets the playback rate (1 is normal speed); it stays for the Lessons that follow. */
-  | { readonly type: 'setRate'; readonly rate: number };
+  | { readonly type: 'setRate'; readonly rate: number }
+  /**
+   * Shows the "Next: <title>" overlay over the picture of the Lesson that has ended (ADR 0019). The
+   * player hides it again when a Lesson loads, plays or seeks.
+   */
+  | { readonly type: 'showNext'; readonly title: string };
 
 /** Player → extension. Events about a Lesson carry its `lessonId`, so late events are recognisable. */
 export type PlayerEvent =
@@ -45,6 +50,8 @@ export type PlayerEvent =
   /** The playback rate is now `rate`, whoever changed it (a `setRate` or the video's own menu). */
   | { readonly type: 'rateChanged'; readonly lessonId: string; readonly rate: number }
   | { readonly type: 'error'; readonly lessonId: string; readonly message: string }
+  /** The learner clicked the "Next: <title>" overlay shown for this Lesson's end. */
+  | { readonly type: 'nextClicked'; readonly lessonId: string }
   /**
    * The learner finished an interaction with the player page (a click, a key, a native control,
    * the release of a seek-bar drag), so the extension hands keyboard focus back to the Practice
@@ -99,6 +106,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
         : undefined;
     case 'setRate':
       return isRate(raw.rate) ? { type: 'setRate', rate: raw.rate } : undefined;
+    case 'showNext':
+      return isText(raw.title) ? { type: 'showNext', title: raw.title } : undefined;
     default:
       return undefined;
   }
@@ -133,6 +142,7 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
     case 'played':
     case 'ended':
     case 'seeked':
+    case 'nextClicked':
       return { type, lessonId };
     case 'rateChanged':
       return isRate(raw.rate) ? { type, lessonId, rate: raw.rate } : undefined;
