@@ -62,6 +62,11 @@ export class FakePlayer implements PlayerPort {
     return { dispose: () => this.listeners.delete(listener) };
   }
 
+  /** Forgets the commands sent so far, so a test can look at what comes next. */
+  clearSent(): void {
+    this.sent.length = 0;
+  }
+
   /** The learner closed the player tab. */
   close(): void {
     this.openRoots = undefined;

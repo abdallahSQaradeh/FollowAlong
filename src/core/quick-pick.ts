@@ -19,10 +19,13 @@ export interface QuickPickSeparatorModel {
   readonly label: string;
 }
 
+/** One line of a quick pick: an item the learner can pick, or a separator above a group. */
+export type QuickPickEntry<Intent> = QuickPickItemModel<Intent> | QuickPickSeparatorModel;
+
 export interface QuickPickModel<Intent> {
   readonly title: string;
   readonly placeholder: string;
   /** Whether typing also matches an item's description, not only its label. */
   readonly matchOnDescription: boolean;
-  readonly entries: readonly (QuickPickItemModel<Intent> | QuickPickSeparatorModel)[];
+  readonly entries: readonly QuickPickEntry<Intent>[];
 }

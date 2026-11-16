@@ -5,7 +5,7 @@
  * name narrows the list to it.
  */
 import type { Lesson, Outline } from './course-model.js';
-import type { QuickPickModel } from './quick-pick.js';
+import type { QuickPickEntry, QuickPickModel } from './quick-pick.js';
 
 /** What picking an item of the Lesson picker asks the core to do. */
 export interface LessonPickerIntent {
@@ -13,13 +13,18 @@ export interface LessonPickerIntent {
   readonly lessonId: string;
 }
 
-type Entry = QuickPickModel<LessonPickerIntent>['entries'][number];
+type Entry = QuickPickEntry<LessonPickerIntent>;
+
+/** A Section shown by its path, so same-named Sections in different places stay apart. */
+function sectionLabel(sectionPath: readonly string[]): string {
+  return sectionPath.join(' / ');
+}
 
 function itemOf(lesson: Lesson, sectionPath: readonly string[]): Entry {
   return {
     kind: 'item',
     label: lesson.title,
-    ...(sectionPath.length > 0 ? { description: sectionPath.join(' / ') } : {}),
+    ...(sectionPath.length > 0 ? { description: sectionLabel(sectionPath) } : {}),
     intent: { type: 'playLesson', lessonId: lesson.id },
   };
 }
@@ -28,7 +33,7 @@ function entriesOf(outline: Outline, sectionPath: readonly string[]): Entry[] {
   const own = outline.lessons.map((lesson) => itemOf(lesson, sectionPath));
   const heading: Entry[] =
     sectionPath.length > 0 && own.length > 0
-      ? [{ kind: 'separator', label: sectionPath.join(' / ') }]
+      ? [{ kind: 'separator', label: sectionLabel(sectionPath) }]
       : [];
   return [
     ...heading,

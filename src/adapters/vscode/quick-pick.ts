@@ -34,7 +34,11 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
       }
     };
     quickPick.onDidAccept(() => {
-      answer(quickPick.selectedItems[0]?.intent);
+      // Enter with nothing to pick (the typed text matches no item) keeps the quick pick open.
+      const picked = quickPick.selectedItems[0];
+      if (picked?.intent !== undefined) {
+        answer(picked.intent);
+      }
     });
     quickPick.onDidHide(() => {
       answer(undefined);

@@ -48,7 +48,7 @@ describe('Go to Lesson…', () => {
     });
     await h.core.openCourse(course);
     h.player.ready();
-    h.player.sent.length = 0;
+    h.player.clearSent();
 
     const going = h.core.goToLesson();
     h.ui.choose('03 Tools.mp4');
@@ -72,7 +72,7 @@ describe('Go to Lesson…', () => {
     const course = await h.folder('Course', { 'Section 1/01 Welcome.webm': 'v' });
     await h.core.openCourse(course);
     h.player.ready();
-    h.player.sent.length = 0;
+    h.player.clearSent();
 
     const going = h.core.goToLesson();
     h.ui.dismissPicker();
@@ -105,7 +105,7 @@ describe('Go to Lesson…', () => {
     const going = h.core.goToLesson();
     await h.core.openCourse(second);
     h.player.ready();
-    h.player.sent.length = 0;
+    h.player.clearSent();
     h.ui.choose('intro.webm');
     await going;
 
@@ -158,7 +158,7 @@ describe('Go to Lesson…', () => {
     ]);
   });
 
-  it('matches what the learner types against the Section name as well as the Lesson title', async () => {
+  it('shows the Section of each Lesson, and has the quick pick match it, so typing a Section name narrows the list', async () => {
     const h = await createHarness();
     const course = await h.folder('Course', {
       'Closures/01 Scope.mp4': 'v',
