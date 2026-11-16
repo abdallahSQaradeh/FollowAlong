@@ -44,10 +44,12 @@ readable.
   again, unless the file defines a `merge`: then both copies are read and merged. Progress does
   (ADR 0010).
 - A copy that exists but cannot be used (damaged, from a newer FollowAlong, or failing to read with
-  anything but `notFound`) is remembered by the store, and `write` rejects with
-  `UnreadableCourseDataError` instead of replacing it (spec #12, D5; ADR 0010). A write first
-  reads the file it would replace when this store has not read it yet (a read can stop at the other
-  location's copy), and a later read that finds the file usable or gone makes it writable again. A
-  read error no longer fails `read`: that copy is skipped like a damaged one.
+  anything but `notFound`) is remembered by the store and never replaced (spec #12, D5, as
+  amended). If it is the copy in `.followalong`, `write` puts the data in the fallback storage and
+  resolves with `{ keptElsewhere: <its path> }`; if the copy the data must go to is unusable too,
+  `write` rejects with `UnreadableCourseDataError`. A write first reads the file it would replace
+  when this store has not read it yet (a read can stop at the other location's copy) or its last
+  read failed outright, and a later read that finds the file usable or gone makes it writable
+  again. A read error no longer fails `read`: that copy is skipped like a damaged one.
 - `.followalong` is created without its parents (ADR 0010), so a write never makes a Course folder
   that moved away while open; it fails with `notFound` instead.

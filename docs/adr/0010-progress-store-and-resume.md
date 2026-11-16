@@ -59,10 +59,12 @@ it with what this window recorded.
   further back.
 - **`seeked` has no position.** The player posts it for every seek, including the one that applies
   a `load`'s `startAt` (the same definition as #17). The position is the `timeUpdate` the player
-  posts just before it (the HTML seek steps fire `timeupdate`, then `seeked`). A `seeked` before
-  the Lesson played that lands within 0.5 s of the load's `startAt` is that start seek: it saves
-  nothing and does not count as engagement. A WebM seek can land up to 0.1 s off its target (ADR
-  0006), hence the tolerance. Source: orchestrator answer on #25.
+  posts just before it (the HTML seek steps fire `timeupdate`, then `seeked`). After a `load` with
+  `startAt` > 0, the next `seeked` is that start seek, wherever it lands: it saves nothing and
+  does not count as engagement. An earlier rule (within 0.5 s of `startAt`) saved a start seek
+  that a WebM without a Duration landed near 0:00, so the next reopen lost the position (gate
+  review of #25, H1; the player now lands it, ADR 0006). Source: orchestrator answer on #25; gate
+  review H1.
 - **Every 5 s while it plays:** a Clock timer runs from `played` until the Lesson pauses, ends,
   fails or is left. Each `timeUpdate` only notes the position; the timer writes it. A save writes
   only when something was noted since the last one.
@@ -83,20 +85,27 @@ it with what this window recorded.
   `close()` and opening another Course wait for every save before them. `close()` also waits for
   an open under way, so the window can close at any step of opening a Course without losing the
   Lesson it left.
-- **A progress file FollowAlong cannot read is never written over** (spec #12, D5). The Course
-  data store remembers each copy it read and could not use (damaged, from a newer FollowAlong, or
-  failing to read), and refuses to write over that exact file (`UnreadableCourseDataError`, ADR
-  0005). Progress then skips the save, logs the path and tells the learner once per open Course:
-  "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer
-  FollowAlong. Nothing was changed." Only the file a save would replace counts: a damaged fallback copy does not
-  stop saves into a writable `.followalong`. The check uses what was read when the Course opened;
-  a file another window rewrites during the session is #27's re-read before each write. Source:
-  orchestrator, D5; code review of #25.
-- **A failed save** is logged and shown to the learner once per open Course. A Course moved away
-  while open fails with `notFound` ("the Course folder is missing"): `.followalong` is now made
-  without its parents (`makeDirectory(path, { parents: false })`), so a save never makes an empty
-  Course at the old path. The fallback folder is still made with its parents, since it lives in the
-  extension's storage.
+- **A progress file FollowAlong cannot read is never written over** (spec #12, D5 as amended by
+  the orchestrator: never overwrite it, but do save elsewhere). The Course data store remembers
+  each copy it read and could not use (damaged, from a newer FollowAlong, or failing to read).
+  When the copy in `.followalong` is such a copy, it is left as it is and Progress goes to the
+  fallback storage; `write` reports it (`keptElsewhere`) and the learner is told once per open
+  Course: "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from
+  a newer FollowAlong, so FollowAlong keeps your progress in its own storage for now." Reads merge
+  both copies, so the fallback copy is used (newest per Lesson). When the fallback copy is the
+  unusable one, saves go to `.followalong` as usual if the Course is writable. Only when neither
+  copy may be replaced does `write` reject (`UnreadableCourseDataError`, ADR 0005): the save is
+  skipped and the learner is told "… Nothing was changed." A copy whose read failed outright (an
+  antivirus scan holding it) is read again before each write, so a passing lock does not divert
+  saves. The check uses what was read; a file another window rewrites during the session is
+  #27's re-read before each write. Source: orchestrator, D5 and its amendment; code review and
+  gate review of #25.
+- **A failed save is saved again** at the next save (the 5 s timer, a pause, a switch,
+  `close()`): it is logged once per run of failures and shown to the learner once per open
+  Course. A Course moved away while open fails with `notFound` ("the Course folder is missing"):
+  `.followalong` is made without its parents (`makeDirectory(path, { parents: false })`), so a
+  save never makes an empty Course at the old path. The fallback folder is still made with its
+  parents, since it lives in the extension's storage. Source: gate review of #25, S1.
 
 ## Where a Lesson starts
 

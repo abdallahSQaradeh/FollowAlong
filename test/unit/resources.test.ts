@@ -1,4 +1,4 @@
-import { readFile, rename } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -340,6 +340,36 @@ describe('attaching a file Resource to a Lesson', () => {
     expect(await readFile(join(course, '.followalong', 'resources.json'), 'utf8')).toBe(newer);
     expect(resourceLabels(h, 'intro.webm')).toEqual([]);
     expect(h.ui.messages).toEqual([cannotUpdate]);
+  });
+});
+
+describe('attaching to a read-only Course whose fallback Resources file cannot be read', () => {
+  it('attaches nothing, and says so, instead of failing the command', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Read-only course', {
+      'intro.webm': 'video',
+      'a.md': '#',
+      'b.md': '#',
+    });
+    makeReadOnly(course);
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+    const [fallbackCopy] = await h.listFiles(h.storage.folder);
+    const fallback = join(h.storage.folder, fallbackCopy ?? '');
+    const newer = JSON.stringify({ version: 9, data: {} });
+    await writeFile(fallback, newer);
+    h.restart();
+    await h.core.openCourse(course);
+
+    await h.core.attachResource('intro.webm', join(course, 'b.md'));
+
+    expect(await readFile(fallback, 'utf8')).toBe(newer);
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'warning',
+        text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+      },
+    ]);
   });
 });
 

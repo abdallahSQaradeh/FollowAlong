@@ -7,7 +7,7 @@ import { basename } from 'node:path';
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Disposable, type Ports } from './ports.js';
-import { openCourseData, type CourseData } from './course-data.js';
+import { openCourseData, UnreadableCourseDataError, type CourseData } from './course-data.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
@@ -713,25 +713,38 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return Promise.resolve();
       }
+      /** The Resources file is there but cannot be used: writing would replace what it holds. */
+      const refuse = (): void => {
+        logger.log({
+          level: 'warn',
+          message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
+        });
+        ui.showMessage({
+          severity: 'warning',
+          text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+        });
+      };
       const attach = async (): Promise<void> => {
         // Re-read first: another window may have attached to this Course since it was opened.
         const read = await data.read(resourcesFile);
         if (read === undefined && (await resourcesFileExists(ports.fileSystem, course.folder))) {
           // The file is there but was ignored (damaged, or from a newer FollowAlong): writing
           // would replace data the learner, or a newer version, still needs.
-          logger.log({
-            level: 'warn',
-            message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
-          });
-          ui.showMessage({
-            severity: 'warning',
-            text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
-          });
+          refuse();
           return;
         }
         const stored = read ?? noResources;
         const next = withResource(stored, lessonId, newResource(course.folder, absolutePath));
-        await data.write(resourcesFile, next);
+        try {
+          await data.write(resourcesFile, next);
+        } catch (error) {
+          // The copy the write would replace (the fallback one, in a read-only Course) is unusable.
+          if (error instanceof UnreadableCourseDataError) {
+            refuse();
+            return;
+          }
+          throw error;
+        }
         logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });
         // The Course may have been opened again while this attach was writing.
         if (openedCourse?.folder === course.folder) {
