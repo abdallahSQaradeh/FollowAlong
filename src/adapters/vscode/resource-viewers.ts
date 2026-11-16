@@ -57,17 +57,17 @@ export class ResourceViewers implements vscode.Disposable {
       existing.reveal(column, true);
       return Promise.resolve();
     }
-    const file = vscode.Uri.file(path);
+    const folder = vscode.Uri.file(dirname(path));
     const panel = vscode.window.createWebviewPanel(
       pdfViewType,
       basename(path),
       { viewColumn: column, preserveFocus: true },
       {
         enableScripts: true,
-        // The PDF file itself is all the viewer may read, not its folder (ADR 0046): its script
-        // and the pdf.js worker are inlined in the page (ADR 0004), so no root of the extension
-        // is needed.
-        localResourceRoots: [file],
+        // The PDF's own folder is all the viewer may read: its script and the pdf.js worker are
+        // inlined in the page (ADR 0004), so no root of the extension is needed. The file alone
+        // is not a root VS Code serves (ADR 0046).
+        localResourceRoots: [folder],
       },
     );
     this.panels.set(key, panel);
