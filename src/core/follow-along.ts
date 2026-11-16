@@ -29,6 +29,10 @@ import { createTerminalKeysOffer } from './terminal-keys.js';
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
 const openCourseKey = 'openCourse';
 
+/** What a Resource is attached to: the whole Course, or one of its Lessons. */
+type AttachTarget =
+  { readonly kind: 'course' } | { readonly kind: 'lesson'; readonly lessonId: string };
+
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
   openCourse(folder: string): Promise<void>;
@@ -219,20 +223,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   async function attachTo(
     course: Course,
     store: ResourceStore,
-    target: { readonly lessonId: string } | 'course',
+    target: AttachTarget,
     absolutePath?: string,
   ): Promise<void> {
     const path =
       absolutePath ??
       (await ui.pickFile({
         title:
-          target === 'course' ? 'Attach a file to this Course' : 'Attach a file to this Lesson',
+          target.kind === 'course'
+            ? 'Attach a file to this Course'
+            : 'Attach a file to this Lesson',
         openLabel: 'Attach',
       }));
     if (path === undefined) {
       return;
     }
-    if (target === 'course') {
+    if (target.kind === 'course') {
       const made = await store.attachToCourse(path);
       showResourceChange(course, store, {
         made,
@@ -505,7 +511,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      await attachTo(course, store, { lessonId }, absolutePath);
+      await attachTo(course, store, { kind: 'lesson', lessonId }, absolutePath);
     },
     async attachCourseResource(absolutePath) {
       // The Course and its store are fixed now, before the dialog opens (ADR 0024).
@@ -520,7 +526,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         logger.log({ level: 'warn', message: 'Cannot attach to the Course: it has no Lessons.' });
         return;
       }
-      await attachTo(course, store, 'course', absolutePath);
+      await attachTo(course, store, { kind: 'course' }, absolutePath);
     },
     async attachToLoadedLesson() {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
@@ -538,7 +544,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       try {
-        await attachTo(course, store, { lessonId: lesson.id });
+        await attachTo(course, store, { kind: 'lesson', lessonId: lesson.id });
       } finally {
         // The dialog took keyboard focus: hand it back, also when the attach failed (ADR 0023).
         ui.returnFocus();

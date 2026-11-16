@@ -110,7 +110,7 @@ export function buildLessonTree(
   resources: ResourcesData,
   missing: ReadonlySet<string>,
 ): LessonTreeModel {
-  const source = { folder: course.folder, resources, missing };
+  const source: TreeSource = { folder: course.folder, resources, missing };
   return {
     course: {
       kind: 'course',
