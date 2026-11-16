@@ -38,7 +38,7 @@ import {
   type ResourceRecord,
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
-import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
+import { lessonStatus, openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
 import { readRecent, recentCourses, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
@@ -118,6 +118,18 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * `Ctrl+'` `D` and `FollowAlong: Mark done / not done`: marks the Loaded Lesson done, or, when it
+   * is done already, not done (a reset, ADR 0061). Resolves once the change is saved.
+   */
+  toggleLessonDone(): Promise<void>;
+  /** The tree's "Mark done" on a Lesson of the open Course. Resolves once the mark is saved. */
+  markLessonDone(lessonId: string): Promise<void>;
+  /**
+   * The tree's "Mark not done" on a Lesson of the open Course: a reset, so its done mark and
+   * saved position go (ADR 0061). Resolves once the change is saved.
+   */
+  markLessonNotDone(lessonId: string): Promise<void>;
   /**
    * Marks every Lesson of a Section of the open Course done, nested Sections included: the
    * Section's "Mark all done" in the tree. Resolves once the marks are saved.
@@ -683,6 +695,31 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     );
   }
 
+  /**
+   * Runs `change` on one Lesson of the open Course. The Course and its Progress are fixed when the
+   * command runs; a Lesson the Course does not have is logged and changes nothing.
+   */
+  function changeLesson(
+    lessonId: string,
+    what: string,
+    change: (recorder: ProgressRecorder, lessonIds: readonly string[]) => Promise<void>,
+  ): Promise<void> {
+    if (refusedWhileOpening()) {
+      return Promise.resolve();
+    }
+    const known =
+      openedCourse !== undefined &&
+      lessonsInOrder(openedCourse).some((lesson) => lesson.id === lessonId);
+    if (!known || progress === undefined) {
+      logger.log({
+        level: 'warn',
+        message: `Cannot ${what} ${lessonId}: it is not a Lesson of the open Course.`,
+      });
+      return Promise.resolve();
+    }
+    return change(progress, [lessonId]);
+  }
+
   /** The Course picker. */
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
@@ -782,6 +819,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           });
         }
       }
+    },
+    markLessonDone(lessonId) {
+      return changeLesson(lessonId, 'mark done', markLessonsDone);
+    },
+    markLessonNotDone(lessonId) {
+      return changeLesson(lessonId, 'mark not done', resetLessons);
+    },
+    toggleLessonDone() {
+      if (refusedWhileOpening()) {
+        return Promise.resolve();
+      }
+      // The Lesson is the one the learner is on when they press the key (ADR 0064).
+      const lesson = loaded.lesson();
+      if (lesson === undefined || progress === undefined) {
+        ui.showMessage({ severity: 'info', text: 'Open a Lesson first, then mark it done.' });
+        return Promise.resolve();
+      }
+      return lessonStatus(progress.current(), lesson.id) === 'done'
+        ? resetLessons(progress, [lesson.id])
+        : markLessonsDone(progress, [lesson.id]);
     },
     markSectionDone(sectionId) {
       return changeSection(sectionId, 'mark all done', markLessonsDone);

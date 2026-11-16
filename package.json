@@ -126,6 +126,21 @@
         "icon": "$(link)"
       },
       {
+        "command": "followalong.toggleLessonDone",
+        "title": "Mark done / not done",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.markLessonDone",
+        "title": "Mark done",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.markLessonNotDone",
+        "title": "Mark not done",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.markSectionDone",
         "title": "Mark all done",
         "category": "FollowAlong"
@@ -227,6 +242,12 @@
         "when": "editorTextFocus || terminalFocus"
       },
       {
+        "command": "followalong.toggleLessonDone",
+        "key": "ctrl+' d",
+        "mac": "cmd+' d",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
         "command": "followalong.openCourse",
         "key": "ctrl+' c",
         "mac": "cmd+' c",
@@ -279,6 +300,14 @@
           "when": "false"
         },
         {
+          "command": "followalong.markLessonDone",
+          "when": "false"
+        },
+        {
+          "command": "followalong.markLessonNotDone",
+          "when": "false"
+        },
+        {
           "command": "followalong.markSectionDone",
           "when": "false"
         },
@@ -307,6 +336,16 @@
           "command": "followalong.detachResource",
           "when": "view == followalong.lessons && viewItem =~ /^resource/",
           "group": "1_manage@2"
+        },
+        {
+          "command": "followalong.markLessonDone",
+          "when": "view == followalong.lessons && viewItem == lesson",
+          "group": "2_progress@1"
+        },
+        {
+          "command": "followalong.markLessonNotDone",
+          "when": "view == followalong.lessons && viewItem == lesson",
+          "group": "2_progress@2"
         },
         {
           "command": "followalong.markSectionDone",
