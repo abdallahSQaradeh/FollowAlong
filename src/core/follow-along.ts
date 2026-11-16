@@ -14,6 +14,7 @@ import {
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
 import { createCourseScans } from './course-list-cache.js';
+import { unhideCourse } from './hidden-courses.js';
 import { showCoursePicker } from './live-course-picker.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { locateCourse } from './locate-course.js';
@@ -118,6 +119,11 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * `FollowAlong: Unhide a Course…`: lists the Courses hidden from the Course picker and shows the
+   * one the learner picks in it again (ADR 0072).
+   */
+  unhideCourse(): Promise<void>;
   /**
    * `Ctrl+'` `D` and `FollowAlong: Mark done / not done`: marks the Loaded Lesson done, or, when it
    * is done already, not done (a reset, ADR 0061). Resolves once the change is saved.
@@ -797,6 +803,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     playLesson,
     pickCourse,
+    unhideCourse: () => unhideCourse(ports),
     async goToLesson() {
       if (refusedWhileOpening()) {
         return;
