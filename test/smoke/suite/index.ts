@@ -56,6 +56,22 @@ interface TestHooks {
   quickPickBusy(): boolean;
 }
 
+/**
+ * Waits until `label` is the highlighted item of the quick pick shown last and it is not busy; a
+ * timeout says what the quick pick showed, so a failure on a real VS Code can be read from its log.
+ */
+async function waitForQuickPickItem(hooks: TestHooks, what: string, label: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (hooks.activeQuickPickItem() !== label || hooks.quickPickBusy()) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Timed out waiting for ${what}: the highlighted item is “${hooks.activeQuickPickItem() ?? 'none'}” (wanted “${label}”) and the quick pick is ${hooks.quickPickBusy() ? 'busy' : 'not busy'}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 /** Moves down the open quick pick until `label` is the highlighted item, then accepts it. */
 async function acceptQuickPickItem(hooks: TestHooks, label: string): Promise<void> {
   await waitForAsync(`“${label}” to be the highlighted item`, async () => {
@@ -469,17 +485,11 @@ async function aPickedCourseKeepsThePlayer(
       hooks.quickPicksShown() > browseFrom && !hooks.quickPickBusy() ? true : undefined,
     );
     await acceptQuickPickItem(hooks, 'Browse…');
-    await waitFor('the Folder browser to list its start', () =>
-      hooks.activeQuickPickItem() === 'Back to Courses' ? true : undefined,
-    );
+    await waitForQuickPickItem(hooks, 'the Folder browser to list its start', 'Back to Courses');
     await acceptQuickPickItem(hooks, basename(root));
-    await waitFor('the Courses root to be listed', () =>
-      hooks.activeQuickPickItem() === 'Up' ? true : undefined,
-    );
+    await waitForQuickPickItem(hooks, 'the Courses root to be listed', 'Up');
     await acceptQuickPickItem(hooks, 'Warm-up Course');
-    await waitFor('the Course folder to be listed', () =>
-      hooks.activeQuickPickItem() === 'Up' && !hooks.quickPickBusy() ? true : undefined,
-    );
+    await waitForQuickPickItem(hooks, 'the Course folder to be listed', 'Up');
     await acceptQuickPickItem(hooks, lessons.warmUp);
     await browsing;
     assert.equal(
