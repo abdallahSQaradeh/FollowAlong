@@ -23,6 +23,7 @@ import {
   ConversionRequest,
   Converter,
   Disposable,
+  FileDialog,
   FileSystem,
   FolderDialog,
   KeyValueStore,
@@ -282,8 +283,12 @@ export class RecordingUi implements UiSink {
   readonly folderDialogs: FolderDialog[] = [];
   /** The folders the learner will choose in the next folder dialogs; none left is a cancel. */
   readonly folderAnswers: string[] = [];
-  /** How many times the core opened the file dialog for an Attach. */
-  fileDialogs = 0;
+  /** Every file dialog the core opened (for an Attach or a Relink), in order. */
+  readonly fileDialogRequests: FileDialog[] = [];
+  /** How many file dialogs the core opened. */
+  get fileDialogs(): number {
+    return this.fileDialogRequests.length;
+  }
   private fileAnswer: ((path: string | undefined) => void) | undefined;
 
   showMessage(message: UserMessage): void {
@@ -386,8 +391,8 @@ export class RecordingUi implements UiSink {
     return Promise.resolve(this.folderAnswers.shift());
   }
 
-  pickFile(): Promise<string | undefined> {
-    this.fileDialogs += 1;
+  pickFile(dialog: FileDialog): Promise<string | undefined> {
+    this.fileDialogRequests.push(dialog);
     return new Promise((resolve) => {
       this.fileAnswer = resolve;
     });

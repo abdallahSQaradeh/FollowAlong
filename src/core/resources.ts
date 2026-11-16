@@ -147,6 +147,28 @@ export function withResource(
   };
 }
 
+/**
+ * `data` with the Resource `id` pointing where `target` points: the same Resource, in the same
+ * place in its Lesson. `undefined` when `data` holds no such Resource.
+ */
+export function withRelinkedResource(
+  data: ResourcesData,
+  id: string,
+  target: ResourceRecord,
+): ResourcesData | undefined {
+  if (findResource(data, id) === undefined) {
+    return undefined;
+  }
+  const relink = (records: readonly ResourceRecord[]): ResourceRecord[] =>
+    records.map((record) => (record.id === id ? { ...target, id } : record));
+  return {
+    course: relink(data.course),
+    lessons: Object.fromEntries(
+      Object.entries(data.lessons).map(([lessonId, records]) => [lessonId, relink(records)]),
+    ),
+  };
+}
+
 /** `data` without the Resource with this id, or `undefined` when it holds no such Resource. */
 export function withoutResource(data: ResourcesData, id: string): ResourcesData | undefined {
   if (findResource(data, id) === undefined) {

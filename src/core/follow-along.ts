@@ -55,6 +55,12 @@ export interface FollowAlong {
    */
   detachResource(resourceId: string): Promise<void>;
   /**
+   * Points a Resource of the open Course, by its tree id, at another file. Without `absolutePath`
+   * it first asks for the file; the Course is fixed when the command runs, so a Course opened
+   * while the dialog is up never has the Resource relinked.
+   */
+  relinkResource(resourceId: string, absolutePath?: string): Promise<void>;
+  /**
    * The play/pause command: pauses the Lesson if the player reports it playing, else resumes it,
    * first stepping back by the `followalong.resumeRewind` setting (a manual resume, ADR 0016).
    */
@@ -173,7 +179,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     lessonId: string,
     absolutePath?: string,
   ): Promise<void> {
-    const path = absolutePath ?? (await ui.pickFile());
+    const path =
+      absolutePath ??
+      (await ui.pickFile({ title: 'Attach a file to this Lesson', openLabel: 'Attach' }));
     if (path !== undefined && (await store.attach(lessonId, path))) {
       const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
       showResourceChange(
@@ -484,6 +492,27 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           store,
           `detached “${basename(resourcePath(course.folder, record))}”`,
         );
+      }
+    },
+    async relinkResource(resourceId, absolutePath) {
+      // Fixed when the command runs, before any dialog: another Course opened meanwhile never
+      // has this Resource relinked (ADR 0024).
+      const course = openedCourse;
+      const store = resourceStore;
+      const record = store?.find(resourceId);
+      if (course === undefined || store === undefined || record === undefined) {
+        logger.log({
+          level: 'warn',
+          message: `Cannot relink ${resourceId}: it is not a Resource of the open Course.`,
+        });
+        return;
+      }
+      const was = basename(resourcePath(course.folder, record));
+      const path =
+        absolutePath ??
+        (await ui.pickFile({ title: `Relink “${was}” to another file`, openLabel: 'Relink' }));
+      if (path !== undefined && (await store.relink(resourceId, path))) {
+        showResourceChange(course, store, `relinked “${was}” to “${basename(path)}”`);
       }
     },
     async openResource(resourceId) {

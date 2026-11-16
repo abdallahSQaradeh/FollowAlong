@@ -185,6 +185,13 @@ export interface FolderDialog {
   readonly openLabel: string;
 }
 
+/** A dialog in which the learner chooses one file. */
+export interface FileDialog {
+  readonly title: string;
+  /** The label of the button that chooses the file. */
+  readonly openLabel: string;
+}
+
 export interface UiSink {
   showMessage(message: UserMessage): void;
   /**
@@ -213,11 +220,11 @@ export interface UiSink {
   /** Asks the learner for one folder; resolves with its absolute path, or `undefined` on cancel. */
   chooseFolder(dialog: FolderDialog): Promise<string | undefined>;
   /**
-   * Opens the file dialog for an Attach and resolves with the absolute path of the file the
-   * learner picked, or `undefined` when they closed it without picking. The dialog is not
-   * modal to the player: the Lesson keeps playing while it is open.
+   * Opens a file dialog (for an Attach, or a Relink) and resolves with the absolute path of the
+   * file the learner picked, or `undefined` when they closed it without picking. The dialog is
+   * not modal to the player: the Lesson keeps playing while it is open.
    */
-  pickFile(): Promise<string | undefined>;
+  pickFile(dialog: FileDialog): Promise<string | undefined>;
 }
 
 // --- Terminal settings ----------------------------------------------------------------------------

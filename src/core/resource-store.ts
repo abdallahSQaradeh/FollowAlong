@@ -14,6 +14,7 @@ import {
   noResources,
   resourcesFile,
   resourcesFileExists,
+  withRelinkedResource,
   withoutResource,
   withResource,
   type ResourceRecord,
@@ -37,6 +38,8 @@ export interface ResourceStore {
    */
   attach(lessonId: string, absolutePath: string): Promise<boolean>;
   detach(resourceId: string): Promise<boolean>;
+  /** Points the Resource at another file: it keeps its id and its place in its Lesson. */
+  relink(resourceId: string, absolutePath: string): Promise<boolean>;
 }
 
 type ResourceStorePorts = Pick<Ports, 'fileSystem' | 'storage' | 'ui' | 'logger'>;
@@ -144,6 +147,15 @@ export async function openResources(
       );
       if (done) {
         logger.log({ level: 'info', message: `Detached ${resourceId}` });
+      }
+      return done;
+    },
+    async relink(resourceId, absolutePath) {
+      const done = await change(`relinking ${resourceId} to ${absolutePath}`, (stored) =>
+        withRelinkedResource(stored, resourceId, newResource(folder, absolutePath)),
+      );
+      if (done) {
+        logger.log({ level: 'info', message: `Relinked ${resourceId} to ${absolutePath}` });
       }
       return done;
     },

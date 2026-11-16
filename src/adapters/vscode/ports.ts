@@ -118,8 +118,15 @@ export function createUiSink(
       const folder = chosen?.[0];
       return folder === undefined ? undefined : folderPath(folder);
     },
-    async pickFile() {
-      return (await pickFileToAttach())?.fsPath;
+    async pickFile({ title, openLabel }) {
+      const chosen = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        openLabel,
+        title,
+      });
+      return chosen?.[0]?.fsPath;
     },
     returnFocus() {
       focus.returnFocus().catch((error: unknown) => {
@@ -127,19 +134,6 @@ export function createUiSink(
       });
     },
   };
-}
-
-/** The file dialog of an Attach: one file, from anywhere on disk. */
-async function pickFileToAttach(): Promise<vscode.Uri | undefined> {
-  return (
-    await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      openLabel: 'Attach',
-      title: 'Attach a file to this Lesson',
-    })
-  )?.[0];
 }
 
 const terminalSettingsSection = 'terminal.integrated';
