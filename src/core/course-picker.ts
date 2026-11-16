@@ -32,12 +32,14 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
   const courses = input.courses.map((course): Entry => ({
     kind: 'item',
     label: course.name,
+    ...(course.categories.length === 0 ? {} : { description: course.categories.join(' / ') }),
     intent: { type: 'openCourse', folder: course.folder },
   }));
   return {
     title: 'Open Course',
     placeholder: placeholderOf(input),
-    matchOnDescription: false,
+    // The category path is the description, and typing matches it (story 7).
+    matchOnDescription: true,
     entries: [
       ...courses,
       { kind: 'item', label: 'Add Courses root…', intent: { type: 'addCoursesRoot' } },

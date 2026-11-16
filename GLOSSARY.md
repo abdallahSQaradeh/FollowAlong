@@ -37,8 +37,16 @@ The "Next: <title>" button the player shows over the last frame when a Lesson en
 _Avoid_: Autoplay next, up next, end card
 
 **Wrapper folder**:
-A folder inside a Course that holds no Lessons of its own and only one other folder with Lessons. It is not shown as a Section: its content is shown in its place.
+A folder that holds no Lessons of its own and only one other folder with Lessons. Inside a Course it is not shown as a Section: its content is shown in its place. Around a Course it gives the Course its name, the outermost wrapper winning.
 _Avoid_: Container folder, parent folder
+
+**Category folder**:
+A folder under a Courses root that groups several Courses and is not one itself. Its path is shown beside each Course in the Course picker, and typing matches it.
+_Avoid_: Genre, topic folder, group
+
+**Known Course**:
+A folder that holds FollowAlong's own `.followalong` folder and has a Lesson somewhere below it: it counts as a Course even when its Lessons are only in subfolders.
+_Avoid_: Opened Course, tracked Course
 
 **Title list**:
 A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with one line per Lesson, giving the instructor's real Lesson titles in Lesson order.
