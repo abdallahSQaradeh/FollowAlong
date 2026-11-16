@@ -273,7 +273,8 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       let merged: T | undefined;
       if (file.merge !== undefined) {
         // Another window on the same Course may have written the file since this store read it
-        // (#27): read it again and merge, so what it added is kept. `value` wins a tie: it is newer.
+        // (#27): read it again and merge, so what it added is kept. `value` comes first, where the
+        // file's merge breaks a tie by order (Progress does not: D14).
         const failedBefore = failedToRead.has(path);
         let onDisk = await readFrom(location, file);
         for (let attempt = 1; attempt < rereadAttempts; attempt += 1) {

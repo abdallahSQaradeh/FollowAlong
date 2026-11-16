@@ -147,19 +147,57 @@ function entryOf(
   return statusSetAt(entry) === statusAt ? entry : { ...entry, statusAt };
 }
 
+/** How far a status has come: play only ever raises it. */
+const statusRank: Readonly<Record<LessonStatus, number>> = {
+  notStarted: 0,
+  inProgress: 1,
+  done: 2,
+};
+
 /**
- * Two entries of one Lesson (ADR 0074): the place saved later, with the status set later. `a` wins
- * a tie.
+ * Of two entries, the one whose place counts: saved later; on the same `savedAt`, the larger
+ * position, then the longer duration, so the merge does not depend on the order of the copies.
  */
-function mergeEntry(a: LessonProgress, b: LessonProgress): LessonProgress {
-  const place = b.savedAt > a.savedAt ? b : a;
-  const marked = statusSetAt(b) > statusSetAt(a) ? b : a;
-  return place === marked ? place : entryOf(place, marked.status, statusSetAt(marked));
+function placeHolder(a: LessonProgress, b: LessonProgress): LessonProgress {
+  const order = b.savedAt - a.savedAt || b.position - a.position || b.duration - a.duration;
+  return order > 0 ? b : a;
 }
 
 /**
- * Per Lesson, the place saved later and the status set later (ADR 0074); for the last Lesson
- * played, the one saved later. `a` wins a tie.
+ * Of two entries, the one whose status counts (D14 on #12, ADR 0074): the one set by hand later;
+ * on the same `statusAt`, the higher status. Equal stamps mean both rose by play from the same
+ * status set by hand (or from never), and play only raises.
+ */
+function statusHolder(a: LessonProgress, b: LessonProgress): LessonProgress {
+  const order =
+    statusSetAt(b) - statusSetAt(a) ||
+    statusRank[b.status ?? 'notStarted'] - statusRank[a.status ?? 'notStarted'];
+  return order > 0 ? b : a;
+}
+
+/**
+ * Two entries of one Lesson (ADR 0074): the place of {@link placeHolder} with the status of
+ * {@link statusHolder}. Neither depends on the order of the two, so copies merge to the same
+ * result in any order and grouping.
+ */
+function mergeEntry(a: LessonProgress, b: LessonProgress): LessonProgress {
+  const place = placeHolder(a, b);
+  const marked = statusHolder(a, b);
+  return place === marked ? place : entryOf(place, marked.status, statusSetAt(marked));
+}
+
+/** The last Lesson played: the one saved later; on the same `savedAt`, the larger id. */
+function laterLast(a: LastLesson | undefined, b: LastLesson | undefined): LastLesson | undefined {
+  if (a === undefined || b === undefined) {
+    return a ?? b;
+  }
+  const order = b.savedAt - a.savedAt || (b.lessonId > a.lessonId ? 1 : 0);
+  return order > 0 ? b : a;
+}
+
+/**
+ * Per Lesson, the place saved later and the status D14 gives (ADR 0074); for the last Lesson
+ * played, the one saved later. The result does not depend on the order of `a` and `b`.
  */
 function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
   const lessons: Record<string, LessonProgress> = { ...a.lessons };
@@ -167,10 +205,7 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
     const other = lessonEntry(lessons, lessonId);
     lessons[lessonId] = other === undefined ? lesson : mergeEntry(other, lesson);
   }
-  const last =
-    a.last === undefined || (b.last !== undefined && b.last.savedAt > a.last.savedAt)
-      ? b.last
-      : a.last;
+  const last = laterLast(a.last, b.last);
   return last === undefined ? { lessons } : { lessons, last };
 }
 
