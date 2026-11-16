@@ -116,6 +116,10 @@ _Avoid_: Skip, jump, scrub
 The seconds the video jumps back when the learner resumes a paused Lesson by hand, so they rehear the last words (the `resumeRewind` setting, 0 by default). Automatic resumes never rewind.
 _Avoid_: Replay, back-up
 
+**Auto-pause**:
+An opt-in mode in which the learner's typing in the active editor pauses a playing Lesson; the play/pause status bar item shows a keyboard while it is on, and "Paused (typing)" while the pause it caused holds. Only the learner's own edits count: never cursor moves, other panels, or FollowAlong's own changes.
+_Avoid_: Typing detection, smart pause, auto-stop
+
 **Speed ladder**:
 The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
 _Avoid_: Speed slider, rate list

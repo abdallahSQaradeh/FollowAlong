@@ -98,6 +98,14 @@ describe('auto-pause while typing', () => {
   });
 
   describe('when it acts', () => {
+    it('sends nothing and says nothing while no Lesson is loaded', async () => {
+      const h = await createHarness();
+      h.config.set('autoPause', 'pause');
+
+      expect(edit(h)).toEqual([]);
+      expect(h.ui.messages).toEqual([]);
+    });
+
     it('does nothing with auto-pause off', async () => {
       const h = await createHarness();
       await openLesson(h, 'off');
