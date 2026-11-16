@@ -44,7 +44,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   });
 
   /** Runs a command, so an unexpected failure is logged and shown instead of lost. */
-  const register = (id: string, run: (...args: unknown[]) => Promise<void>) =>
+  const register = (id: string, run: (...args: unknown[]) => void | Promise<void>) =>
     vscode.commands.registerCommand(id, async (...args: unknown[]) => {
       try {
         await run(...args);
@@ -91,7 +91,6 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.playPause, () => {
       core.playPause();
-      return Promise.resolve();
     }),
   );
   return testHooks;

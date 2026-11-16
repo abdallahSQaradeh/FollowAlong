@@ -57,7 +57,7 @@ export async function run(): Promise<void> {
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
 
   say(await theLessonStarts(hooks.playerEvents));
-  say(await playPauseFromTheEditor(hooks.playerEvents));
+  say(await playFromTheEditor(hooks.playerEvents));
 }
 
 interface Contributes {
@@ -97,64 +97,32 @@ function playPauseIsBoundToItsKeys(packageJson: unknown): void {
 
 /**
  * Runs the play/pause command from the editor, as the keybinding does, and reports what the real
- * page did. Whether `play` sent from an extension command starts playback without any click in
- * the webview (spec #12, D3) is measured here, not assumed: the outcome is reported either way.
+ * page did with its `play`. Whether that starts playback without any click in the webview (spec
+ * #12, D3) only the real VS Code can say, so it is measured here and reported either way. What
+ * the command sends in each state is covered at Seam 1.
  */
-async function playPauseFromTheEditor(events: readonly SeenEvent[]): Promise<string> {
+async function playFromTheEditor(events: readonly SeenEvent[]): Promise<string> {
   const lessonId = 'lesson.webm';
+  const about = (type: string) => (event: SeenEvent) =>
+    event.lessonId === lessonId && event.type === type;
+  if (events.some(about('played'))) {
+    return 'MEASURED: nothing, autoplay worked in this VS Code, so no play from a command was needed';
+  }
   const code = vscode.window.activeTextEditor?.document;
   assert.ok(code, 'the code editor is not active');
-  const stateOf = (): string | undefined =>
-    events
-      .filter(
-        (event) =>
-          event.lessonId === lessonId && (event.type === 'played' || event.type === 'paused'),
-      )
-      .at(-1)?.type;
-  const press = async (): Promise<number> => {
-    const from = events.length;
-    await vscode.commands.executeCommand('followalong.playPause');
-    assert.equal(vscode.window.activeTextEditor?.document, code, 'the command moved the focus');
-    return from;
-  };
-  const eventAfter = (from: number, wanted: (event: SeenEvent) => boolean) =>
-    waitFor('the player to answer the command', () => events.slice(from).find(wanted), 10_000);
-  const isPlayed = (event: SeenEvent) => event.lessonId === lessonId && event.type === 'played';
-  const isPaused = (event: SeenEvent) => event.lessonId === lessonId && event.type === 'paused';
 
-  if (!events.some(isPlayed)) {
-    // The Lesson never played: VS Code refused autoplay. Does a command's `play` get through?
-    const from = await press();
-    const answer = await eventAfter(from, (event) => isPlayed(event) || isPaused(event));
-    if (answer.type !== 'played') {
-      // Nothing to assert beyond the report: the core shows "Press play" for this case.
-      return 'MEASURED: play sent from the command did NOT start playback without a click (the player refused it again, paused {byUser: false})';
-    }
-    const next = await press();
-    const paused = await eventAfter(next, isPaused);
-    assert.equal(
-      paused.byUser,
-      false,
-      'the pause the command asked for is reported as the learner’s',
-    );
-    return 'MEASURED: play sent from the command started playback without a click (autoplay had been refused); the command then paused it';
-  }
-  // Autoplay worked here, so the refused case is not measured. The 3 s fixture may also have
-  // ended by now: then the command plays it again, and otherwise it pauses it and plays it again.
-  const playingNow = stateOf() === 'played';
-  const first = await press();
-  if (playingNow) {
-    const paused = await eventAfter(first, isPaused);
-    assert.equal(
-      paused.byUser,
-      false,
-      'the pause the command asked for is reported as the learner’s',
-    );
-    await eventAfter(await press(), isPlayed);
-  } else {
-    await eventAfter(first, isPlayed);
-  }
-  return 'MEASURED: autoplay worked in this VS Code, so the refused case was not reached; the command paused and played the Lesson again without a click';
+  const from = events.length;
+  await vscode.commands.executeCommand('followalong.playPause');
+  assert.equal(vscode.window.activeTextEditor?.document, code, 'the command moved the focus');
+
+  const answer = await waitFor(
+    'the player to answer the play command',
+    () => events.slice(from).find((event) => about('played')(event) || about('paused')(event)),
+    10_000,
+  );
+  return answer.type === 'played'
+    ? 'MEASURED: play sent from the command started playback without a click'
+    : 'MEASURED: play sent from the command did NOT start playback without a click (the player refused it again, paused {byUser: false})';
 }
 
 /** Waits for the real player page to play the Lesson, or to report that autoplay was refused. */

@@ -63,6 +63,31 @@ async function findFirstLesson(
   return undefined;
 }
 
+/** What the player reported about the current Lesson since its last `load`. */
+interface Playback {
+  /** Whether the Lesson is playing. */
+  readonly playing: boolean;
+  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
+  readonly awaitingAutoplay: boolean;
+  /** Set when the play/pause command sent `play`, until the player answers it. */
+  readonly awaitingPlayAnswer: boolean;
+  /** Whether the learner was told, in this run of refusals, to press play in the player. */
+  readonly toldToPressPlay: boolean;
+}
+
+function startedPlayback(autoplay: boolean): Playback {
+  return {
+    playing: false,
+    awaitingAutoplay: autoplay,
+    awaitingPlayAnswer: false,
+    toldToPressPlay: false,
+  };
+}
+
+function pressPlayText(lesson: Lesson): string {
+  return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
+}
+
 export function createFollowAlong(ports: Ports): FollowAlong {
   const { player, fileSystem, storage, ui, logger } = ports;
 
@@ -70,10 +95,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let current: Lesson | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
-  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
-  let awaitingAutoplay = false;
-  /** Whether the player last reported the current Lesson playing. */
-  let playing = false;
+  /** What the player last said about the current Lesson; starts again with every `load`. */
+  let playback = startedPlayback(false);
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -88,8 +111,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay: true,
     };
     player.send(command);
-    awaitingAutoplay = command.autoplay;
-    playing = false;
+    playback = startedPlayback(command.autoplay);
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -115,24 +137,30 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       case 'paused':
-        // A pause before the Lesson ever played, not by the learner: VS Code refused autoplay.
-        // Without a word the learner would face a stopped video and not know why.
+        // A pause the learner did not ask for after a `load` with autoplay, or after the command's
+        // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         if (event.lessonId === current?.id) {
-          playing = false;
-          if (awaitingAutoplay && !event.byUser) {
-            ui.showMessage({
-              severity: 'info',
-              text: `VS Code did not let “${current.title}” start by itself. Press play in the player to start it.`,
-            });
+          const refused = !event.byUser;
+          const refusedAutoplay = playback.awaitingAutoplay && refused;
+          // The command's `play` is refused too: VS Code lets only a click in the player start a
+          // Lesson. Told once per run of refusals, so repeated keypresses do not stack messages.
+          const refusedCommand =
+            playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
+          if (refusedAutoplay || refusedCommand) {
+            ui.showMessage({ severity: 'info', text: pressPlayText(current) });
           }
-          awaitingAutoplay = false;
+          playback = {
+            playing: false,
+            awaitingAutoplay: false,
+            awaitingPlayAnswer: false,
+            toldToPressPlay: playback.toldToPressPlay || refusedCommand,
+          };
         }
         break;
       case 'played':
       case 'ended':
         if (event.lessonId === current?.id) {
-          awaitingAutoplay = false;
-          playing = event.type === 'played';
+          playback = { ...startedPlayback(false), playing: event.type === 'played' };
         }
         break;
       case 'timeUpdate':
@@ -186,7 +214,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         logger.log({ level: 'debug', message: 'Play/pause ignored: the player is not ready yet.' });
         return;
       }
-      player.send({ type: playing ? 'pause' : 'play' });
+      playback = { ...playback, awaitingPlayAnswer: !playback.playing };
+      player.send({ type: playback.playing ? 'pause' : 'play' });
     },
     dispose() {
       for (const subscription of subscriptions) {
