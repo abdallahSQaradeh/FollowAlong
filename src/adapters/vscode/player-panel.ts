@@ -64,6 +64,14 @@ const stripShare = 0.26;
 /** The context key the views' `when` clauses read: only the spot the player is in shows. */
 const spotContextKey = 'followalong.videoSpot';
 
+/** Whether `group` holds a tab of the learner's: not the player's page, and not nothing. */
+function holdsMoreThanThePlayer(group: vscode.TabGroup): boolean {
+  return group.tabs.some(
+    (tab) =>
+      !(tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith(playerViewType)),
+  );
+}
+
 /** The page in one spot: a webview, how to bring it to the front, and how to drop it. */
 interface Host {
   readonly spot: VideoSpot;
@@ -351,7 +359,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     if (this.awaitedTitle('miniStrip') === undefined) {
       return;
     }
-    const groupsBefore = vscode.window.tabGroups.all.length;
+    const learnersGroups = vscode.window.tabGroups.all.filter(holdsMoreThanThePlayer).length;
     try {
       await this.within(
         vscode.commands.executeCommand('workbench.action.newGroupAbove'),
@@ -387,7 +395,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     this.awaitedSpot = undefined;
     const host = this.openPanel(title, 'miniStrip', vscode.ViewColumn.Active);
     this.host = host;
-    if (groupsBefore === 1) {
+    if (learnersGroups === 1) {
       await this.run('vscode.setEditorLayout', {
         orientation: 1,
         groups: [{ size: stripShare }, { size: 1 - stripShare }],
@@ -405,14 +413,15 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   }
 
   /**
-   * Resolves once no editor group is empty, or after a moment: closing the tab of the spot before
-   * leaves its group behind for a short while. A learner who keeps empty groups
-   * (`workbench.editor.closeEmptyGroups` off) waits the moment.
+   * Resolves once the editor group of the spot before is gone, or after a moment: closing its tab
+   * leaves the group behind for a short while, empty or holding only the page just dropped, and a
+   * new group would be made beside it. A learner who keeps empty groups
+   * (`workbench.editor.closeEmptyGroups` off) waits the moment each time.
    */
   private groupsSettled(): Promise<void> {
-    const anyEmpty = (): boolean =>
-      vscode.window.tabGroups.all.some((group) => group.tabs.length === 0);
-    if (!anyEmpty()) {
+    const leftOver = (): boolean =>
+      vscode.window.tabGroups.all.some((group) => !holdsMoreThanThePlayer(group));
+    if (!leftOver()) {
       return Promise.resolve();
     }
     return new Promise((resolve) => {
@@ -422,7 +431,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
         resolve();
       };
       const watching = vscode.window.tabGroups.onDidChangeTabGroups(() => {
-        if (!anyEmpty()) {
+        if (!leftOver()) {
           done();
         }
       });

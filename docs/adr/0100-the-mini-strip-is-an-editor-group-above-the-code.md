@@ -32,15 +32,16 @@ collapsed the video, or VS Code may be closing).
 The strip's own steps:
 
 1. **Wait for the group of the spot before to close**, for at most 500 ms. Closing a tab leaves its
-   group behind for a moment; a new group made beside it would put the strip in the wrong place and
-   the group count would be wrong. A learner who keeps empty groups
+   group behind for a moment, empty or still listing the page just dropped; a new group made beside
+   it would put the strip in the wrong place. (Smoke test, CI: the first version counted that group
+   and left the strip at VS Code's half height.) A learner who keeps empty groups
    (`workbench.editor.closeEmptyGroups` off) waits that moment each time.
 2. `workbench.action.newGroupAbove`: a new, empty, active group above the learner's. It has the 5 s
    safety wait the views have; a refusal or a hang while the strip is still awaited is the same as
    a view that never opens: logged, the learner told once, the player counted as closed. After the
    learner has asked for another spot, a late or failed group is only noted.
 3. The player's panel opens in the active group (`ViewColumn.Active`, `preserveFocus`).
-4. Where the learner had exactly one group before (counted before step 2), `vscode.setEditorLayout`
+4. Where the learner had exactly one group with something of theirs in it before (counted before step 2, not counting a group that holds only the player), `vscode.setEditorLayout`
    sizes the strip to 26 % of the editor area (the prototype's 0.26 / 0.74); the learner resizes it
    with the sash (story 56). With more groups the layout is **not** touched: it is the learner's.
 5. `workbench.action.focusBelowGroup` makes the group the code is in the active group again (the
