@@ -18,6 +18,8 @@ export const commands = {
   openCourse: 'followalong.openCourse',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */
   playLesson: playLessonCommand,
+  /** `Ctrl+'` `L`: the Lesson picker. */
+  goToLesson: 'followalong.goToLesson',
 } as const;
 
 /**
@@ -98,6 +100,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       }
       return Promise.resolve();
     }),
+    register(commands.goToLesson, () => core.goToLesson()),
   );
   return testHooks;
 }

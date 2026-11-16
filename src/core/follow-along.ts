@@ -7,6 +7,7 @@ import { basename } from 'node:path';
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Disposable, type Ports } from './ports.js';
+import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import { readFolderListing } from './folder-listing.js';
 
@@ -15,6 +16,8 @@ export interface FollowAlong {
   openCourse(folder: string): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
+  /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
+  goToLesson(): Promise<void>;
   dispose(): void;
 }
 
@@ -149,6 +152,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       play(course, lesson);
+    },
+    async goToLesson() {
+      if (openedCourse === undefined) {
+        return;
+      }
+      await ui.pick(buildLessonPicker(openedCourse));
     },
     dispose() {
       for (const subscription of subscriptions) {

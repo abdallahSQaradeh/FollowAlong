@@ -41,6 +41,19 @@
         "command": "followalong.playLesson",
         "title": "Play Lesson",
         "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.goToLesson",
+        "title": "Go to Lesson…",
+        "category": "FollowAlong"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "followalong.goToLesson",
+        "key": "ctrl+' l",
+        "mac": "cmd+' l",
+        "when": "editorTextFocus || terminalFocus"
       }
     ],
     "viewsContainers": {
