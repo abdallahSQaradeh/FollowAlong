@@ -41,5 +41,7 @@ readable.
   a path each time (Windows paths are case-insensitive).
 - A Course that becomes read-only after FollowAlong wrote to it keeps its old `.followalong` files.
   In a later session, reads prefer them over the newer fallback files until a write falls back
-  again. The Progress tickets, which write often and merge per Lesson (story 85), should decide
-  whether to merge the two copies.
+  again, unless the file defines a `merge`: then both copies are read and merged. Progress does
+  (ADR 0010).
+- `.followalong` is created without its parents (ADR 0010), so a write never makes a Course folder
+  that moved away while open; it fails with `notFound` instead.
