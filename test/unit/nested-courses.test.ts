@@ -1,8 +1,29 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { folderLabel, scanCourses } from '../../src/core/course-scanner.js';
 import type { Logger } from '../../src/core/logger.js';
 import type { FileSystem } from '../../src/core/ports.js';
+import type { QuickPickModel } from '../../src/core/quick-pick.js';
+import { createHarness, type Harness } from './harness.js';
+
+/** The Course picker as the learner reads it: each Course as `label` or `label — description`. */
+function courses(picker: QuickPickModel<unknown> | undefined): string[] {
+  return (picker?.entries ?? []).flatMap((entry) =>
+    entry.kind === 'item' && entry.label !== 'Add Courses root…'
+      ? [entry.description === undefined ? entry.label : `${entry.label} — ${entry.description}`]
+      : [],
+  );
+}
+
+/** Opens the Course picker over `roots` and returns what it lists. */
+async function listed(h: Harness, ...roots: string[]): Promise<string[]> {
+  h.config.set('coursesRoots', roots);
+  void h.core.pickCourse();
+  await h.ui.pickerShown();
+  return courses(h.ui.picker);
+}
 
 /**
  * What the Course picker names a Course whose folder is the Courses root itself, under each OS's
@@ -38,6 +59,182 @@ describe('a Course at the root of a drive', () => {
 
     expect(scan.courses.map((course) => course.name)).toEqual([
       process.platform === 'win32' ? 'C:' : '/',
+    ]);
+  });
+});
+
+describe('Courses under category and wrapper folders', () => {
+  it('names a Course after its outermost single-child wrapper', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'JavaScript The Advanced Concepts/udemy-ajconfeb/01 Intro.mp4': 'v',
+      'JavaScript The Advanced Concepts/udemy-ajconfeb/Section 2/02 Scope.mp4': 'v',
+    });
+
+    expect(await listed(h, learning)).toEqual(['JavaScript The Advanced Concepts']);
+  });
+
+  it('opens the folder that holds the Lessons, whatever the Course is called', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'JavaScript The Advanced Concepts/udemy-ajconfeb/01 Intro.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('JavaScript The Advanced Concepts');
+    await picking;
+    h.player.ready();
+
+    expect(h.player.sent).toMatchObject([
+      {
+        type: 'load',
+        lessonId: '01 Intro.mp4',
+        videoUri: h.player.resourceUri(
+          [learning, 'JavaScript The Advanced Concepts', 'udemy-ajconfeb', '01 Intro.mp4'].join(
+            process.platform === 'win32' ? '\\' : '/',
+          ),
+        ),
+      },
+    ]);
+  });
+
+  it('takes the outermost of several wrappers, and files it under its categories', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/Frontend/React - The Complete Guide/part 1/release-2024/01 Hello.mp4': 'v',
+      'Web/Frontend/Vue Basics/01 Hello.mp4': 'v',
+      'Web/Backend/Node Basics/01 Welcome.mp4': 'v',
+      'Web/Backend/Express Basics/01 Welcome.mp4': 'v',
+    });
+
+    expect(await listed(h, learning)).toEqual([
+      'Express Basics — Web / Backend',
+      'Node Basics — Web / Backend',
+      'React - The Complete Guide — Web / Frontend',
+      'Vue Basics — Web / Frontend',
+    ]);
+  });
+
+  it('does not take a folder of several Courses for a wrapper', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Python/Intro Course/01 Hello.mp4': 'v',
+      'Python/Advanced Course/01 Hello.mp4': 'v',
+    });
+
+    expect(await listed(h, learning)).toEqual([
+      'Advanced Course — Python',
+      'Intro Course — Python',
+    ]);
+  });
+
+  it('keeps a wrapper a wrapper when a sibling folder or file holds no video', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Docker Mastery/docker-mastery-2024/01 Intro.mp4': 'v',
+      'Docker Mastery/docker-mastery-2024/code.zip': 'zip',
+      'Docker Mastery/extras/cheatsheet.pdf': 'pdf',
+      'Docker Mastery/readme.txt': 'text',
+    });
+
+    expect(await listed(h, learning)).toEqual(['Docker Mastery']);
+  });
+
+  it('never takes the Courses root itself for a wrapper', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Only Course/01 Intro.mp4': 'v' });
+
+    expect(await listed(h, learning)).toEqual(['Only Course']);
+  });
+
+  it('lists a Course with no category without a description', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Top Course/01 Intro.mp4': 'v',
+      'Web/React Basics/01 Hello.mp4': 'v',
+      'Web/Vue Basics/01 Hello.mp4': 'v',
+    });
+
+    expect(await listed(h, learning)).toEqual([
+      'React Basics — Web',
+      'Top Course',
+      'Vue Basics — Web',
+    ]);
+  });
+
+  it('matches what the learner types against the category path', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/Frontend/React Basics/01 Hello.mp4': 'v',
+      'Web/Frontend/Vue Basics/01 Hello.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+
+    expect(h.ui.picker?.matchOnDescription).toBe(true);
+  });
+
+  it('lists a known Course, one with .followalong, when its videos are only in subfolders', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Known Course/.followalong/progress.json': '{}',
+      'Known Course/Section 1/01 Intro.mp4': 'v',
+      'Known Course/Section 2/02 Next.mp4': 'v',
+      'Unknown Course/Section 1/01 Intro.mp4': 'v',
+      'Unknown Course/Section 2/02 Next.mp4': 'v',
+    });
+
+    // Without .followalong the scan cannot know that the folder above a Section is a Course.
+    expect(await listed(h, learning)).toEqual([
+      'Known Course',
+      'Section 1 — Unknown Course',
+      'Section 2 — Unknown Course',
+    ]);
+  });
+
+  it('does not list a folder with .followalong when no video is below it', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Emptied Course/.followalong/progress.json': '{}',
+      'Emptied Course/notes.txt': 'text',
+      'Real Course/01 Intro.mp4': 'v',
+    });
+
+    expect(await listed(h, learning)).toEqual(['Real Course']);
+  });
+
+  it('leaves out folders that hold only a zip, wherever they are', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Zipped Course/zipped-course.zip': 'zip',
+      'Category/Also Zipped/01.zip': 'zip',
+      'Category/Real Course/01 Intro.mp4': 'v',
+      'Category/Real Course/code.zip': 'zip',
+      'Category/Other Course/01 Intro.mp4': 'v',
+      'Known Zip/.followalong/progress.json': '{}',
+      'Known Zip/code.zip': 'zip',
+    });
+
+    expect(await listed(h, learning)).toEqual([
+      'Other Course — Category',
+      'Real Course — Category',
+    ]);
+  });
+
+  it('lists a Course found under two roots once, as the first root files it', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/React Basics/01 Hello.webm': 'v',
+      'Web/Vue Basics/01 Hello.webm': 'v',
+    });
+
+    expect(await listed(h, learning, join(learning, 'Web'))).toEqual([
+      'React Basics — Web',
+      'Vue Basics — Web',
     ]);
   });
 });

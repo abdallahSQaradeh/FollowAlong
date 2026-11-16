@@ -90,6 +90,7 @@ describe('the Course picker', () => {
       'TypeScript Deep Dive/01 Intro.mp4': 'v',
       'algorithms/lesson1.webm': 'v',
       'Web/React Basics/01 Hello.webm': 'v',
+      'Web/Vue Basics/01 Hello.webm': 'v',
       'notes/readme.txt': 'not a Course',
     });
     const more = await h.folder('More', { 'CSS Grid/lesson10.mp4': 'v' });
@@ -103,6 +104,7 @@ describe('the Course picker', () => {
       'CSS Grid',
       'React Basics',
       'TypeScript Deep Dive',
+      'Vue Basics',
       'Add Courses root…',
     ]);
   });
@@ -129,7 +131,7 @@ describe('the Course picker', () => {
       '.hidden course/01 Intro.mp4': 'v',
       'project/node_modules/some-package/demo.mp4': 'v',
       'project/.git/objects/demo.webm': 'v',
-      '.followalong/sound.webm': 'v',
+      'Real Course/.followalong/sound.webm': 'v',
     });
     h.config.set('coursesRoots', [learning]);
 
@@ -224,6 +226,7 @@ describe('the Course picker', () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
       'Web/React Basics/01 Hello.webm': 'v',
+      'Web/Vue Basics/01 Hello.webm': 'v',
       'Node Course/01 Welcome.mp4': 'v',
     });
     h.config.set('coursesRoots', [learning, join(learning, 'Web')]);
@@ -231,7 +234,12 @@ describe('the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Node Course', 'React Basics', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual([
+      'Node Course',
+      'React Basics',
+      'Vue Basics',
+      'Add Courses root…',
+    ]);
   });
 
   it('keeps the player page when the learner picks another Course under the Courses roots', async () => {
