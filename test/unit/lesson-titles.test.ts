@@ -139,7 +139,7 @@ describe('Lesson titles from a .txt title list', () => {
   it('finds the list in a wrapper folder that has an empty folder beside the Lessons', async () => {
     const titles = await openedTitles(
       {
-        'Wrapper/titles.txt': 'One\nTwo\n',
+        'Wrapper/Inner/titles.txt': 'One\nTwo\n',
         'Wrapper/Inner/a.mp4': 'v',
         'Wrapper/Inner/b.mp4': 'v',
         'Wrapper/Empty/readme.pdf': 'x',
