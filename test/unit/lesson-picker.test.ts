@@ -33,10 +33,10 @@ describe('Go to Lesson…', () => {
 
     expect(rows(h.ui.picker)).toEqual([
       '── Section 1',
-      '01 Welcome.webm  ·  Section 1',
-      '02 Setup.mp4  ·  Section 1',
+      'Welcome  ·  Section 1',
+      'Setup  ·  Section 1',
       '── Section 2',
-      '03 Tools.mp4  ·  Section 2',
+      'Tools  ·  Section 2',
     ]);
   });
 
@@ -51,10 +51,10 @@ describe('Go to Lesson…', () => {
     h.player.clearSent();
 
     const going = h.core.goToLesson();
-    h.ui.choose('03 Tools.mp4');
+    h.ui.choose('Tools');
     await going;
 
-    expect(h.player.shown.at(-1)?.title).toBe('03 Tools.mp4');
+    expect(h.player.shown.at(-1)?.title).toBe('Tools');
     expect(h.player.sent).toEqual([
       {
         type: 'load',
@@ -106,7 +106,7 @@ describe('Go to Lesson…', () => {
     await h.core.openCourse(second);
     h.player.ready();
     h.player.clearSent();
-    h.ui.choose('intro.webm');
+    h.ui.choose('intro');
     await going;
 
     expect(h.player.sent).toEqual([]);
@@ -125,11 +125,11 @@ describe('Go to Lesson…', () => {
     void h.core.goToLesson();
 
     expect(rows(h.ui.picker)).toEqual([
-      'intro.mp4',
-      'lesson2.mp4',
-      'lesson10.mp4',
+      'intro',
+      'lesson2',
+      'lesson10',
       '── Basics',
-      '01 Variables.mp4  ·  Basics',
+      'Variables  ·  Basics',
     ]);
   });
 
@@ -148,13 +148,13 @@ describe('Go to Lesson…', () => {
 
     expect(rows(h.ui.picker)).toEqual([
       '── Part 1',
-      '01 Variables.mp4  ·  Part 1',
+      'Variables  ·  Part 1',
       '── Part 1 / Deep',
-      '02 Types.mp4  ·  Part 1 / Deep',
+      'Types  ·  Part 1 / Deep',
       '── Part 2',
-      '04 Recap.mp4  ·  Part 2',
+      'Recap  ·  Part 2',
       '── Part 2 / Wrapper',
-      '03 Loops.mp4  ·  Part 2 / Wrapper',
+      'Loops  ·  Part 2 / Wrapper',
     ]);
   });
 

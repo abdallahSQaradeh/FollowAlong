@@ -28,6 +28,10 @@ _Avoid_: Lesson search, jump list
 A folder inside a Course that holds no Lessons of its own and only one other folder with Lessons. It is not shown as a Section: its content is shown in its place.
 _Avoid_: Container folder, parent folder
 
+**Title list**:
+A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with one line per Lesson, giving the instructor's real Lesson titles in Lesson order.
+_Avoid_: Index, table of contents, names file
+
 **Progress**:
 How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done.
 _Avoid_: History, completion
