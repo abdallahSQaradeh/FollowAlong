@@ -388,11 +388,11 @@ export class RecordingUi implements UiSink {
 
   openPicker<Intent>(
     model: QuickPickModel<Intent>,
-    onToolbarButton: (intent: Intent) => void,
+    onStayOpen: (intent: Intent) => void,
   ): LivePicker<Intent> {
     this.pickers.push(model);
     this.shownModel = model;
-    this.toolbarHandler = onToolbarButton as (intent: unknown) => void;
+    this.toolbarHandler = onStayOpen as (intent: unknown) => void;
     const scripted = this.scriptedChoices.shift();
     const answer = new Promise<Intent | undefined>((resolve, reject) => {
       this.answer = (intent) => {
