@@ -15,6 +15,7 @@ import {
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
 import { createCourseScans } from './course-list-cache.js';
+import { unhideCourse } from './hidden-courses.js';
 import { showCoursePicker } from './live-course-picker.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { locateCourse } from './locate-course.js';
@@ -119,6 +120,11 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * `FollowAlong: Unhide a Course…`: lists the Courses hidden from the Course picker and shows the
+   * one the learner picks in it again (ADR 0072).
+   */
+  unhideCourse(): Promise<void>;
   /**
    * The text of a document open in VS Code changed: auto-pause's input (spec #12, Auto-pause).
    * Cursor moves are not edits, so they never reach it.
@@ -836,6 +842,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     playLesson,
     pickCourse,
+    unhideCourse: () => unhideCourse(ports),
     async goToLesson() {
       if (refusedWhileOpening()) {
         return;

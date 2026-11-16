@@ -64,6 +64,10 @@ _Avoid_: Opened Course, tracked Course
 The Courses the learner opened last (5 at most, newest first), kept on this machine and listed first in the Course picker. The Course open in this window is tagged _(open)_. One whose folder has moved shows as _missing_, with _Locate…_ to point it at its new folder and _Remove_ to drop it.
 _Avoid_: History, favourites, last opened
 
+**Hidden Course**:
+A folder the learner hid from the Course picker with _Hide_ because it is not a real Course (a stray `images` folder holding one video). Kept in a hidden-Course list on this machine, so it stays hidden across rescans and restarts. Hiding only changes what the picker lists, never the folder; _FollowAlong: Unhide a Course…_ gives one back.
+_Avoid_: Ignored Course, excluded folder, deleted Course
+
 **Title list**:
 A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with one line per Lesson, giving the instructor's real Lesson titles in Lesson order.
 _Avoid_: Index, table of contents, names file

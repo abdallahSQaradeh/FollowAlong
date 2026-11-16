@@ -111,6 +111,7 @@ export async function run(): Promise<void> {
   const registered = await vscode.commands.getCommands(true);
   for (const command of [
     'followalong.openCourse',
+    'followalong.unhideCourse',
     'followalong.playLesson',
     'followalong.attachResource',
     'followalong.openResource',

@@ -12,6 +12,11 @@ export interface QuickPickButtonModel<Intent> {
   readonly icon: string;
   /** What pressing the button asks the core to do. */
   readonly intent: Intent;
+  /**
+   * An item button closes the quick pick and answers with its intent. With `staysOpen` it does
+   * not: like a title bar button, the core is told, and may replace the model (a Hide).
+   */
+  readonly staysOpen?: boolean;
 }
 
 export interface QuickPickItemModel<Intent> {
