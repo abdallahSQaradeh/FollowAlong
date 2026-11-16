@@ -379,6 +379,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return;
     }
     void loaded.leave();
+    // The Lesson left shows where the learner left it, which is saved with it.
+    refreshTree();
     const saved = progress?.current();
     play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
   }

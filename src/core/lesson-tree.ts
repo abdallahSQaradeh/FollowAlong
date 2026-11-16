@@ -58,9 +58,21 @@ export type LessonTreeNode =
       readonly children: readonly LessonTreeNode[];
     };
 
+/** How far the learner is through the whole Course (spec #12, story 86). */
+export interface CourseSummary {
+  readonly done: number;
+  readonly total: number;
+  /** `done` of `total`, rounded down: 100 only when every Lesson is done. */
+  readonly percent: number;
+  /** Shown beside the tree's title: `27/140 · 19%`. */
+  readonly description: string;
+}
+
 export interface LessonTreeModel {
   /** Shown instead of the tree, when there is nothing to list. */
   readonly message?: string;
+  /** The Course's totals; absent when the Course has no Lessons. */
+  readonly summary?: CourseSummary;
   readonly nodes: readonly LessonTreeNode[];
 }
 
@@ -134,5 +146,15 @@ export function buildLessonTree(
   resources: ResourcesData,
   progress: CourseProgress,
 ): LessonTreeModel {
-  return { nodes: nodesOf(course, { folder: course.folder, resources, progress }) };
+  const { done, total } = totalsOf(course, progress);
+  const percent = Math.floor((done * 100) / total);
+  return {
+    summary: {
+      done,
+      total,
+      percent,
+      description: `${String(done)}/${String(total)} · ${String(percent)}%`,
+    },
+    nodes: nodesOf(course, { folder: course.folder, resources, progress }),
+  };
 }
