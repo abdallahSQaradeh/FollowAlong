@@ -142,6 +142,73 @@ describe('two windows on the same Course', () => {
     expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 115 });
     expect(glyphs(h)[intro]).toBe('✓');
   });
+
+  it('keeps the place the other window saved when a Lesson is marked done', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    other.core.playLesson(intro);
+    playTo(other.player, intro, 100);
+    pause(other.player, intro);
+    await h.settle();
+    wait(h, other, 1_000);
+
+    await h.core.markLessonDone(intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 95 });
+    expect(glyphs(h)[intro]).toBe('✓');
+  });
+
+  it('keeps a Lesson marked not done when the other window still had it done', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { [intro]: 'video', [setup]: 'video' });
+    await h.core.openCourse(course);
+    h.player.ready();
+    await h.core.markLessonDone(intro);
+    await h.settle();
+    const other = h.openWindow({ clockOffsetMs: 0 });
+    await other.core.openCourse(course);
+    other.player.ready();
+    other.core.playLesson(intro);
+    wait(h, other, 1_000);
+
+    await h.core.markLessonNotDone(intro);
+    wait(h, other, 1_000);
+    playTo(other.player, intro, 300);
+    pause(other.player, intro);
+
+    // The other window's place is newer than the reset, so it counts again; its done mark does not.
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 295 });
+    expect(glyphs(h)[intro]).not.toBe('✓');
+  });
+
+  it('resets a Lesson over an older place the other window saves after the reset', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    other.core.playLesson(intro);
+    playTo(other.player, intro, 200);
+    wait(h, other, 1_000);
+
+    await h.core.markLessonNotDone(intro);
+    wait(h, other, 1_000);
+    pause(other.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 0 });
+    expect(glyphs(h)[intro]).toBe('○');
+  });
+
+  it('keeps a place the other window saves after a reset: it is Progress again', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    other.core.playLesson(intro);
+    playTo(other.player, intro, 200);
+    pause(other.player, intro);
+    await h.settle();
+    wait(h, other, 1_000);
+
+    await h.core.markLessonNotDone(intro);
+    wait(h, other, 1_000);
+    playTo(other.player, intro, 250);
+    pause(other.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 245 });
+  });
 });
 
 describe('one window, with the file read again before each write', () => {
