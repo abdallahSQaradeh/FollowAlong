@@ -225,6 +225,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       sidecarSound === undefined
         ? Promise.reject(new Error('No Course is open.'))
         : sidecarSound.prepare(lesson, request),
+    prepareSoundAhead: (lesson, pageDecodes) => {
+      sidecarSound?.prepareAhead(
+        lesson,
+        openedCourse === undefined ? [] : lessonsInOrder(openedCourse),
+        pageDecodes,
+      );
+    },
     progressChanged: refreshTree,
   });
 
@@ -529,6 +536,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         openedCourse = course;
         resourceStore = store;
         progress = recorder;
+        sidecarSound?.stop();
         sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         drawTree({ message: text, nodes: [] });
@@ -545,6 +553,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       openedCourse = course;
       resourceStore = store;
       progress = recorder;
+      sidecarSound?.stop();
       sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
       drawTree(buildLessonTree(course, store.current(), recorder.current(), store.missing()));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
@@ -1090,6 +1099,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await opening;
       await loaded.leave();
       loaded.dispose();
+      sidecarSound?.stop();
     },
     nextLesson() {
       moveToLesson(1);
@@ -1099,6 +1109,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     dispose() {
       loaded.dispose();
+      sidecarSound?.stop();
     },
   };
 }

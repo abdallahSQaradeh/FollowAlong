@@ -13,7 +13,7 @@
  */
 import { EventEmitter } from 'node:events';
 import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { constants as osConstants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import {
   createFfmpegConverter,
+  type ConverterOptions,
   type FfmpegProcess,
   type StartFfmpeg,
 } from '../../src/adapters/node/converter.js';
@@ -33,9 +34,13 @@ const grace = 25;
 /** What a stand-in ffmpeg does when the converter signals it. */
 type Obeys = readonly ('SIGTERM' | 'SIGKILL')[];
 
+/** The process ids the stand-in ffmpegs get, one each. */
+let nextPid = 4000;
+
 class FakeFfmpeg extends EventEmitter implements FfmpegProcess {
   readonly stderr = new PassThrough();
   readonly signals: string[] = [];
+  readonly pid = nextPid++;
 
   constructor(
     readonly args: readonly string[],
@@ -79,6 +84,7 @@ interface Fixture {
 function converterRunning(
   behave: (process: FakeFfmpeg) => void,
   obeys: Obeys = ['SIGTERM', 'SIGKILL'],
+  options: ConverterOptions = {},
 ): Fixture {
   const started: FakeFfmpeg[] = [];
   const start: StartFfmpeg = (_program, args) => {
@@ -89,7 +95,10 @@ function converterRunning(
     });
     return process;
   };
-  return { converter: createFfmpegConverter({ start, killGraceMs: grace }), started };
+  return {
+    converter: createFfmpegConverter({ start, killGraceMs: grace, ...options }),
+    started,
+  };
 }
 
 const recorded = (name: string): Promise<string> =>
@@ -231,6 +240,7 @@ describe('stopping ffmpeg', () => {
     const converting = converter.extractSound({
       ...lesson(),
       output,
+      lowPriority: false,
       onProgress: () => undefined,
       signal: stop.signal,
     });
@@ -264,6 +274,7 @@ describe('converting the sound', () => {
       program: 'ffmpeg',
       input,
       output,
+      lowPriority: false,
       onProgress: (percent) => percents.push(percent),
       signal: never,
     });
@@ -293,6 +304,7 @@ describe('converting the sound', () => {
       program: 'ffmpeg',
       input: join(folder, 'Lesson.mp4'),
       output,
+      lowPriority: false,
       onProgress: (percent) => percents.push(percent),
       signal: never,
     });
@@ -314,6 +326,7 @@ describe('converting the sound', () => {
         program: 'ffmpeg',
         input: join(folder, 'Lesson.mp4'),
         output: join(folder, 'Lesson-0123456789abcdef.mp3'),
+        lowPriority: false,
         onProgress: () => undefined,
         signal: never,
       })
@@ -338,6 +351,7 @@ describe('converting the sound', () => {
         program: 'ffmpeg',
         input: join(folder, 'Lesson.mp4'),
         output: join(folder, 'Lesson-0123456789abcdef.mp3'),
+        lowPriority: false,
         onProgress: () => undefined,
         signal: never,
       })
@@ -358,6 +372,7 @@ describe('what the learner is told when the output cannot be written', () => {
       program: 'ffmpeg',
       input: join(folder, 'Lesson.mp4'),
       output,
+      lowPriority: false,
       onProgress: () => undefined,
       signal: never,
     });
@@ -409,6 +424,7 @@ describe('temp files a conversion that died with its window left behind', () => 
       program: 'ffmpeg',
       input: join(folder, 'Lesson.mp4'),
       output: join(folder, 'Lesson-0123456789abcdef.mp3'),
+      lowPriority: false,
       onProgress: () => undefined,
       signal: never,
     });
@@ -441,5 +457,65 @@ describe('temp files a conversion that died with its window left behind', () => 
     await convert();
 
     expect(await readdir(folder)).toContain('.Live-0123456789abcdef.mp3.4343-1.part');
+  });
+});
+
+describe('low process priority', () => {
+  const convert = (converter: Converter, lowPriority: boolean): Promise<void> =>
+    converter.extractSound({
+      program: 'ffmpeg',
+      input: join(folder, 'Lesson.mp4'),
+      output: join(folder, 'Lesson-0123456789abcdef.mp3'),
+      lowPriority,
+      onProgress: () => undefined,
+      signal: never,
+    });
+
+  /** ffmpeg writes its sound and exits. */
+  const finishing = (process: FakeFfmpeg): void => {
+    const [temporary] = process.args.slice(-1);
+    void writeFile(temporary ?? '', 'ID3 mp3 sound').then(() => {
+      process.finish(0);
+    });
+  };
+
+  it('runs the ffmpeg it started below normal priority when asked to', async () => {
+    const lowered: [number, number][] = [];
+    const { converter, started } = converterRunning(finishing, ['SIGTERM', 'SIGKILL'], {
+      setPriority: (pid, priority) => {
+        lowered.push([pid, priority]);
+      },
+    });
+
+    await convert(converter, true);
+
+    expect(lowered).toEqual([[started[0]?.pid, osConstants.priority.PRIORITY_BELOW_NORMAL]]);
+  });
+
+  it('leaves the priority of the ffmpeg alone when not asked to lower it', async () => {
+    const lowered: number[] = [];
+    const { converter } = converterRunning(finishing, ['SIGTERM', 'SIGKILL'], {
+      setPriority: (pid) => {
+        lowered.push(pid);
+      },
+    });
+
+    await convert(converter, false);
+
+    expect(lowered).toEqual([]);
+  });
+
+  it('still converts when the system will not lower the priority', async () => {
+    const { converter } = converterRunning(finishing, ['SIGTERM', 'SIGKILL'], {
+      setPriority: () => {
+        throw new Error('EPERM: operation not permitted');
+      },
+    });
+
+    await convert(converter, true);
+
+    expect(await readFile(join(folder, 'Lesson-0123456789abcdef.mp3'), 'utf8')).toBe(
+      'ID3 mp3 sound',
+    );
   });
 });

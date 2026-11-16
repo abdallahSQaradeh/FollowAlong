@@ -9,6 +9,7 @@
  */
 import { spawn } from 'node:child_process';
 import { open, readdir, rename, rm, stat } from 'node:fs/promises';
+import { constants as osConstants, setPriority as setProcessPriority } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 
@@ -52,6 +53,8 @@ interface Run {
 
 /** The part of a child process the converter uses: what a test stands in for ffmpeg with. */
 export interface FfmpegProcess {
+  /** The process id, once the process started; `undefined` when it could not be. */
+  readonly pid?: number | undefined;
   /** What ffmpeg writes to its error output, where it reports. */
   readonly stderr: Readable;
   on(event: 'error', listener: (error: Error) => void): unknown;
@@ -65,6 +68,12 @@ export type StartFfmpeg = (program: string, args: readonly string[]) => FfmpegPr
 export interface ConverterOptions {
   /** Starts the process: `child_process.spawn` unless a test stands in for ffmpeg. */
   readonly start?: StartFfmpeg;
+  /**
+   * Sets the priority of a process: `os.setPriority` unless a test stands in for the system. A
+   * conversion the core asked to run at low priority gets `PRIORITY_BELOW_NORMAL`, which is a
+   * nice value on macOS and Linux and BELOW_NORMAL_PRIORITY_CLASS on Windows.
+   */
+  readonly setPriority?: (pid: number, priority: number) => void;
   /**
    * How long a stopped ffmpeg gets to exit, and then, once killed, to be gone, before the stop is
    * settled anyway.
@@ -92,18 +101,28 @@ function stopReason(signal: AbortSignal): Error {
  * once ffmpeg has exited, whatever its code: on Windows a file a running ffmpeg still holds cannot
  * be removed, so a cancel or a failure must wait for it before cleaning up. Rejects when ffmpeg
  * cannot be started, or `signal` stopped it: ffmpeg is asked to stop (SIGTERM), then killed, and
- * the run settles when it has exited, or once it has had time to after the kill.
+ * the run settles when it has exited, or once it has had time to after the kill. With
+ * `lowPriority`, ffmpeg runs below normal priority, so a conversion never slows the machine down.
  */
 function runFfmpeg(
-  { start, killGraceMs }: Required<ConverterOptions>,
+  { start, killGraceMs, setPriority }: Required<ConverterOptions>,
   program: string,
   args: readonly string[],
   signal: AbortSignal,
+  lowPriority: boolean,
   onLine: (line: string) => void,
 ): Promise<Run> {
   return new Promise((resolve, reject) => {
     signal.throwIfAborted();
     const child = start(program, args);
+    if (lowPriority && child.pid !== undefined) {
+      try {
+        setPriority(child.pid, osConstants.priority.PRIORITY_BELOW_NORMAL);
+      } catch {
+        // A process that ended already, or one the system will not let us change: the sound is
+        // converted at normal priority, which is slower for the machine but never a failure.
+      }
+    }
     let tail: string[] = [];
     let pending = '';
     child.stderr.setEncoding('utf8');
@@ -260,24 +279,31 @@ async function convert(
 ): Promise<void> {
   const { program, input, output, onProgress, signal } = request;
   let duration = 0;
-  const run = await runFfmpeg(runner, program, soundArguments(input, temporary), signal, (line) => {
-    const durationMatch = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
-    if (durationMatch !== null && duration === 0) {
-      const [, hours = '0', minutes = '0', rest = '0'] = durationMatch;
-      duration = seconds(hours, minutes, rest);
-    }
-    const timeMatch = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
-    if (timeMatch !== null) {
-      const [, hours = '0', minutes = '0', rest = '0'] = timeMatch;
-      // A Lesson whose length ffmpeg cannot read still reports 0: the core takes no progress for
-      // 60 s to mean the conversion is stuck (ADR 0056).
-      onProgress(
-        duration > 0
-          ? Math.min(100, Math.floor((seconds(hours, minutes, rest) / duration) * 100))
-          : 0,
-      );
-    }
-  });
+  const run = await runFfmpeg(
+    runner,
+    program,
+    soundArguments(input, temporary),
+    signal,
+    request.lowPriority,
+    (line) => {
+      const durationMatch = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
+      if (durationMatch !== null && duration === 0) {
+        const [, hours = '0', minutes = '0', rest = '0'] = durationMatch;
+        duration = seconds(hours, minutes, rest);
+      }
+      const timeMatch = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
+      if (timeMatch !== null) {
+        const [, hours = '0', minutes = '0', rest = '0'] = timeMatch;
+        // A Lesson whose length ffmpeg cannot read still reports 0: the core takes no progress for
+        // 60 s to mean the conversion is stuck (ADR 0056).
+        onProgress(
+          duration > 0
+            ? Math.min(100, Math.floor((seconds(hours, minutes, rest) / duration) * 100))
+            : 0,
+        );
+      }
+    },
+  );
   if (run.code !== 0) {
     throw new Error(reason(run, temporary, basename(output)));
   }
@@ -288,6 +314,7 @@ export function createFfmpegConverter(options: ConverterOptions = {}): Converter
   const runner: Required<ConverterOptions> = {
     start: options.start ?? startProcess,
     killGraceMs: options.killGraceMs ?? defaultKillGraceMs,
+    setPriority: options.setPriority ?? setProcessPriority,
   };
   return {
     async soundCodec({ program, input, signal }: SoundProbe) {
@@ -302,6 +329,7 @@ export function createFfmpegConverter(options: ConverterOptions = {}): Converter
         program,
         ['-hide_banner', '-nostdin', '-i', input],
         signal,
+        false,
         (line) => {
           found.readable ||= line.startsWith('Input #0');
           const audio = /^\s*Stream #\d+:\d+\S*: Audio: ([A-Za-z0-9_]+)/.exec(line);

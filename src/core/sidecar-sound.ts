@@ -13,6 +13,7 @@ import { basename, extname, join } from 'node:path';
 import { openCourseData, type CourseData } from './course-data.js';
 import { isFullPath } from './courses-roots.js';
 import type { Lesson } from './course-model.js';
+import { createSoundQueue } from './sound-queue.js';
 import {
   FileSystemError,
   type ConversionRequest,
@@ -242,10 +243,25 @@ export interface SoundRequest {
 /** The audio sidecars of one Course, kept in its Course data. */
 export interface SidecarSound {
   /**
-   * Resolves with what `lesson`'s sound needs: the MP3 prepared before, if any, else a new
-   * conversion, unless it needs none. Rejects when the conversion fails or the request is aborted.
+   * Resolves with what the opened `lesson`'s sound needs: the MP3 prepared before, if any, else a
+   * new conversion, unless it needs none. It goes first in the queue (see {@link prepareAhead}).
+   * Rejects when the conversion fails or the request is aborted.
    */
   prepare(lesson: Lesson, request: SoundRequest): Promise<PreparedSound>;
+  /**
+   * Prepares the sound of the 3 Lessons after `opened` in `lessonsInOrder`, once the opened
+   * Lesson's is done, one at a time and at low process priority. A Lesson with its sound prepared
+   * before, or that needs none, is passed over. Work for Lessons no longer among the next 3 is
+   * stopped; `undefined` stops all of it. A sound that fails here shows nothing: the Lesson tries
+   * again when it is opened.
+   */
+  prepareAhead(
+    opened: Lesson | undefined,
+    lessonsInOrder: readonly Lesson[],
+    pageDecodes: ReadonlySet<string>,
+  ): void;
+  /** Stops all preparation: the Course is closed. */
+  stop(): void;
 }
 
 /**
@@ -259,9 +275,10 @@ export function openSidecarSound(
   warnedPaths: Set<string>,
 ): SidecarSound {
   const data = openCourseData(folder, ports);
-  return {
-    prepare: (lesson, request) => prepareSound(ports, data, lesson, request, warnedPaths),
-  };
+  return createSoundQueue(
+    (lesson, request) => prepareSound(ports, data, lesson, request, warnedPaths),
+    ports.logger,
+  );
 }
 
 async function prepareSound(
@@ -298,6 +315,8 @@ async function prepareSound(
       program,
       input: lesson.path,
       output,
+      // Whoever waits for the sound, the machine and the editor come first.
+      lowPriority: true,
       onProgress,
       signal,
     });
