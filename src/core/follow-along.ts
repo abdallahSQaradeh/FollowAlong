@@ -33,6 +33,7 @@ import {
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
+import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
 import { readRecent, recentCourses, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
@@ -128,6 +129,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let resourceStore: ResourceStore | undefined;
   /** The open Course's Progress. */
   let progress: ProgressRecorder | undefined;
+  /** The open Course's audio sidecars (ADR 0034). */
+  let sidecarSound: SidecarSound | undefined;
+  /** The `followalong.ffmpegPath` values the learner was told are ignored in this window. */
+  const warnedFfmpegPaths = new Set<string>();
+
   /** What the Lesson tree shows now (as JSON), so a redraw that would change nothing is skipped. */
   let shownTree: string | undefined;
 
@@ -168,6 +174,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     nextClicked: (next) => {
       playLesson(next.id);
     },
+    prepareSound: (lesson, signal) =>
+      sidecarSound === undefined
+        ? Promise.reject(new Error('No Course is open.'))
+        : sidecarSound.prepare(lesson, signal),
     progressChanged: refreshTree,
   });
 
@@ -453,6 +463,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         openedCourse = course;
         resourceStore = store;
         progress = recorder;
+        sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         drawTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
@@ -468,6 +479,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       openedCourse = course;
       resourceStore = store;
       progress = recorder;
+      sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
       drawTree(buildLessonTree(course, store.current(), recorder.current(), store.missing()));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       await rememberRecent(folder);

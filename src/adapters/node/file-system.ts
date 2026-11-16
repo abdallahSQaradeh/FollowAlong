@@ -77,6 +77,12 @@ export function createNodeFileSystem(): FileSystem {
         }));
       }),
 
+    stat: (path) =>
+      wrap(path, async () => {
+        const found = await stat(path);
+        return { size: found.size, modifiedMs: found.mtimeMs };
+      }),
+
     readText: (path) => wrap(path, () => readFile(path, 'utf8')),
 
     exists: (path) =>

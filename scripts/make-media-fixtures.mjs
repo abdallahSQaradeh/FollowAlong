@@ -15,6 +15,12 @@
  * The MP4 is H.264 + AAC, the codecs of every real MP4 Lesson (research 01):
  * - sample.mp4: 3 s, 320x180, with its index at the start (faststart). Its name sorts after the
  *   WebM files, so the first Lesson of this folder (the smoke test's Course) stays lesson.webm.
+ * - sidecar.mp4: 8 s, 160x90, with its index (the moov atom) at the end, as many downloaded Lessons
+ *   have it, so seeking needs Range requests (ticket #41). Its name sorts last, so the smoke test's
+ *   Course keeps lesson.webm and long.webm as its first two Lessons.
+ * - sidecar.mp3: sidecar.mp4's sound encoded as the audio sidecar encodes it (the `-map`, codec and
+ *   quality arguments of src/adapters/node/converter.ts, plus bitexact output), for the
+ *   muted-video-plus-sidecar tests (ADR 0034).
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -99,3 +105,29 @@ make('sample.mp4', {
   audio: ['-c:a', 'aac', '-b:a', '64k'],
   extra: ['-movflags', '+faststart'],
 });
+make('sidecar.mp4', {
+  seconds: 8,
+  size: '160x90',
+  video: ['-c:v', 'libx264', '-profile:v', 'baseline', '-pix_fmt', 'yuv420p', '-g', '25'],
+  audio: ['-c:a', 'aac', '-b:a', '64k'],
+  // No faststart: the mp4 muxer writes the moov atom after the media.
+  extra: [],
+});
+
+/** Converts sidecar.mp4's sound as the audio sidecar does. */
+const sidecar = spawnSync(
+  ffmpeg,
+  [
+    ['-y', '-hide_banner', '-loglevel', 'error', '-i', join(media, 'sidecar.mp4')],
+    ['-map', '0:a:0', '-vn', '-c:a', 'libmp3lame', '-q:a', '4', '-map_metadata', '-1'],
+    ['-fflags', '+bitexact', '-f', 'mp3', join(media, 'sidecar.mp3')],
+  ].flat(),
+  { stdio: 'inherit' },
+);
+if (sidecar.status !== 0) {
+  console.error(
+    `make-media-fixtures: ${ffmpeg} failed on sidecar.mp3 (status ${String(sidecar.status)}).`,
+  );
+  process.exit(1);
+}
+console.log(`make-media-fixtures: wrote ${join(media, 'sidecar.mp3')}`);

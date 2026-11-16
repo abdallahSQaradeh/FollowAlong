@@ -33,6 +33,24 @@ if (nextButton === null) {
 }
 /** The "Next: <title>" overlay over the picture of a Lesson that has ended (ADR 0019). */
 const nextOverlay: HTMLElement = nextButton;
+const soundElement = document.querySelector('audio');
+if (soundElement === null) {
+  throw new Error('The player page has no <audio> element.');
+}
+/**
+ * The hidden `<audio>` that plays an MP4 Lesson's sound, converted to MP3, beside the video when
+ * the page cannot decode AAC (the audio sidecar, ADR 0034). The video is the clock: the sound
+ * follows its play, pause, seeks, rate, volume and mute.
+ */
+const sidecar: HTMLAudioElement = soundElement;
+/**
+ * Whether the page decodes AAC, the sound of every MP4 Lesson; VS Code does not. The one check
+ * behind both `ready {aacSupported}` and the sidecar: a page that can play the video's own sound
+ * never plays a sidecar, so the sound never plays twice (ADR 0034).
+ */
+const aacSupported = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') !== '';
+/** How far the sidecar may drift from the video before it is moved back to it, in seconds. */
+const maxDriftSeconds = 0.1;
 
 function post(event: PlayerEvent): void {
   host.postMessage(event);
@@ -82,6 +100,14 @@ interface Lesson {
   failed: boolean;
   /** Whether `played` was posted since the last pause, so a recovered stall is not a new play. */
   playing: boolean;
+  /**
+   * Where the Lesson's sound comes from: its own track (`own`); the sidecar, still to come
+   * (`awaited`) or playing beside the video (`sidecar`); or none, because it could not be
+   * prepared (`none`).
+   */
+  sound: 'own' | 'awaited' | 'sidecar' | 'none';
+  /** Set while the sound is awaited: the Lesson plays as soon as it arrives (autoplay, or a press). */
+  playWhenSound: boolean;
   /** The last `currentTime` the player wrote itself, until a seek lands. */
   lastWrite: { readonly time: number; readonly origin: SeekOrigin } | undefined;
   /**
@@ -149,11 +175,28 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
   lesson.stop.abort();
   post({ type: 'error', ...lesson.about, message });
   media.pause();
+  // Its sound must not play on alone, now or when it arrives (`soundSettled` and `play` check).
+  dropSound();
+}
+
+/** Stops the sidecar of the Lesson before and empties it, so it never plays over the next one. */
+function dropSound(): void {
+  sidecar.pause();
+  if (sidecar.hasAttribute('src')) {
+    sidecar.removeAttribute('src');
+    sidecar.load();
+  }
 }
 
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
   hideNext();
+  dropSound();
+  // An MP4 whose AAC sound the page cannot decode waits for its sound. The native controls are
+  // hidden meanwhile: their play button would start the picture without its sound. The video is
+  // not muted: its own sound is one the page cannot play, and its volume and mute stay the
+  // learner's controls, which the sidecar follows.
+  const awaitsSound = command.container === 'mp4' && !aacSupported;
   // A click waiting out the double-click window was meant for the Lesson before.
   cancelPendingToggle();
   // A pause or play whose event the new load cancels must not mark the next one.
@@ -167,10 +210,13 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
     stop: new AbortController(),
     failed: false,
     playing: false,
+    sound: awaitsSound ? 'awaited' : 'own',
+    playWhenSound: false,
     lastWrite: undefined,
     startChain: false,
   };
   current = lesson;
+  showControls(media);
   const { signal } = lesson.stop;
   if (command.container === 'webm') {
     // `<video src>` cannot play WebM in VS Code, so it is streamed through MediaSource.
@@ -206,21 +252,116 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
   }
 }
 
+/**
+ * Whether the native controls are held back for the Lesson's sound: while it is awaited, their
+ * play button would start the picture without it.
+ */
+function controlsHeldForSound(): boolean {
+  return current?.sound === 'awaited';
+}
+
+/**
+ * Shows the native control bar unless the picture is zoomed (ADR 0037) or the sound is awaited
+ * (ADR 0034). The zoom controls apply the same rule when the zoom changes.
+ */
+function showControls(media: HTMLVideoElement): void {
+  media.controls = !zoomControls.zoomed && !controlsHeldForSound();
+}
+
+/** Moves the sidecar to the video's playhead and rate. */
+function alignSound(media: HTMLVideoElement): void {
+  sidecar.defaultPlaybackRate = media.playbackRate;
+  sidecar.playbackRate = media.playbackRate;
+  if (Math.abs(sidecar.currentTime - media.currentTime) > maxDriftSeconds) {
+    sidecar.currentTime = media.currentTime;
+  }
+}
+
+/**
+ * The wait for the Lesson's sound is over. Its sidecar arrived (`audioUri`) and plays beside the
+ * video from now on; or none is coming (`without`): it could not be prepared (`none`: the Lesson
+ * plays without sound, which ticket #42 replaces with an overlay and a "Play without sound"
+ * button), or the video needs none (`own`). A play asked for meanwhile goes ahead.
+ */
+function soundSettled(
+  audioUri: string | undefined,
+  media: HTMLVideoElement,
+  without: 'none' | 'own' = 'none',
+): void {
+  const lesson = current;
+  if (lesson?.sound !== 'awaited' || lesson.failed) {
+    return;
+  }
+  if (audioUri === undefined) {
+    lesson.sound = without;
+  } else {
+    lesson.sound = 'sidecar';
+    sidecar.src = audioUri;
+    alignSound(media);
+  }
+  showControls(media);
+  if (lesson.playWhenSound) {
+    play(media);
+  }
+}
+
+/** Starts the sidecar at the video's playhead and rate. */
+function startSound(media: HTMLVideoElement): Promise<void> {
+  alignSound(media);
+  return sidecar.play();
+}
+
+/** Starts the video, and its sidecar first when it has one. */
 function play(media: HTMLVideoElement): void {
+  const lesson = current;
+  if (lesson?.failed === true) {
+    // The player posts nothing more for a failed Lesson (ADR 0003), and plays nothing of it.
+    return;
+  }
+  if (lesson?.sound === 'awaited') {
+    // Plays once the sound arrives (spec #12, story 70).
+    lesson.playWhenSound = true;
+    return;
+  }
+  if (lesson?.sound === 'sidecar' && media.paused) {
+    // The sound first: VS Code refuses sound until the learner has clicked in the page (#12 D3),
+    // so the picture never starts where its sound cannot.
+    startSound(media).then(
+      () => {
+        // A pause or another Lesson since then (a pause stops the sidecar again).
+        if (lesson === current && !sidecar.paused) {
+          playVideo(media);
+        }
+      },
+      (error: unknown) => {
+        if (lesson === current && !lesson.failed && isRefusal(error)) {
+          post({ type: 'paused', ...lesson.about, byUser: false });
+        }
+      },
+    );
+    return;
+  }
+  playVideo(media);
+}
+
+/** Whether `play()` was refused because the learner has not acted in the page yet (#12 D3). */
+function isRefusal(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'NotAllowedError';
+}
+
+function playVideo(media: HTMLVideoElement): void {
   const lesson = current;
   // A media element that is already playing fires no `play` event to clear the flag.
   playRequested = media.paused;
   media.play().catch((error: unknown) => {
     playRequested = false;
+    if (lesson === current) {
+      // The picture did not start: neither does its sound, which started first.
+      sidecar.pause();
+    }
     // Autoplay refused: the Lesson stays paused, and the extension is told. Other rejections
     // come from a new load (AbortError) or a failed Lesson, which reports its own `error`.
-    if (
-      lesson !== undefined &&
-      lesson === current &&
-      !lesson.failed &&
-      error instanceof DOMException &&
-      error.name === 'NotAllowedError'
-    ) {
+    if (lesson !== undefined && lesson === current && !lesson.failed && isRefusal(error)) {
       post({ type: 'paused', ...lesson.about, byUser: false });
     }
   });
@@ -272,6 +413,11 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       play(media);
       break;
     case 'pause':
+      if (current !== undefined) {
+        current.playWhenSound = false;
+      }
+      // Also a sidecar that started and whose video has not yet.
+      sidecar.pause();
       if (!media.paused) {
         pauseBy = 'extension';
         media.pause();
@@ -288,6 +434,16 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       break;
     case 'setResumeRewind':
       resumeRewind = command.seconds;
+      break;
+    case 'soundReady':
+      soundSettled(command.audioUri, media);
+      break;
+    case 'soundFailed':
+      soundSettled(undefined, media);
+      break;
+    case 'noSidecar':
+      // A silent MP4, or one whose sound the page decodes: the video plays as it is (ADR 0034).
+      soundSettled(undefined, media, 'own');
       break;
     case 'zoom':
       zoomControls.reset();
@@ -386,9 +542,53 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   });
 }
 
+/**
+ * Makes the sidecar follow the video, the clock: its pause, seeks and rate, and its playhead
+ * whenever the two drift more than {@link maxDriftSeconds} apart.
+ */
+function followWithSound(media: HTMLVideoElement): void {
+  const following = () => current?.sound === 'sidecar';
+  media.addEventListener('play', () => {
+    // The native control bar's play button, a gesture in the page: the sound joins in.
+    if (following() && sidecar.paused) {
+      startSound(media).catch(() => undefined);
+    }
+  });
+  media.addEventListener('pause', () => {
+    sidecar.pause();
+  });
+  media.addEventListener('seeking', () => {
+    if (following()) {
+      sidecar.currentTime = media.currentTime;
+    }
+  });
+  media.addEventListener('ratechange', () => {
+    if (following()) {
+      alignSound(media);
+    }
+  });
+  media.addEventListener('timeupdate', () => {
+    // Not while the sound is still seeking: moving it again would only restart that seek.
+    if (following() && !media.paused && !sidecar.seeking) {
+      alignSound(media);
+    }
+  });
+  // The native volume slider and mute button, both ways, whatever plays: the sidecar holds the
+  // learner's volume and mute from one Lesson to the next.
+  media.addEventListener('volumechange', () => {
+    sidecar.volume = media.volume;
+    sidecar.muted = media.muted;
+  });
+}
+
 /** A click on the picture plays or pauses the Lesson. */
 function togglePlayback(media: HTMLVideoElement): void {
   if (current === undefined || current.failed) {
+    return;
+  }
+  if (current.sound === 'awaited') {
+    // The click asks for the Lesson as soon as its sound arrives, or takes that back.
+    current.playWhenSound = !current.playWhenSound;
     return;
   }
   if (media.paused) {
@@ -518,6 +718,7 @@ const zoomControls = new ZoomControls({
   zoomChanged: (level) => {
     post({ type: 'zoomChanged', level });
   },
+  controlsHeldBack: controlsHeldForSound,
 });
 
 nextOverlay.addEventListener('click', () => {
@@ -525,8 +726,8 @@ nextOverlay.addEventListener('click', () => {
     post({ type: 'nextClicked', ...current.about });
   }
 });
-const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
 reportMediaEvents(video);
+followWithSound(video);
 reportInteractions(video, overlay);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   const command = parsePlayerCommand(event.data);
@@ -534,6 +735,6 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
     run(command, video);
   }
 });
-post({ type: 'ready', aacSupported: aac !== '' });
+post({ type: 'ready', aacSupported });
 // A reloaded page shows the zoom the page before it had, and so reports it after `ready`.
 zoomControls.restore();

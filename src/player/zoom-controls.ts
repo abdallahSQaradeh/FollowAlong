@@ -44,6 +44,11 @@ export interface ZoomControlsOptions {
   readonly state: WebviewState;
   /** Reports a new zoom level to the extension. */
   readonly zoomChanged: (level: number) => void;
+  /**
+   * Whether the player holds the native control bar back for another reason (the sound of an MP4
+   * Lesson is still awaited, ADR 0034): a zoom back to 1× then leaves it off.
+   */
+  readonly controlsHeldBack: () => boolean;
 }
 
 /** The pointer that pressed on the picture, where it pressed, and whether it is a drag yet. */
@@ -127,7 +132,7 @@ export class ZoomControls {
     media.style.transform = zoomTransform(view);
     // The native control bar would be enlarged with the picture: it is off while zoomed, and the
     // overlay then covers the whole player, so the strip along the bottom is picture too.
-    media.controls = !this.zoomed;
+    media.controls = !this.zoomed && !this.options.controlsHeldBack();
     document.body.classList.toggle('zoomed', this.zoomed);
     this.levelOutput.textContent = zoomLabel(view.level);
     if (view.level !== before) {

@@ -51,6 +51,7 @@ describe('a Course at the root of a drive', () => {
     const fileSystem: FileSystem = {
       readDirectory: (path) =>
         Promise.resolve(path === driveRoot ? [{ name: '01 Intro.mp4', kind: 'file' }] : []),
+      stat: () => Promise.reject(new Error('not stated')),
       readText: () => Promise.reject(new Error('not read')),
       exists: () => Promise.resolve(true),
       writeText: () => Promise.reject(new Error('not written')),

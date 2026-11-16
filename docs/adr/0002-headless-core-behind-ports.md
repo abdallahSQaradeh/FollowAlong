@@ -35,7 +35,9 @@ widening `Config` to arbitrary settings writes.
   (#12 D3), so the core gives the player the Courses roots as its folders, and Courses under them
   share one page.
 - The Converter port is defined now but nothing calls it; until the sound tickets bundle ffmpeg,
-  the extension passes a converter that rejects every request.
+  the extension passes a converter that rejects every request. Revised by ADR 0034: the audio
+  sidecar calls it, and the extension passes an ffmpeg converter. The File system port gained
+  `stat` for the sidecar's name.
 - When VS Code runs the extension's tests (`ExtensionMode.Test`), `activate` returns the player
   events it received (`TestHooks`), so the smoke test can see the real page play a Lesson. In
   normal use it returns nothing; the hook adds no behaviour.

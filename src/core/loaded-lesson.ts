@@ -7,6 +7,7 @@
  */
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import type { Lesson } from './course-model.js';
+import type { PreparedSound } from './sidecar-sound.js';
 import type { Disposable, Ports } from './ports.js';
 import type { PlayheadSeen } from './lesson-status.js';
 import { lessonStatus, type ProgressRecorder } from './progress.js';
@@ -42,6 +43,11 @@ export interface OpenCourseView {
   lessonAfter(lesson: Lesson): Lesson | undefined;
   /** The learner clicked the Next overlay of the Loaded Lesson: `next` is the Lesson it names. */
   nextClicked(next: Lesson): void;
+  /**
+   * What `lesson`'s sound needs: its MP3, prepared now or before (the audio sidecar, ADR 0034), or
+   * no sidecar. Rejects when it cannot be prepared, or once `signal` aborts.
+   */
+  prepareSound(lesson: Lesson, signal: AbortSignal): Promise<PreparedSound>;
   /**
    * What the Lesson tree shows of the Progress may have changed: a Lesson's state changed, or
    * Progress was saved (every 5 s while playing, on pause and seek). Never called for every
@@ -114,6 +120,18 @@ interface LessonLoad {
   playedSeconds: number;
   /** The playhead at the last `timeUpdate` while playing, to count the play since; none after a pause or seek. */
   lastPlayingPosition: number | undefined;
+}
+
+/**
+ * The sound being prepared for the Loaded Lesson, kept while it stays loaded: a page reload, or the
+ * learner picking the same Lesson again, does not start the conversion again.
+ */
+interface SoundPreparation {
+  readonly lesson: Lesson;
+  readonly stop: AbortController;
+  readonly prepared: Promise<PreparedSound>;
+  /** Set once the learner was told it failed: a page that reloads is told again, they are not. */
+  toldFailure: boolean;
 }
 
 /** The fixed speed ladder (spec #12, story 41), slowest first. */
@@ -207,6 +225,10 @@ export function createLoadedLesson(
   let saveTimer: Disposable | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
+  /** Whether the open player page can decode AAC, the sound of MP4 Lessons (its `ready`). */
+  let aacSupported = false;
+  /** The sound being prepared for the Loaded Lesson, or prepared for it. */
+  let sound: SoundPreparation | undefined;
   /** The Rewind the open player page holds; 0 for a page that has just started. */
   let playerResumeRewind = 0;
   /** What the player last said about the current Lesson; starts again with every `load`. */
@@ -288,6 +310,68 @@ export function createLoadedLesson(
     loads += 1;
     currentLoad = loads;
     sendResumeRewind();
+    if (lesson.container === 'mp4' && !aacSupported) {
+      sendSoundWhenPrepared(lesson, loads);
+    }
+  }
+
+  /**
+   * Prepares `lesson`'s sound, unless it is already under way, and sends it to the player once
+   * prepared, if load `loadId` is still the current one: a later `load` gets its own.
+   */
+  function sendSoundWhenPrepared(lesson: Lesson, loadId: number): void {
+    // A `load` of another Lesson has stopped the sound of the one before (`load`).
+    if (sound?.lesson !== lesson) {
+      const stop = new AbortController();
+      sound = {
+        lesson,
+        stop,
+        prepared: course.prepareSound(lesson, stop.signal),
+        toldFailure: false,
+      };
+    }
+    const preparation = sound;
+    preparation.prepared.then(
+      (prepared) => {
+        if (currentLoad !== loadId || current?.lesson !== lesson) {
+          return;
+        }
+        player.send(
+          prepared.kind === 'sidecar'
+            ? { type: 'soundReady', audioUri: player.resourceUri(prepared.path) }
+            : { type: 'noSidecar' },
+        );
+      },
+      (error: unknown) => {
+        // A Lesson left, or a page reloaded since: the current load reports it, or nobody needs to.
+        if (
+          preparation.stop.signal.aborted ||
+          currentLoad !== loadId ||
+          current?.lesson !== lesson
+        ) {
+          return;
+        }
+        const reason = error instanceof Error ? error.message : String(error);
+        if (!preparation.toldFailure) {
+          preparation.toldFailure = true;
+          logger.log({
+            level: 'error',
+            message: `Could not prepare the sound of ${lesson.id}: ${reason}`,
+          });
+          ui.showMessage({
+            severity: 'error',
+            text: `FollowAlong could not prepare the sound of “${lesson.title}”: ${reason}`,
+          });
+        }
+        player.send({ type: 'soundFailed', message: reason });
+      },
+    );
+  }
+
+  /** Stops preparing sound for a Lesson the learner has left. */
+  function stopSound(): void {
+    sound?.stop.abort();
+    sound = undefined;
   }
 
   /**
@@ -386,6 +470,7 @@ export function createLoadedLesson(
       case 'ready':
         // A page that kept its zoom reports it right after `ready`.
         newPage(true);
+        aacSupported = event.aacSupported;
         playerResumeRewind = 0;
         logger.log({
           level: 'debug',
@@ -551,6 +636,8 @@ export function createLoadedLesson(
 
   function leave(): Promise<void> {
     stopSaving();
+    // The sound under way is kept: the next `load` may be this Lesson again (picked once more), and
+    // a `load` of another Lesson, or `unload`, stops it.
     // From now on its late events are ignored, so none is recorded into the next Course.
     current = undefined;
     // Also waits for a save still under way, such as the one of the Lesson before.
@@ -562,6 +649,7 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
+    stopSound();
     resetPlayhead(false);
     refreshStatusBar();
   }
@@ -595,6 +683,9 @@ export function createLoadedLesson(
     // A safety net: every caller has left the Lesson before (`leave`), which stops its saves. A
     // timer still running would write the Lesson before into this Lesson's Course.
     stopSaving();
+    if (sound?.lesson !== lesson) {
+      stopSound();
+    }
     current = {
       lesson,
       startAt,
@@ -729,6 +820,7 @@ export function createLoadedLesson(
     },
     dispose() {
       saveTimer?.dispose();
+      stopSound();
       for (const subscription of subscriptions) {
         subscription.dispose();
       }

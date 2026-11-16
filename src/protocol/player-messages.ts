@@ -45,6 +45,23 @@ export type PlayerCommand =
    */
   | { readonly type: 'showNext'; readonly title: string }
   /**
+   * The loaded MP4 Lesson's sound, converted to MP3 because the player cannot decode AAC (ADR 0034).
+   * The player plays it in a hidden `<audio>` that follows the video. Sent after the `load`
+   * it belongs to, and only while that `load` is the current one.
+   */
+  | { readonly type: 'soundReady'; readonly audioUri: string }
+  /**
+   * The loaded MP4 Lesson's sound could not be prepared: the player stops waiting for it and lets
+   * the video play without sound (ADR 0034). Ticket #42 replaces that with an overlay and a "Play
+   * without sound" button.
+   */
+  | { readonly type: 'soundFailed'; readonly message: string }
+  /**
+   * The loaded MP4 Lesson needs no sidecar: it has no sound, or its sound is one the page decodes
+   * itself (ADR 0034). The player stops waiting and plays the video as it is.
+   */
+  | { readonly type: 'noSidecar' }
+  /**
    * Changes the picture's zoom (ADR 0037). The player reports `zoomChanged` when the level changes:
    * a reset at 1× reports nothing.
    */
@@ -186,6 +203,12 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return isRate(raw.rate) ? { type: 'setRate', rate: raw.rate } : undefined;
     case 'showNext':
       return isText(raw.title) ? { type: 'showNext', title: raw.title } : undefined;
+    case 'soundReady':
+      return isText(raw.audioUri) ? { type: 'soundReady', audioUri: raw.audioUri } : undefined;
+    case 'soundFailed':
+      return isText(raw.message) ? { type: 'soundFailed', message: raw.message } : undefined;
+    case 'noSidecar':
+      return { type: 'noSidecar' };
     case 'zoom':
       return raw.action === 'reset' ? { type: 'zoom', action: raw.action } : undefined;
     default:
