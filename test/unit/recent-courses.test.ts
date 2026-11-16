@@ -49,6 +49,16 @@ describe('Recent Courses in the Course picker', () => {
       'Add Courses root…',
     ]);
   });
+  it('keeps Recent in the global storage, as absolute folders, and the open Course in the workspace', async () => {
+    const h = await createHarness();
+    const folders = await learning(h, ['A', 'B']);
+    await h.core.openCourse(folders.A ?? '');
+    await h.core.openCourse(folders.B ?? '');
+
+    expect(h.storage.global.get('recentCourses')).toEqual([folders.B, folders.A]);
+    expect(h.storage.workspace.get('recentCourses')).toBeUndefined();
+  });
+
   it('lists a Course once, first, when it is opened again', async () => {
     const h = await createHarness();
     const folders = await learning(h, ['A', 'B', 'C']);
