@@ -124,6 +124,11 @@
         "title": "Relink…",
         "category": "FollowAlong",
         "icon": "$(link)"
+      },
+      {
+        "command": "followalong.moveVideo",
+        "title": "Move video to…",
+        "category": "FollowAlong"
       }
     ],
     "keybindings": [
@@ -225,6 +230,20 @@
           "title": "FollowAlong",
           "icon": "media/followalong.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "followalong-video-panel",
+          "title": "FollowAlong video",
+          "icon": "media/followalong.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "followalong-video-sidebar",
+          "title": "FollowAlong video",
+          "icon": "media/followalong.svg"
+        }
       ]
     },
     "views": {
@@ -232,6 +251,22 @@
         {
           "id": "followalong.lessons",
           "name": "Lessons"
+        }
+      ],
+      "followalong-video-panel": [
+        {
+          "type": "webview",
+          "id": "followalong.videoPanel",
+          "name": "Video",
+          "when": "followalong.videoSpot == bottomPanel"
+        }
+      ],
+      "followalong-video-sidebar": [
+        {
+          "type": "webview",
+          "id": "followalong.videoSidebar",
+          "name": "Video",
+          "when": "followalong.videoSpot == secondarySidebar"
         }
       ]
     },
@@ -322,6 +357,21 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "The ffmpeg program FollowAlong uses to prepare the sound of MP4 Lessons, which VS Code cannot play (their sound is AAC). Leave it empty to use `ffmpeg` on your PATH. Only user settings can set it, never a workspace."
+        },
+        "followalong.videoLocation": {
+          "type": "string",
+          "enum": [
+            "editorSplit",
+            "bottomPanel",
+            "secondarySidebar"
+          ],
+          "enumDescriptions": [
+            "An editor group beside the code.",
+            "The bottom panel, beside the terminal.",
+            "The secondary sidebar."
+          ],
+          "default": "editorSplit",
+          "markdownDescription": "Where the video opens: an editor group beside the code, the bottom panel or the secondary sidebar. **FollowAlong: Move video to…** moves an open video to another spot, keeping its time, speed and zoom. A changed setting applies the next time the video opens."
         }
       }
     }

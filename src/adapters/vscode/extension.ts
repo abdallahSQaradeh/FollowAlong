@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 
 import { createFollowAlong } from '../../core/follow-along.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
+import { isVideoSpot, type VideoSpot } from '../../core/video-placement.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { createSystemClock } from '../node/clock.js';
@@ -70,6 +71,8 @@ export const commands = {
   previousLesson: 'followalong.previousLesson',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
+  /** _Move video to…_: asks for a spot; run with a spot's name, moves the video there. */
+  moveVideo: 'followalong.moveVideo',
 } as const;
 
 /**
@@ -92,6 +95,8 @@ export interface TestHooks {
   quickPicksShown(): number;
   /** The label of the active (highlighted) item of the quick pick shown last, once it has one. */
   activeQuickPickItem(): string | undefined;
+  /** The spot the player is in, and whether VS Code shows it; none while no player is open. */
+  playerSpot(): { readonly spot: VideoSpot; readonly visible: boolean } | undefined;
 }
 
 /** Saves Progress when the window closes; set while the extension is active. */
@@ -100,11 +105,13 @@ let closeCore: (() => Promise<void>) | undefined;
 export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
-  const player = new PlayerPanel(context.extensionPath, logger);
+  const focus = new FocusReturn();
+  const player = new PlayerPanel(context.extensionPath, logger, () => {
+    void focus.returnFocus();
+  });
   const lessonTree = new LessonTreeView(logger);
   const viewers = new ResourceViewers(context.extensionPath, logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
-  const focus = new FocusReturn();
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -159,6 +166,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       selectedLesson: () => lessonTree.selectedLesson(),
       quickPicksShown: () => quickPickStats.shown,
       activeQuickPickItem: () => quickPickStats.active,
+      playerSpot: () => player.hosted,
     };
   }
 
@@ -248,6 +256,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       core.previousLesson();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
+    register(commands.moveVideo, (spot) => core.moveVideo(isVideoSpot(spot) ? spot : undefined)),
   );
   // Reopening the workspace brings back the Course that was open in it (story 21).
   core.restoreCourse().catch((error: unknown) => {

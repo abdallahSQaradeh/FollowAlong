@@ -52,6 +52,8 @@ interface TestHooks {
   quickPicksShown(): number;
   /** The label of the highlighted item of the quick pick shown last. */
   activeQuickPickItem(): string | undefined;
+  /** The spot the player is in, and whether VS Code shows it. */
+  playerSpot(): { readonly spot: string; readonly visible: boolean } | undefined;
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -98,6 +100,7 @@ export async function run(): Promise<void> {
     'followalong.previousLesson',
     'followalong.goToLesson',
     'followalong.attachToLoadedLesson',
+    'followalong.moveVideo',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
@@ -108,6 +111,17 @@ export async function run(): Promise<void> {
     'VS Code did not register the followalong.lessons view',
   );
   say('its commands and the Lessons tree view are registered');
+  // The video's own views: VS Code registers them only if it accepted their view containers in
+  // the bottom panel and the secondary sidebar (`viewsContainers.panel` / `.secondarySidebar`).
+  for (const view of ['followalong.videoPanel', 'followalong.videoSidebar']) {
+    assert.ok(registered.includes(`${view}.focus`), `VS Code did not register the ${view} view`);
+  }
+  assert.equal(
+    vscode.workspace.getConfiguration('followalong').get('videoLocation'),
+    'editorSplit',
+    'followalong.videoLocation defaults to the editor split',
+  );
+  say('the video views in the bottom panel and the secondary sidebar are registered');
 
   playPauseIsBoundToItsKeys(extension.packageJSON);
   say('FollowAlong: Play/Pause is in the Command Palette and bound to its default keys');
@@ -193,6 +207,87 @@ export async function run(): Promise<void> {
 
   await resourcesOpenByType(extension.extensionPath, hooks);
   say('Markdown, HTML, an image and a PDF each open in their own kind of tab beside the code');
+
+  await aLessonLoadsInEachSpot(extension.extensionPath, hooks);
+}
+
+/**
+ * The three spots of #49 (ADR 0049): `followalong.videoLocation` opens the Lesson in the bottom
+ * panel, and _Move video to…_ moves it to the secondary sidebar and back beside the code. In each
+ * spot VS Code shows the player, a new page loads the Lesson through asWebviewUri, the CSP and
+ * localResourceRoots, and the code keeps the focus. What a move carries (time, speed, play,
+ * zoom) is covered at Seam 1 and Seam 2.
+ */
+async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): Promise<void> {
+  const scratch = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
+  const settings = vscode.workspace.getConfiguration('followalong');
+  try {
+    const course = join(scratch, 'Spots Course');
+    mkdirSync(course);
+    copyFileSync(
+      join(extensionPath, 'test', 'fixtures', 'media', 'lesson.webm'),
+      join(course, 'spots.webm'),
+    );
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    const code = await vscode.workspace.openTextDocument({
+      language: 'javascript',
+      content: '2;\n',
+    });
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await settings.update('videoLocation', 'bottomPanel', vscode.ConfigurationTarget.Global);
+
+    let from = hooks.playerEvents.length;
+    await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+    say(await theLessonLoadsIn(hooks, 'bottomPanel', from, code));
+
+    for (const spot of ['secondarySidebar', 'editorSplit'] as const) {
+      from = hooks.playerEvents.length;
+      await vscode.commands.executeCommand('followalong.moveVideo', spot);
+      say(await theLessonLoadsIn(hooks, spot, from, code));
+    }
+  } finally {
+    await settings.update('videoLocation', undefined, vscode.ConfigurationTarget.Global);
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  }
+}
+
+/** Waits for a new page in `spot` to load the Lesson, with VS Code showing it and the code focused. */
+async function theLessonLoadsIn(
+  hooks: TestHooks,
+  spot: string,
+  from: number,
+  code: vscode.TextDocument,
+): Promise<string> {
+  const lessonId = 'spots.webm';
+  const since = () => hooks.playerEvents.slice(from);
+  await waitFor(`a new player page in ${spot}`, () =>
+    since().some((event) => event.type === 'ready') ? true : undefined,
+  );
+  const loaded = await waitFor(
+    `the Lesson to load in ${spot}`,
+    () => {
+      const events = since();
+      const failure = events.find((event) => event.type === 'error');
+      assert.equal(failure, undefined, `the player failed in ${spot}: ${failure?.message ?? ''}`);
+      const ready = events.findIndex((event) => event.type === 'ready');
+      return events
+        .slice(ready)
+        .find(
+          (event) =>
+            event.type === 'timeUpdate' && event.lessonId === lessonId && (event.duration ?? 0) > 0,
+        );
+    },
+    20_000,
+  );
+  const where = await waitFor(`VS Code to show the player in ${spot}`, () => {
+    const hosted = hooks.playerSpot();
+    return hosted?.spot === spot && hosted.visible ? hosted : undefined;
+  });
+  await waitFor(`the focus back in the code after the player opened in ${spot}`, () =>
+    vscode.window.activeTextEditor?.document === code ? true : undefined,
+  );
+  return `the Lesson loads in the ${where.spot} spot (length ${String(loaded.duration)} s), and the code keeps the focus`;
 }
 
 /** A 1 × 1 PNG, for the image Resource. */
