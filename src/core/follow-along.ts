@@ -6,8 +6,8 @@ import { basename } from 'node:path';
 
 import { messageOf } from './logger.js';
 import { createAudioCache } from './audio-cache.js';
-import { toggleAutoPause } from './auto-pause-toggle.js';
-import { isTyping, type DocumentEdit } from './auto-pause.js';
+import { rememberAutoPauseMode, toggleAutoPause } from './auto-pause-toggle.js';
+import { isTyping, readAutoPauseMode, type DocumentEdit } from './auto-pause.js';
 import { findSection, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
@@ -206,6 +206,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       audioCache.prune();
     }
   });
+
+  // The last auto-pause mode that was on, so the toggle can bring it back (ADR 0098).
+  const modeWatch = rememberAutoPauseMode(config, storage, logger);
 
   /** The audio sidecars of the Course in `folder` replace the open Course's, which stop. */
   function openSoundOf(folder: string): void {
@@ -1065,8 +1068,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         await loaded.move(target);
       }
     },
-    toggleAutoPause() {
-      return toggleAutoPause(config, storage);
+    async toggleAutoPause() {
+      await toggleAutoPause(config, storage);
+      if (loaded.spot() === undefined) {
+        // No status bar marker to show it: say what the key did.
+        const mode = readAutoPauseMode(config);
+        const text =
+          mode === 'off'
+            ? 'FollowAlong: auto-pause is off.'
+            : `FollowAlong: auto-pause is on (${mode}).`;
+        ui.showMessage({ severity: 'info', text });
+      }
     },
     async toggleVideo() {
       if (loaded.spot() === undefined) {
@@ -1086,6 +1098,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await loaded.leave();
       loaded.dispose();
       limitWatch.dispose();
+      modeWatch.dispose();
       sidecarSound?.stop();
     },
     nextLesson() {
@@ -1097,6 +1110,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     dispose() {
       loaded.dispose();
       limitWatch.dispose();
+      modeWatch.dispose();
       sidecarSound?.stop();
     },
   };

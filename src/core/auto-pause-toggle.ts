@@ -5,7 +5,8 @@
  * mode as it does to the learner's own edit of the setting.
  */
 import { readAutoPauseMode, type AutoPauseOnMode } from './auto-pause.js';
-import type { Config, Storage } from './ports.js';
+import { messageOf, type Logger } from './logger.js';
+import type { Config, Disposable, Storage } from './ports.js';
 
 /** The mode switched on when none was ever on. */
 const defaultMode: AutoPauseOnMode = 'pause';
@@ -30,4 +31,33 @@ export async function toggleAutoPause(
   }
   await storage.global.set(lastModeKey, mode);
   await config.update('autoPause', 'off');
+}
+
+/**
+ * Keeps the last mode that was on, whoever turned it on or off: the toggle, or the learner in the
+ * settings. Reads the setting now, so a window that opens with a mode on knows it.
+ */
+export function rememberAutoPauseMode(
+  config: Pick<Config, 'get' | 'onDidChange'>,
+  storage: Pick<Storage, 'global'>,
+  logger: Logger,
+): Disposable {
+  const remember = (): void => {
+    const mode = readAutoPauseMode(config);
+    if (mode === 'off' || storage.global.get(lastModeKey) === mode) {
+      return;
+    }
+    storage.global.set(lastModeKey, mode).catch((error: unknown) => {
+      logger.log({
+        level: 'warn',
+        message: `Not remembering the auto-pause mode: ${messageOf(error)}`,
+      });
+    });
+  };
+  remember();
+  return config.onDidChange((affects) => {
+    if (affects('autoPause')) {
+      remember();
+    }
+  });
 }
