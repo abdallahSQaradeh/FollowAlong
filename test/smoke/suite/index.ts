@@ -121,7 +121,9 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
     const resourceGroup = await waitFor('the Resource tab', () =>
       vscode.window.tabGroups.all.find((group) =>
         group.tabs.some(
-          (tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.fsPath === notes,
+          (tab) =>
+            tab.input instanceof vscode.TabInputText &&
+            tab.input.uri.fsPath === vscode.Uri.file(notes).fsPath,
         ),
       ),
     );
