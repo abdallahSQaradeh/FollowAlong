@@ -261,6 +261,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           level: 'debug',
           message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
         });
+        if (current?.engaged === true) {
+          // A page that reloaded mid-Lesson starts again where the playhead was, not where the
+          // Lesson first started: its start seek then saves nothing and moves nothing back.
+          current = { ...current, startAt: position, engaged: false };
+        }
         loadCurrent();
         break;
       case 'error': {

@@ -234,6 +234,22 @@ describe('remembering where the learner is in each Lesson', () => {
     expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 65 });
   });
 
+  it('loads the Lesson where it was when the player page reloads, and keeps that position', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 120);
+    h.player.ready();
+    // The reloaded page seeks to the start position it was given.
+    h.player.emit({ type: 'timeUpdate', lessonId: '01 Intro.webm', position: 120, duration: 600 });
+    h.player.emit({ type: 'seeked', lessonId: '01 Intro.webm' });
+    await h.core.close();
+
+    expect(h.player.sent.at(-1)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 120 });
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 115 });
+  });
+
   it('saves when the VS Code window closes', async () => {
     const h = await createHarness();
     const course = await h.folder('course', lessons);
