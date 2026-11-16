@@ -608,7 +608,10 @@ async function aPickedCourseKeepsThePlayer(
       browseFrom + 1,
       'walking folders opened more than one quick pick',
     );
-    assert.equal(hooks.selectedLesson(), lessons.warmUp, 'the picked video did not play');
+    // The tree follows the Lesson a moment later: it is selected once the open has played it.
+    await waitFor('the picked video to be the selected Lesson', () =>
+      hooks.selectedLesson() === lessons.warmUp ? true : undefined,
+    );
     say('Browse… walks folders in one quick pick, and a picked video plays as the open Course');
   } finally {
     await settings.update('coursesRoots', undefined, vscode.ConfigurationTarget.Global);
