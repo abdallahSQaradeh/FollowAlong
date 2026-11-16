@@ -6,17 +6,17 @@ open. #60 (resume after a quiet period, `overridden`) and #61 (the toggle) build
 
 - **A pure step function.** `stepAutoPause(state, input)` in `src/core/auto-pause.ts` returns the
   next state and a list of effects. It holds no timer and sends nothing. The Loaded Lesson keeps the
-  state, feeds it the inputs (`modeChanged`, `typed`, `played`, `lessonOver`) and carries out the
-  effects (today only `pause`). #60 adds inputs (the quiet period elapsed, a manual pause or play)
-  and effects (schedule or cancel the resume, resume without rewind), with the clock in the Loaded
-  Lesson, so Seam 1 drives it with the fake clock. The state carries its mode, so `pauseAndResume`
-  can decide what an edit does without reading the setting again.
+  state, feeds it the inputs (`modeChanged`, `typed`, `played`, `learnerPaused`, `lessonOver`) and
+  carries out the effects (today only `pause`). #60 adds inputs (the quiet period elapsed, the
+  source of a play) and effects (schedule or cancel the resume, resume without rewind), with the
+  clock in the Loaded Lesson, so Seam 1 drives it with the fake clock. The state carries its mode,
+  so `pauseAndResume` can decide what an edit does without reading the setting again.
 - **Which edits count is the core's decision.** The adapter forwards every
   `onDidChangeTextDocument` event that changes text, as `{scheme, path?, inActiveEditor}`, and the
   core keeps only `file` or `untitled` documents in the active editor. Output panels, the Source
-  Control box and the user settings (`vscode-userdata`) are other schemes. Formatters and undo/redo
-  count (#10: they can't be told apart reliably). Cursor moves are another VS Code event, which the
-  adapter does not listen to.
+  Control box, the user settings (`vscode-userdata`) and notebook cells are other schemes, also when
+  focused. Formatters and undo/redo count (#10: they can't be told apart reliably). Cursor moves are
+  another VS Code event, which the adapter does not listen to.
 - **FollowAlong's own edits are its own files.** FollowAlong never types into an editor. Its writes
   to Course data on disk make VS Code reload a copy the learner has open, which VS Code reports as
   an edit. So an edit to a file under a `.followalong` folder, or under the extension's storage
@@ -29,9 +29,21 @@ open. #60 (resume after a quiet period, `overridden`) and #61 (the toggle) build
   before the player reports the pause sends one `pause`: the state is already `autoPaused`. An edit
   after the learner's own play/pause sent `pause`, before the player reports it, does nothing: that
   pause stays the learner's, never "Paused (typing)".
-- **What ends an auto-pause.** The Lesson playing again (whoever started it), the Lesson ending,
-  the learner leaving it (another Lesson or Course, a closed player), and the setting turned off.
-  Each one returns to `armed` (or `off`).
+- **What ends an auto-pause.** The Lesson playing again (whoever started it), a pause of the
+  learner's own, the Lesson ending, the learner leaving it (another Lesson or Course, a closed
+  player), and the setting turned off. Each one returns to `armed` (or `off`).
+- **A pause of the learner's own makes the pause theirs** (`learnerPaused`: spec "a manual pause
+  during `autoPaused` … becomes a manual pause", story 101). The core feeds it when the play/pause
+  command sends `pause`, and when the player reports `paused {byUser: true}` (a click on the
+  picture, the native controls). So a learner who presses pause, or clicks, while an auto-pause is
+  on its way never sees "Paused (typing)", and #60 never resumes their pause.
+- **A play re-arms, for now.** In #59 any `played` takes `autoPaused` back to `armed`, so the next
+  edit pauses again. That is interim: story 102 makes a learner's play while armed `overridden`
+  (typing plays through until the next pause). The core cannot tell a learner's play from another
+  today, so #60 must give `played` its source: the learner (the play/pause command's `play`, or a
+  `played` the core did not ask for, which is the learner's click or the native controls), a
+  `load`'s autoplay (`awaitingAutoplay`), or auto-resume (its own `play`). Only the learner's sets
+  `overridden`.
 - **"Paused (typing)" holds as long as the auto-pause does.** The play/pause status bar item reads
   "Paused (typing)" while the state is `autoPaused` and the Lesson is not playing. No extra timer:
   with `pauseAndResume` it is brief by nature, and with `pause` it keeps saying why the video
@@ -46,7 +58,8 @@ open. #60 (resume after a quiet period, `overridden`) and #61 (the toggle) build
   rewrites it.
 - **The smoke test checks what the learner sees.** With the setting on, in the real VS Code: an edit
   in a document no editor shows and a cursor move leave the Lesson playing, and typing into a file in
-  the active editor makes the real player pause and the item read "Paused (typing)". No test hook
+  the active editor makes the real player pause and the item read "Paused (typing)", and the 3 s
+  Lesson then never reports `ended` (at a natural end the player reports a pause too). No test hook
   records the adapter's calls into the core.
 - **An unknown setting value is `off`.** A hand-edited typo (`"Pause"`) never pauses anything.
 

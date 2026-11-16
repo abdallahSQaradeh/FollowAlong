@@ -557,6 +557,9 @@ export function createLoadedLesson(
         // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         const after = afterPause(playback, event.byUser);
         playback = after.playback;
+        if (event.byUser) {
+          feedAutoPause({ type: 'learnerPaused' });
+        }
         if (after.tellToPressPlay) {
           ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
         }
@@ -802,6 +805,7 @@ export function createLoadedLesson(
     if (playback.playing) {
       playback = { ...playback, awaitingPauseAnswer: true };
       player.send({ type: 'pause' });
+      feedAutoPause({ type: 'learnerPaused' });
       return;
     }
     resume(resumeRewindSeconds());

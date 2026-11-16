@@ -36,8 +36,17 @@ export type AutoPauseInput =
   | { readonly type: 'modeChanged'; readonly mode: AutoPauseMode }
   /** The learner edited the active editor's document; `playing`: the Lesson is playing. */
   | { readonly type: 'typed'; readonly playing: boolean }
-  /** The player reports the Loaded Lesson playing. */
+  /**
+   * The player reports the Loaded Lesson playing. #60 gives it its source (the learner, a `load`'s
+   * autoplay, auto-resume): only a learner's play while armed sets `overridden` (ADR 0052).
+   */
   | { readonly type: 'played' }
+  /**
+   * The learner paused the Lesson themselves: the play/pause command sent `pause`, or the player
+   * reports a pause of theirs (`paused {byUser: true}`). Spec: "a manual pause during `autoPaused`
+   * … becomes a manual pause".
+   */
+  | { readonly type: 'learnerPaused' }
   /** The Loaded Lesson is over: it ended, or the learner left it (another Lesson or Course, a closed player). */
   | { readonly type: 'lessonOver' };
 
@@ -69,9 +78,11 @@ export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): Aut
         ? { state: { ...state, kind: 'autoPaused' }, effects: ['pause'] }
         : { state, effects: [] };
     case 'played':
+    case 'learnerPaused':
     case 'lessonOver':
-      // Playing again, whoever started it, or no longer the Lesson it paused: what it paused is
-      // over, and the next edit while a Lesson plays pauses it.
+      // Playing again, whoever started it; paused by the learner, so the pause is theirs; or no
+      // longer the Lesson it paused: what it paused is over, and the next edit while a Lesson
+      // plays pauses it. #60 tells these apart (`overridden`, the quiet timer).
       return {
         state: state.kind === 'autoPaused' ? { ...state, kind: 'armed' } : state,
         effects: [],

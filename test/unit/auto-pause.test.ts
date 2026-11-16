@@ -67,8 +67,12 @@ describe('auto-pause while typing', () => {
         { scheme: 'file', path: '/practice/other.js', inActiveEditor: false },
       ],
       ['the output panel', { scheme: 'output', inActiveEditor: false }],
+      // A focused Output panel is the active text editor, and its text grows on its own.
+      ['the focused output panel', { scheme: 'output', inActiveEditor: true }],
       ['the user settings', { scheme: 'vscode-userdata', inActiveEditor: true }],
       ['the Source Control message box', { scheme: 'vscode-scm', inActiveEditor: false }],
+      ['the focused Source Control message box', { scheme: 'vscode-scm', inActiveEditor: true }],
+      ['a focused notebook cell', { scheme: 'vscode-notebook-cell', inActiveEditor: true }],
     ];
 
     for (const [where, documentEdit] of notTyping) {
@@ -174,7 +178,31 @@ describe('auto-pause while typing', () => {
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
 
-    it('pauses again for the first edit after the learner resumed the Lesson', async () => {
+    it('makes it the learner’s pause when they press pause after typing, before the player reports it', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.core.playPause();
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+
+    it('makes it the learner’s pause when their click in the player paused it while they typed', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      // The click's pause is on its way from the player when the edit arrives.
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: true });
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+
+    // Interim, until #60: there a learner's play while armed sets `overridden`, so typing does not
+    // pause again until the next pause of any kind (story 102).
+    it('(interim, until #60) pauses again for the first edit after the learner resumed the Lesson', async () => {
       const h = await createHarness();
       await openLesson(h, 'pause');
       h.player.emit({ type: 'played', lessonId });

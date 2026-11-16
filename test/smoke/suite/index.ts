@@ -258,17 +258,21 @@ async function typingPausesTheLesson(hooks: TestHooks, code: vscode.TextDocument
     await practice.edit((edit) => {
       edit.insert(new vscode.Position(0, 0), 'const a = 1;');
     });
-    const answer = await waitFor('the player to stop after the typing', () =>
-      events
-        .slice(from)
-        .find(
-          (event) =>
-            event.lessonId === lessonId && (event.type === 'paused' || event.type === 'ended'),
-        ),
-    );
-    assert.equal(answer.type, 'paused', 'the Lesson played to its end: typing did not pause it');
+    // Only auto-pause shows it: it pauses a Lesson it saw playing, and the player has reported it.
     await waitFor('“Paused (typing)” on the play/pause item', () =>
       playPauseText(hooks)?.includes('Paused (typing)') === true ? true : undefined,
+    );
+    // At a natural end the player also reports a pause (then `ended`), so the pause alone proves
+    // nothing. A Lesson that typing paused stays paused: wait past where the 3 s Lesson would end.
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    assert.equal(
+      events.slice(from).find((event) => event.lessonId === lessonId && event.type === 'ended'),
+      undefined,
+      'the Lesson played on to its end: typing did not pause it',
+    );
+    assert.ok(
+      playPauseText(hooks)?.includes('Paused (typing)'),
+      '“Paused (typing)” went while the Lesson stayed paused',
     );
   } finally {
     await settings().update('autoPause', undefined, vscode.ConfigurationTarget.Global);
