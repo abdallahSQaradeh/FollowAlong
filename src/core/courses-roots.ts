@@ -2,7 +2,7 @@
  * The Courses roots (ADR 0022): the `followalong.coursesRoots` setting, read and written through
  * the Config port, and the folders the player may read media from, which follow from it.
  */
-import { isAbsolute, resolve, sep } from 'node:path';
+import { posix, resolve, sep } from 'node:path';
 
 import type { Config } from './ports.js';
 
@@ -11,6 +11,10 @@ const coursesRootsSetting = 'coursesRoots';
 
 /** On Windows, two spellings that differ only in letter case name the same folder. */
 const caseInsensitive = process.platform === 'win32';
+
+/** The path rules a Courses root follows: Windows' or POSIX's, as VS Code runs on. */
+export type PathFlavour = 'win32' | 'posix';
+const hostFlavour: PathFlavour = caseInsensitive ? 'win32' : 'posix';
 
 /** What the setting holds, as the core uses it. */
 export interface CoursesRoots {
@@ -35,12 +39,12 @@ function normalisedRoot(path: string): string | undefined {
 /**
  * Whether `path` names one folder wherever VS Code runs. On Windows that takes a drive (`D:\`) or
  * a share (`\\server\share`): `\Learning` counts as absolute there, but on whichever drive
- * VS Code happens to run from.
+ * VS Code happens to run from. `flavour` is the host's; tests give each one on every OS.
  */
-function isFullPath(path: string): boolean {
-  return caseInsensitive
+export function isFullPath(path: string, flavour: PathFlavour = hostFlavour): boolean {
+  return flavour === 'win32'
     ? /^([a-zA-Z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)/.test(path)
-    : isAbsolute(path);
+    : posix.isAbsolute(path);
 }
 
 /** What two spellings of one folder share, for comparing roots. */

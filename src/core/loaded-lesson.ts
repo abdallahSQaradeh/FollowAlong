@@ -491,7 +491,8 @@ export function createLoadedLesson(
 
   function load(lesson: Lesson, options: LoadOptions): void {
     const { startAt, autoplay, resourceRoots } = options;
-    // A save timer left from the Lesson before must not write into this Lesson's Course.
+    // A safety net: every caller has left the Lesson before (`leave`), which stops its saves. A
+    // timer still running would write the Lesson before into this Lesson's Course.
     stopSaving();
     current = { lesson, startAt, autoplay, engaged: false, startSeekPending: false };
     // Nothing is known about this Lesson until the player loads it and reports.
