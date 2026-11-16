@@ -6,8 +6,13 @@
  * drag, then Chromium playing on by itself) make one report.
  */
 
-/** How long after the player takes focus a gesture may still begin before the click counts. */
+/**
+ * How long the player waits, after it takes focus or after a held press or key is let go, for a
+ * gesture or a change to report the click first.
+ */
 export const focusGraceMs = 250;
+/** How often a pending focus check looks again whether a press or a key is still held. */
+const heldPollMs = 50;
 
 export class Interactions {
   /** The pointers whose gesture is under way: today native sliders; later zoom drags and pans. */
@@ -17,7 +22,15 @@ export class Interactions {
   /** The pending check after the player took focus. */
   private focusCheck: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(private readonly report: () => void) {}
+  /**
+   * @param report posts the interaction.
+   * @param held whether a press (on the native control bar too) or a key is still held down: a
+   *   held press is not finished, so it is not reported until it is let go.
+   */
+  constructor(
+    private readonly report: () => void,
+    private readonly held: () => boolean,
+  ) {}
 
   /** The learner finished something in the player: reported, unless a gesture is under way. */
   ended(): void {
@@ -45,16 +58,24 @@ export class Interactions {
 
   /**
    * Something in the player took keyboard focus. Chromium's control bar keeps its pointer events
-   * to itself, so a click on an empty part of it shows only as this. Unless a gesture begins at
-   * once (a press on the seek bar) or something else reports the click first, it is reported
-   * after {@link focusGraceMs}.
+   * to itself, so a click on an empty part of it shows only as this. Unless a gesture begins (a
+   * press on the seek bar) or something else reports the click first, it is reported once nothing
+   * has been held for {@link focusGraceMs}: a press or key held longer is reported on release.
    */
   focused(): void {
     this.cancelFocusCheck();
-    this.focusCheck = setTimeout(() => {
-      this.focusCheck = undefined;
-      this.ended();
-    }, focusGraceMs);
+    let quietSince = Date.now();
+    const check = () => {
+      if (this.held()) {
+        quietSince = Date.now();
+      } else if (Date.now() - quietSince >= focusGraceMs) {
+        this.focusCheck = undefined;
+        this.ended();
+        return;
+      }
+      this.focusCheck = setTimeout(check, heldPollMs);
+    };
+    this.focusCheck = setTimeout(check, heldPollMs);
   }
 
   private reportSoon(): void {

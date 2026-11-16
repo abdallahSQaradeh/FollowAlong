@@ -251,6 +251,72 @@ test.describe('the keyboard in the player', () => {
   });
 });
 
+// Gate round 2 of #23: a press held on a native control reports once, on release, never mid-press.
+test.describe('a held press', () => {
+  for (const holdMs of [0, 400, 800]) {
+    test(`on the play button, held ${String(holdMs)} ms, hands focus back once, on release`, async ({
+      page,
+    }) => {
+      const player = await openPlayer(page);
+      await loadPaused(player);
+      await revealControls(page);
+      const { playButton } = await spots(page);
+
+      await page.mouse.move(playButton.x, playButton.y);
+      await page.mouse.down();
+      await page.waitForTimeout(holdMs);
+      expect(await interactions(player)).toBe(0);
+      await page.mouse.up();
+
+      await player.waitForEvent({ type: 'played', lessonId });
+      await page.waitForTimeout(500);
+      expect(await interactions(player)).toBe(1);
+    });
+  }
+
+  test('of Tab, held 600 ms, hands focus back once, on release', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await page.keyboard.down('Tab');
+    await page.waitForTimeout(600);
+    expect(await interactions(player)).toBe(0);
+    await page.keyboard.up('Tab');
+
+    await player.waitForEvent({ type: 'userInteracted' });
+    await page.waitForTimeout(500);
+    expect(await interactions(player)).toBe(1);
+  });
+});
+
+test.describe('fullscreen', () => {
+  test('keeps focus in the player while fullscreen, and hands it back once it ends', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await player.post(load());
+    await player.waitForEvent({ type: 'played', lessonId });
+    // The native fullscreen button makes the video element fullscreen, as this does.
+    await page.locator('video').evaluate(async (video: HTMLVideoElement) => {
+      await video.requestFullscreen();
+    });
+
+    // Space toggles the native player; the learner is watching, not typing into hidden code.
+    await page.keyboard.press('Space');
+    await page.mouse.click(400, 300);
+    await page.waitForTimeout(600);
+    expect(await interactions(player)).toBe(0);
+
+    await page.evaluate(async () => {
+      await document.exitFullscreen();
+    });
+
+    await player.waitForEvent({ type: 'userInteracted' });
+    await page.waitForTimeout(500);
+    expect(await interactions(player)).toBe(1);
+  });
+});
+
 test.describe('commands from the extension', () => {
   test('seek steps, back, forward and past the end, without asking for focus', async ({ page }) => {
     const player = await openPlayer(page);

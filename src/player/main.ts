@@ -31,12 +31,38 @@ function post(event: PlayerEvent): void {
   host.postMessage(event);
 }
 
-const interactions = new Interactions(() => {
+/** Keys held down in the player page: a held key is an interaction that has not ended. */
+const keysDown = new Set<string>();
+/** Set when an interaction ended while the player was fullscreen: it is reported on exit. */
+let reportAfterFullscreen = false;
+
+/** Tells the extension the learner is done with the player, so it hands focus back. */
+function handFocusBack(): void {
   post({ type: 'userInteracted' });
   // Let go of the focus, so the next click on the native control bar focuses the video again:
   // that `focus` is all the page sees of a click on an empty part of the bar.
   if (document.activeElement instanceof HTMLElement) {
     document.activeElement.blur();
+  }
+}
+
+const interactions = new Interactions(
+  () => {
+    // Fullscreen covers the code: focus stays with the video, so Space still plays or pauses it
+    // rather than typing into hidden code. The interaction is reported once fullscreen ends.
+    if (document.fullscreenElement !== null) {
+      reportAfterFullscreen = true;
+      return;
+    }
+    handFocusBack();
+  },
+  // A press shows as `:active` on the video, also on its native control bar, until it is let go.
+  () => video.matches(':active') || keysDown.size > 0,
+);
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement === null && reportAfterFullscreen) {
+    reportAfterFullscreen = false;
+    handFocusBack();
   }
 });
 
@@ -306,8 +332,26 @@ function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
   });
   // A click on the picture, or on the video under a hidden control bar.
   window.addEventListener('pointerup', ended);
-  // A key on the native controls, after the learner tabbed to them.
-  window.addEventListener('keyup', ended);
+  // A key on the native controls, after the learner tabbed to them: reported when let go.
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      keysDown.add(event.code);
+    },
+    true,
+  );
+  window.addEventListener(
+    'keyup',
+    (event) => {
+      keysDown.delete(event.code);
+      ended();
+    },
+    true,
+  );
+  // A key let go outside the page (focus moved away mid-press) never sends its keyup.
+  window.addEventListener('blur', () => {
+    keysDown.clear();
+  });
   media.addEventListener('gotpointercapture', (event) => {
     interactions.beginGesture(event.pointerId);
   });

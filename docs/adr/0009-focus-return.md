@@ -29,6 +29,16 @@ the end of an interaction is read from what does reach the page:
   within 250 ms. A press on the seek bar takes its pointer about 6 ms after the focus, even when
   held still.
 
+**A held press or key is not finished** (gate round 2). The focus fallback keeps waiting while
+anything is held: the video matches `:active` for the whole press, also on its native control bar
+(the page sees no `pointerdown` or `pointerup` there), and the player tracks held keys from
+`keydown`/`keyup`. So pressing play and holding it reports once, on release, and so does holding
+Tab. Otherwise focus would leave the webview mid-press.
+
+**Not while fullscreen** (gate round 2). While `document.fullscreenElement` is set, the video
+covers the code, so returning focus would make Space type into hidden code. An interaction that
+ends in fullscreen is reported once fullscreen ends.
+
 The overlay's own play/pause is marked as the player's. Signals that arrive together coalesce
 into one report: the end of a seek-bar drag, then Chromium playing on by itself. So one click or
 one drag posts one `userInteracted`.
