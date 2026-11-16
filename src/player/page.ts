@@ -54,7 +54,7 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 </div>
 <div class="sound-notice" hidden>
 <p class="sound-text"></p>
-<button class="sound-skip" type="button" hidden>Play without sound</button>
+<button class="play-without-sound" type="button" hidden>Play without sound</button>
 </div>
 <button class="next" type="button" hidden></button>
 </main>

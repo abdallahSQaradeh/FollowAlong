@@ -10,7 +10,11 @@ import type { Page } from '@playwright/test';
 
 import { renderPlayerHtml } from '../../src/player/page.js';
 import type { PlayerTuning } from '../../src/player/tuning.js';
-import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
+import {
+  pageSoundCodecs,
+  type PlayerCommand,
+  type PlayerEvent,
+} from '../../src/protocol/player-messages.js';
 import { expect } from './fixtures.js';
 
 const root = resolve(__dirname, '..', '..');
@@ -223,12 +227,14 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
     ({
       aac,
       soundCodecs,
+      otherCodecs,
       tuning,
       holdAt,
       metadataFirst,
     }: {
       aac: boolean | undefined;
       soundCodecs: readonly string[] | undefined;
+      otherCodecs: readonly (readonly [string, string])[];
       tuning: PlayerTuning | undefined;
       holdAt: number | undefined;
       metadataFirst: boolean;
@@ -357,17 +363,11 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         }),
       });
       const original = HTMLMediaElement.prototype.canPlayType.bind(document.createElement('video'));
-      // The codec strings of the player's own checks, by the ffmpeg names the page reports.
-      const otherCodecs: Readonly<Record<string, string>> = {
-        mp3: 'mp4a.6B',
-        opus: 'opus',
-        flac: 'flac',
-      };
       HTMLMediaElement.prototype.canPlayType = (type: string) => {
         if (aac !== undefined && type.includes('mp4a.40')) {
           return aac ? 'probably' : '';
         }
-        const codec = Object.entries(otherCodecs).find(
+        const codec = otherCodecs.find(
           ([, string]) => type.startsWith('audio/mp4') && type.includes(`"${string}"`),
         )?.[0];
         if (soundCodecs !== undefined && codec !== undefined) {
@@ -379,6 +379,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
     {
       aac: options.aac,
       soundCodecs: options.soundCodecs,
+      otherCodecs: pageSoundCodecs,
       tuning: options.tuning,
       holdAt: options.holdAt,
       metadataFirst: options.metadataBeforeFirstAppendEnds ?? false,

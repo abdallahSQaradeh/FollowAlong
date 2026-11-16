@@ -400,7 +400,8 @@ export function createLoadedLesson(
 
   /** ffmpeg reported `percent` of `preparation`: the player and the status bar show it. */
   function soundProgressed(preparation: SoundPreparation, percent: number): void {
-    preparation.percent = percent;
+    // Whole percent, so the player and the status bar always say the same number.
+    preparation.percent = Math.floor(percent);
     if (sound === preparation) {
       sendSoundProgress(preparation);
       refreshStatusBar();
@@ -654,7 +655,7 @@ export function createLoadedLesson(
         break;
       }
       case 'playWithoutSound': {
-        // The learner chose the muted picture after the sound failed (ADR 0055). Remembered while
+        // The learner chose the picture alone after the sound failed (ADR 0055). Remembered while
         // the Lesson stays loaded, so a page that reloads does not show the error again.
         if (shownLesson(event) !== undefined && sound?.lesson === current?.lesson) {
           if (sound !== undefined) {

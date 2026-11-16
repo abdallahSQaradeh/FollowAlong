@@ -122,7 +122,7 @@ export type PlayerEvent =
   | (AboutLesson & { readonly type: 'nextClicked' })
   /**
    * The learner chose "Play without sound" after the sound failed to prepare (ADR 0055). The player
-   * has already started the muted picture; this tells the extension the choice was made.
+   * has already started the picture alone; this tells the extension the choice was made.
    */
   | (AboutLesson & { readonly type: 'playWithoutSound' })
   /**
@@ -149,6 +149,16 @@ export function zoomLabel(level: number): string {
 export function shownZoomLevel(level: number): number {
   return Number(level.toFixed(1));
 }
+
+/**
+ * The sound codecs besides AAC that the player page is asked about (`ready {soundCodecs}`, ADR 0056):
+ * ffmpeg's name for each, and the codec string `canPlayType('audio/mp4; codecs="…"')` is asked.
+ */
+export const pageSoundCodecs = [
+  ['mp3', 'mp4a.6B'],
+  ['opus', 'opus'],
+  ['flac', 'flac'],
+] as const;
 
 /** The closest the player zooms in (from the prototype: further is only blur), ADR 0037. */
 export const maxZoomLevel = 8;

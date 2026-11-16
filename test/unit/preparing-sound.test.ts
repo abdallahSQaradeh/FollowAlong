@@ -56,6 +56,16 @@ describe('"Preparing sound… N%"', () => {
     ]);
   });
 
+  it('says whole percents, the same in the player and the status bar', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h);
+
+    h.converter.requests[0]?.progress(35.7);
+
+    expect(ofType(h, 'soundProgress').at(-1)).toEqual({ type: 'soundProgress', percent: 35 });
+    expect(soundItem(h)?.text).toBe('Preparing sound… 35%');
+  });
+
   it('shows the same progress in the status bar, until the sound is ready', async () => {
     const h = await createHarness();
     await openMp4Lesson(h);

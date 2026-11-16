@@ -3,6 +3,7 @@
  * loads and reports what the media element does, through the typed message protocol only.
  */
 import {
+  pageSoundCodecs,
   parsePlayerCommand,
   type AboutLesson,
   type PlayerCommand,
@@ -36,7 +37,7 @@ const nextOverlay: HTMLElement = nextButton;
 /** "Preparing sound… N%", or the error and its button, over the first frame (ADR 0055). */
 const soundNotice = part('.sound-notice');
 const soundText = part('.sound-text');
-const soundSkip = part('.sound-skip');
+const playWithoutSoundButton = part('.play-without-sound');
 const soundElement = document.querySelector('audio');
 if (soundElement === null) {
   throw new Error('The player page has no <audio> element.');
@@ -58,13 +59,7 @@ const aacSupported = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.
  * ADR 0056): an MP4 whose sound is one of them plays its own track, so it gets no sidecar and the
  * sound never plays twice. Asked of the page, not assumed from the VS Code it was measured in.
  */
-const soundCodecs = (
-  [
-    ['mp3', 'mp4a.6B'],
-    ['opus', 'opus'],
-    ['flac', 'flac'],
-  ] as const
-)
+const soundCodecs = pageSoundCodecs
   .filter(([, mp4Codec]) => video.canPlayType(`audio/mp4; codecs="${mp4Codec}"`) !== '')
   .map(([name]) => name);
 /** How far the sidecar may drift from the video before it is moved back to it, in seconds. */
@@ -121,10 +116,10 @@ interface Lesson {
   /**
    * Where the Lesson's sound comes from: its own track (`own`); the sidecar, still to come
    * (`awaited`) or playing beside the video (`sidecar`); none, because the learner chose to play
-   * without it (`none`); or none yet, because it could not be prepared and the learner has not
+   * without it (`withoutSound`); or none yet, because it could not be prepared and the learner has not
    * chosen (`failed`: the error and its button are shown, ADR 0055).
    */
-  sound: 'own' | 'awaited' | 'sidecar' | 'none' | 'failed';
+  sound: 'own' | 'awaited' | 'sidecar' | 'withoutSound' | 'failed';
   /** Set while the sound is awaited: the Lesson plays as soon as it arrives (autoplay, or a press). */
   playWhenSound: boolean;
   /** The last `currentTime` the player wrote itself, until a seek lands. */
@@ -298,17 +293,17 @@ function alignSound(media: HTMLVideoElement): void {
   }
 }
 
-/** Shows `text` over the first frame, and the "Play without sound" button when `skippable`. */
-function showSoundNotice(text: string, skippable: boolean): void {
+/** Shows `text` over the first frame, and the "Play without sound" button when `withChoice`. */
+function showSoundNotice(text: string, withChoice: boolean): void {
   soundText.textContent = text;
-  soundText.setAttribute('role', skippable ? 'alert' : 'status');
-  soundSkip.hidden = !skippable;
+  soundText.setAttribute('role', withChoice ? 'alert' : 'status');
+  playWithoutSoundButton.hidden = !withChoice;
   soundNotice.hidden = false;
 }
 
 function hideSoundNotice(): void {
   soundNotice.hidden = true;
-  soundSkip.hidden = true;
+  playWithoutSoundButton.hidden = true;
   soundText.textContent = '';
 }
 
@@ -341,7 +336,7 @@ function playWithoutSound(media: HTMLVideoElement): void {
   if (lesson?.sound !== 'failed' || lesson.failed) {
     return;
   }
-  lesson.sound = 'none';
+  lesson.sound = 'withoutSound';
   hideSoundNotice();
   showControls(media);
   post({ type: 'playWithoutSound', ...lesson.about });
@@ -798,7 +793,7 @@ const zoomControls = new ZoomControls({
   controlsHeldBack: controlsHeldForSound,
 });
 
-soundSkip.addEventListener('click', () => {
+playWithoutSoundButton.addEventListener('click', () => {
   playWithoutSound(video);
 });
 nextOverlay.addEventListener('click', () => {

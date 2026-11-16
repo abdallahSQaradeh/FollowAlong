@@ -270,6 +270,31 @@ describe('converting the sound', () => {
     expect(args.slice(0, 5)).toEqual(['-hide_banner', '-nostdin', '-y', '-i', input]);
   });
 
+  it('never shows the temp file’s own name either, in whatever form ffmpeg writes it', async () => {
+    const { converter } = converterRunning((process) => {
+      const [temporary] = process.args.slice(-1);
+      const name = (temporary ?? '').split(/[\\/]/).at(-1) ?? '';
+      process.say(`Unable to rename ${name}: Permission denied\n`);
+      process.finish(1);
+    });
+
+    const failure = await converter
+      .extractSound({
+        program: 'ffmpeg',
+        input: join(folder, 'Lesson.mp4'),
+        output: join(folder, 'Lesson-0123456789abcdef.mp3'),
+        onProgress: () => undefined,
+        signal: never,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(String(failure)).toContain('Unable to rename Lesson-0123456789abcdef.mp3');
+    expect(String(failure)).not.toContain('.part');
+  });
+
   it('fails with ffmpeg’s own words, without the name of its temp file', async () => {
     const { converter } = converterRunning((process) => {
       const [temporary] = process.args.slice(-1);

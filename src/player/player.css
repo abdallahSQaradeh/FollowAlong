@@ -101,7 +101,7 @@ video {
 }
 
 .sound-notice[hidden],
-.sound-skip[hidden] {
+.play-without-sound[hidden] {
   display: none;
 }
 
@@ -113,7 +113,7 @@ video {
   overflow-wrap: anywhere;
 }
 
-.sound-skip {
+.play-without-sound {
   padding: 8px 20px;
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 4px;
@@ -125,8 +125,8 @@ video {
   pointer-events: auto;
 }
 
-.sound-skip:hover,
-.sound-skip:focus-visible {
+.play-without-sound:hover,
+.play-without-sound:focus-visible {
   background: rgba(255, 255, 255, 0.2);
 }
 

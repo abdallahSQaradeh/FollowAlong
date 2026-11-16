@@ -155,7 +155,7 @@ test.describe('Play without sound', () => {
     expect((await player.events()).map((event) => event.type)).not.toContain('played');
   });
 
-  test('plays the muted picture and tells the extension when the learner clicks the button', async ({
+  test('plays the picture alone and tells the extension when the learner clicks the button', async ({
     page,
   }) => {
     const player = await openPlayer(page, { aac: false });

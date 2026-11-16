@@ -169,7 +169,15 @@ function runFfmpeg(
 
 /** The reason ffmpeg gave, without the name of a temp file the learner never sees. */
 function reason(run: Run, temporary: string, shownAs: string): string {
-  return `ffmpeg exited with code ${String(run.code)}: ${run.tail.join(' ').replaceAll(temporary, shownAs)}`;
+  return `ffmpeg exited with code ${String(run.code)}: ${withoutTemporary(run.tail.join(' '), temporary, shownAs)}`;
+}
+
+/**
+ * `text` with the temp file named as the sound file instead, whether it is written with its folder
+ * (in any spelling of it) or by its own name, which is unique to the run.
+ */
+function withoutTemporary(text: string, temporary: string, shownAs: string): string {
+  return text.replaceAll(temporary, shownAs).replaceAll(basename(temporary), shownAs);
 }
 
 /**
@@ -239,7 +247,9 @@ function plainFailure(error: unknown, temporary: string, output: string): unknow
     case 'ENOSPC':
       return new Error('the disk is full');
     default:
-      return new Error(error.message.replaceAll(temporary, basename(output)), { cause: error });
+      return new Error(withoutTemporary(error.message, temporary, basename(output)), {
+        cause: error,
+      });
   }
 }
 
