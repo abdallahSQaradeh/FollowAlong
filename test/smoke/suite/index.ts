@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
-import { type Browser, chromium } from '@playwright/test';
+import { type Browser, chromium, type Page } from '@playwright/test';
 import * as vscode from 'vscode';
 
 /**
@@ -166,6 +166,14 @@ export async function run(): Promise<void> {
     'followalong.videoLocation defaults to the editor split',
   );
   say('the video views in the bottom panel and the secondary sidebar are registered');
+  // The floating window is made with VS Code's own commands (ADR 0102).
+  for (const command of [
+    'workbench.action.moveEditorToNewWindow',
+    'workbench.action.enableCompactAuxiliaryWindow',
+    'workbench.action.enableWindowAlwaysOnTop',
+  ]) {
+    assert.ok(registered.includes(command), `VS Code has no ${command} command`);
+  }
 
   playPauseIsBoundToItsKeys(extension.packageJSON);
   say('FollowAlong: Play/Pause is in the Command Palette and bound to its default keys');
@@ -288,10 +296,11 @@ export async function run(): Promise<void> {
 }
 
 /**
- * The spots of #49 and #50 (ADR 0049, ADR 0100): `followalong.videoLocation` opens the Lesson in
- * the bottom panel, and _Move video to…_ moves it to the mini strip above the code, the secondary
- * sidebar, beside the code, the mini strip again, and back to the panel; a last player opens in
- * the mini strip from the setting. In each spot VS Code shows the player, a new page loads the Lesson through asWebviewUri,
+ * The spots of #49, #50 and #51 (ADR 0049, ADR 0100, ADR 0102): `followalong.videoLocation` opens
+ * the Lesson in the bottom panel, and _Move video to…_ moves it to the mini strip above the code,
+ * the secondary sidebar, a floating window, the mini strip again, beside the code, the mini strip
+ * once more, and back to the panel; a last player opens in the mini strip from the setting. In
+ * each spot VS Code shows the player, a new page loads the Lesson through asWebviewUri,
  * the CSP and localResourceRoots, and the code keeps the focus. What a move carries (time, speed, play,
  * zoom) is covered at Seam 1 and Seam 2.
  */
@@ -321,21 +330,31 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
     for (const spot of [
       'miniStrip',
       'secondarySidebar',
+      'floatingWindow',
+      'miniStrip',
       'editorSplit',
       'miniStrip',
       'bottomPanel',
     ] as const) {
+      const left = hooks.playerSpot()?.spot;
       from = hooks.playerEvents.length;
       await vscode.commands.executeCommand('followalong.moveVideo', spot);
       say(await theLessonLoadsIn(hooks, spot, from, code));
       if (spot === 'miniStrip') {
         say(await theStripIsAboveTheCode(code));
-      } else {
+      }
+      if (spot === 'floatingWindow') {
+        say(await theFloatingWindowHoldsThePlayer());
+      }
+      if (left === 'miniStrip') {
         // The strip's group goes with its tab: the code alone, or the code and the group beside it.
         const groups = spot === 'editorSplit' ? 2 : 1;
         await waitFor(`the strip's group to go after the move to ${spot}`, () =>
           vscode.window.tabGroups.all.length === groups ? true : undefined,
         );
+      }
+      if (left === 'floatingWindow') {
+        await noFloatingWindowIsLeft(`moving the video from the floating window to ${spot}`);
       }
       // Leaving the bottom panel must not leave the panel to fall back to the Terminal view, which
       // starts a shell and takes the focus (gate round 1, CI run 43906351106).
@@ -348,7 +367,13 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
 
     // Collapse and restore in each spot (#52, ADR 0092): the page goes, a new page loads the
     // Lesson in the same spot, and no terminal starts.
-    for (const spot of ['bottomPanel', 'secondarySidebar', 'editorSplit', 'miniStrip'] as const) {
+    for (const spot of [
+      'bottomPanel',
+      'secondarySidebar',
+      'floatingWindow',
+      'editorSplit',
+      'miniStrip',
+    ] as const) {
       await vscode.commands.executeCommand('followalong.moveVideo', spot);
       from = hooks.playerEvents.length;
       await waitFor(`the player in ${spot}`, () =>
@@ -365,6 +390,9 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
         [],
         `collapsing the video in ${spot} started a terminal`,
       );
+      if (spot === 'floatingWindow') {
+        await noFloatingWindowIsLeft('collapsing the video in the floating window');
+      }
       from = hooks.playerEvents.length;
       await vscode.commands.executeCommand('followalong.toggleVideo');
       say(
@@ -373,6 +401,8 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
     }
 
     say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
+    say(await closingTheFloatingWindowClosesTheLesson(hooks, code));
+    say(await doesAMoveIntoANewWindowKeepThePage(hooks));
     say(await aPlayerOpensInTheStripFromTheSetting(hooks, course, code));
   } finally {
     await settings.update('videoLocation', undefined, vscode.ConfigurationTarget.Global);
@@ -488,6 +518,207 @@ async function inWorkbench<T>(read: () => T): Promise<T> {
     // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
     await browser.close();
   }
+}
+
+/** What the page of one floating (auxiliary) VS Code window shows (ADR 0102). */
+interface FloatingWindowLook {
+  /** Whether it holds a webview: the player. */
+  readonly holdsWebview: boolean;
+  /** Whether its status bar shows: a compact window hides it (VS Code 1.146). */
+  readonly statusBarShown: boolean;
+  /** The labels of its title bar actions, which name the always-on-top state. */
+  readonly titleActions: readonly string[];
+}
+
+/**
+ * Reads every floating VS Code window over the DevTools protocol. VS Code opens one as an
+ * `about:blank` page of its own and builds an editor part in it; the main window is `workbench.html`.
+ */
+async function floatingWindows(): Promise<FloatingWindowLook[]> {
+  return withFloatingWindowPages(async (pages) => {
+    const looks = await Promise.all(
+      pages.map((page) =>
+        page.evaluate((): FloatingWindowLook => {
+          const statusBar = document.querySelector('.part.statusbar');
+          return {
+            holdsWebview: document.querySelector('.webview, iframe') !== null,
+            statusBarShown:
+              statusBar instanceof HTMLElement &&
+              statusBar.offsetHeight > 0 &&
+              statusBar.offsetWidth > 0,
+            titleActions: Array.from(document.querySelectorAll('.part.titlebar [aria-label]'))
+              .map((element) => element.getAttribute('aria-label') ?? '')
+              .filter((label) => label !== ''),
+          };
+        }),
+      ),
+    );
+    return looks;
+  });
+}
+
+/**
+ * Runs `use` with the pages of the floating VS Code windows, over the DevTools protocol: pages that
+ * are not the main `workbench.html` and hold an editor part.
+ */
+async function withFloatingWindowPages<T>(use: (pages: readonly Page[]) => Promise<T>): Promise<T> {
+  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
+  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  try {
+    const candidates = browser
+      .contexts()
+      .flatMap((context) => context.pages())
+      .filter((page) => !page.url().includes('workbench'));
+    const holdsEditorPart = await Promise.all(
+      candidates.map((page) =>
+        page.evaluate(() => document.querySelector('.part.editor') !== null),
+      ),
+    );
+    return await use(candidates.filter((_, index) => holdsEditorPart[index] === true));
+  } finally {
+    // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
+    await browser.close();
+  }
+}
+
+/**
+ * The floating window (#51, ADR 0102): one window of its own holds the player, compact (no status
+ * bar), with the title bar actions VS Code shows only for a compact, always-on-top window: _Turn
+ * Off Compact Mode_ and _Turn Off Always on Top_. Whether the OS really keeps it above other apps
+ * cannot be read from a page: Windows manual QA checks it.
+ */
+async function theFloatingWindowHoldsThePlayer(): Promise<string> {
+  const look = await waitForAsync('a floating window that holds the player', async () => {
+    const windows = await floatingWindows();
+    return windows.length === 1 && windows[0]?.holdsWebview === true ? windows[0] : undefined;
+  });
+  const mainHasFocus = await inWorkbench(() => document.hasFocus());
+  assert.equal(
+    look.statusBarShown,
+    false,
+    'the floating window is not compact: it shows a status bar',
+  );
+  for (const action of ['Turn Off Compact Mode', 'Turn Off Always on Top']) {
+    assert.ok(
+      look.titleActions.includes(action),
+      `the floating window's title bar has no "${action}": [${look.titleActions.join(', ')}]`,
+    );
+  }
+  return `the player sits in a floating window of its own, compact (no status bar) and on top (its title bar offers: ${look.titleActions.filter((label) => label.startsWith('Turn Off')).join(', ')}); the main window has the OS focus: ${String(mainHasFocus)}`;
+}
+
+/** Waits until no floating VS Code window is left after `what`. */
+async function noFloatingWindowIsLeft(what: string): Promise<void> {
+  await waitForAsync(`no floating window left after ${what}`, async () =>
+    (await floatingWindows()).length === 0 ? true : undefined,
+  );
+}
+
+/**
+ * The learner closes the floating window with its own close button (#51, ADR 0102): VS Code closes
+ * the player tab in it, so the Lesson closes as if its tab were closed. The page closes itself
+ * here, which runs the same unload VS Code runs for the OS close button.
+ */
+async function closingTheFloatingWindowClosesTheLesson(
+  hooks: TestHooks,
+  code: vscode.TextDocument,
+): Promise<string> {
+  const from = hooks.playerEvents.length;
+  await vscode.commands.executeCommand('followalong.moveVideo', 'floatingWindow');
+  await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
+  await withFloatingWindowPages(async ([window]) => {
+    assert.ok(window, 'no floating window to close');
+    // The page goes before `window.close()` can answer, which rejects the evaluate: that is the
+    // close this asks for.
+    await window
+      .evaluate(() => {
+        globalThis.close();
+      })
+      .catch(() => undefined);
+  });
+  await waitFor('the player to close with its window', () =>
+    hooks.playerSpot() === undefined ? true : undefined,
+  );
+  await waitFor('the Lesson to close with its window', () =>
+    hooks.statusBar().some((item) => item.command?.id === 'followalong.playPause')
+      ? undefined
+      : true,
+  );
+  await noFloatingWindowIsLeft('the learner closed it');
+  return 'closing the floating window closes the Lesson, as closing its tab does';
+}
+
+/**
+ * A measurement for ADR 0102, not a check: does moving the player's tab, with its page running,
+ * into a new window keep that page, or does VS Code start it again (a new `ready`)? The product
+ * starts the page only once the tab is in the floating window, so either answer is safe.
+ */
+async function doesAMoveIntoANewWindowKeepThePage(hooks: TestHooks): Promise<string> {
+  const lessonId = 'spots.webm';
+  // The Lesson closed with its window: it opens again at the setting, then moves beside the code.
+  await vscode.commands.executeCommand('followalong.playLesson', lessonId);
+  await waitFor('the Lesson open again', () =>
+    hooks.playerSpot() === undefined ? undefined : true,
+  );
+  const moved = hooks.playerEvents.length;
+  await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+  await waitFor('the player in the editor group', () =>
+    hooks.playerSpot()?.spot === 'editorSplit' && hooks.playerSpot()?.visible === true
+      ? true
+      : undefined,
+  );
+  await waitFor(
+    'the Lesson loaded in the editor group',
+    () =>
+      hooks.playerEvents
+        .slice(moved)
+        .some((event) => event.type === 'timeUpdate' && event.lessonId === lessonId)
+        ? true
+        : undefined,
+    20_000,
+  );
+  const holdsPlayer = (group: vscode.TabGroup): boolean =>
+    group.tabs.some(
+      (tab) =>
+        tab.input instanceof vscode.TabInputWebview &&
+        tab.input.viewType.includes('followalong.player'),
+    );
+  // The tab API hears of the new tab a moment after the panel shows.
+  const playerGroup = await waitFor('an editor group that holds the player tab', () =>
+    vscode.window.tabGroups.all.find(holdsPlayer),
+  ).catch((error: unknown) => {
+    const tabs = vscode.window.tabGroups.all.flatMap((group) =>
+      group.tabs.map(
+        (tab) =>
+          `${String(group.viewColumn)}:${tab.label}:${tab.input instanceof vscode.TabInputWebview ? tab.input.viewType : typeof tab.input}`,
+      ),
+    );
+    throw new Error(`${String(error)}; the tabs are: [${tabs.join(', ')}]`);
+  });
+  const ordinals = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'];
+  await vscode.commands.executeCommand(
+    `workbench.action.focus${ordinals[playerGroup.viewColumn - 1] ?? 'First'}EditorGroup`,
+  );
+  await waitFor('the player tab as the active editor', () => {
+    const active = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    return active instanceof vscode.TabInputWebview &&
+      active.viewType.includes('followalong.player')
+      ? true
+      : undefined;
+  });
+  const from = hooks.playerEvents.length;
+  await vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow');
+  await waitForAsync('the player tab in a new window', async () =>
+    (await floatingWindows()).length === 1 ? true : undefined,
+  );
+  // Long enough for a page VS Code starts again to post `ready` (a page starts in well under 1 s).
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  const readies = hooks.playerEvents.slice(from).filter((event) => event.type === 'ready').length;
+  // Back into the editor group: the move drops the tab, which closes its window.
+  await vscode.commands.executeCommand('followalong.moveVideo', 'bottomPanel');
+  await noFloatingWindowIsLeft('the measurement');
+  return `measured: moving the running player tab into a new window ${readies === 0 ? 'keeps its page (no new ready)' : `starts its page again (${String(readies)} new ready)`}`;
 }
 
 /** Whether the bottom panel is open. */

@@ -43,6 +43,15 @@ describe('where a Lesson opens', () => {
     expect(lastSpot(h)).toBe('miniStrip');
   });
 
+  it('opens in a floating window when the setting names it', async () => {
+    const h = await createHarness();
+    h.config.set('videoLocation', 'floatingWindow');
+
+    await openCourse(h);
+
+    expect(lastSpot(h)).toBe('floatingWindow');
+  });
+
   it('opens beside the code when the setting names no spot FollowAlong knows', async () => {
     const h = await createHarness();
     h.config.set('videoLocation', 'ceiling');
@@ -76,6 +85,7 @@ describe('Move video to…', () => {
       'Bottom panel',
       'Secondary sidebar',
       'Mini strip above the code',
+      'Floating window',
     ]);
     h.ui.choose('Bottom panel');
     // The page the video leaves says what it shows.
@@ -100,6 +110,132 @@ describe('Move video to…', () => {
       { type: 'setRate', rate: 1.5 },
       { type: 'restore', zoom: { level: 2, left: 0.25, top: 0.5 } },
     ]);
+  });
+});
+
+describe('Move video to… a floating window', () => {
+  it('warns in the picker that a click there moves focus out of the main window', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+
+    const moving = h.core.moveVideo();
+    await h.ui.pickerShown();
+    const floating = h.ui.picker?.entries.find((entry) => entry.label === 'Floating window');
+    h.ui.dismissPicker();
+    await moving;
+
+    expect(floating).toMatchObject({
+      detail: 'Always on top. A click in it moves the focus out of this window.',
+    });
+  });
+
+  it('moves the player there, carrying time, speed, play and zoom', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+
+    const moving = h.core.moveVideo('floatingWindow');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1.5,
+        zoom: { level: 2, left: 0.25, top: 0.5 },
+        lesson: { lessonId, position: 42.5, playing: false },
+      },
+    });
+    await moving;
+    h.player.clearSent();
+
+    expect(lastSpot(h)).toBe('floatingWindow');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 42.5, autoplay: false }),
+      { type: 'setRate', rate: 1.5 },
+      { type: 'restore', zoom: { level: 2, left: 0.25, top: 0.5 } },
+    ]);
+  });
+
+  it('moves the player out again to another spot, carrying time, speed, pause and zoom', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const moving = h.core.moveVideo('floatingWindow');
+    h.clock.advance(1000);
+    await moving;
+    h.player.ready();
+    h.player.clearSent();
+
+    const leaving = h.core.moveVideo('editorSplit');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1.25,
+        zoom: { level: 3, left: 0.5, top: 0.25 },
+        lesson: { lessonId, position: 77, playing: false },
+      },
+    });
+    await leaving;
+    h.player.clearSent();
+
+    expect(lastSpot(h)).toBe('editorSplit');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 77, autoplay: false }),
+      { type: 'setRate', rate: 1.25 },
+      { type: 'restore', zoom: { level: 3, left: 0.5, top: 0.25 } },
+    ]);
+  });
+
+  it('is left when the learner closes that window: Progress is saved and the next Lesson opens at the setting', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const moving = h.core.moveVideo('floatingWindow');
+    h.clock.advance(1000);
+    await moving;
+    h.player.ready();
+    h.player.emit({ type: 'played', lessonId });
+    // More than the 10 s of play that make a Lesson in progress.
+    for (let position = 42; position <= 62; position += 2) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position, duration: 300 });
+    }
+
+    h.player.close();
+    await h.settle();
+
+    expect(descriptionOf(h, lessonId)).toBe('01:02 / 05:00');
+    h.core.playLesson('02 Next.webm');
+    expect(lastSpot(h)).toBe('editorSplit');
+  });
+});
+
+describe('a floating window VS Code cannot make', () => {
+  it('leaves no player half-open: Progress is saved, and the next Lesson opens at the setting', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.ready();
+    h.player.emit({ type: 'played', lessonId });
+    for (let position = 0; position <= 12; position += 2) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position, duration: 300 });
+    }
+    const moving = h.core.moveVideo('floatingWindow');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1,
+        zoom: { level: 1, left: 0, top: 0 },
+        lesson: { lessonId, position: 20, playing: false },
+      },
+    });
+    await moving;
+    h.player.clearSent();
+
+    // The adapter could not move the tab into a new window: it reports the player closed before
+    // the new page ever started.
+    h.player.close();
+    await h.settle();
+
+    expect(h.player.sent).toEqual([]);
+    expect(descriptionOf(h, lessonId)).toBe('00:20 / 05:00');
+    h.core.playLesson('02 Next.webm');
+    expect(lastSpot(h)).toBe('editorSplit');
   });
 });
 

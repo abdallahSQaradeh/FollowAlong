@@ -189,12 +189,16 @@ The Lesson the player holds: it is set when the learner picks a Lesson or opens 
 _Avoid_: Active Lesson, current video
 
 **Video spot**:
-Where the player sits in the VS Code window: an editor group beside the code (the default), the bottom panel, the secondary sidebar or a Mini strip above the code. The learner moves the video from one spot to another without losing its place.
+Where the player sits in the VS Code window: an editor group beside the code (the default), the bottom panel, the secondary sidebar, a Mini strip above the code, or the Floating window. The learner moves the video from one spot to another without losing its place.
 _Avoid_: Location, dock, layout, position
 
 **Mini strip**:
 The Video spot that is a short editor group above the code. The learner resizes it with VS Code's own sash. It is the `miniStrip` value of `followalong.videoLocation`.
 _Avoid_: Banner, header, top bar
+
+**Floating window**:
+The Video spot in a VS Code window of its own, compact and always on top, which the learner resizes with the OS window edges. Opt-in only, never the default: a click in it moves the focus out of the main window. Closing it closes the player.
+_Avoid_: Popup, pop-out, detached player, picture-in-picture
 
 **Collapsed video**:
 The video hidden, with its place kept, by `Ctrl+'` `V`. The Lesson stays loaded at its position and play state; pressing the key again shows the video in the same Video spot with its time, speed and zoom. Different from closing the player, which forgets the spot.
