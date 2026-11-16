@@ -21,14 +21,31 @@ the end of an interaction is read from what does reach the page:
 - `lostpointercapture` on the video: the learner let go of the seek bar or the volume slider;
 - a change made by a control-bar button: a `play` the player did not start itself, a `pause` the
   extension did not ask for (not the Lesson's end), and `volumechange` (the player never changes
-  the volume).
+  the volume);
+- `focus` on the video, for a click on an **empty part of the control bar**, which changes
+  nothing and reaches no page listener. Gate round 1 on #23 found that such clicks stranded focus
+  (a dead strip along the bottom). The player lets go of the focus after every report, so each
+  such click focuses the video again. It counts as an interaction unless a slider drag begins
+  within 250 ms. A press on the seek bar takes its pointer about 6 ms after the focus, even when
+  held still.
 
-The overlay's own play/pause is marked as the player's, so one click posts one `userInteracted`.
+The overlay's own play/pause is marked as the player's. Signals that arrive together coalesce
+into one report: the end of a seek-bar drag, then Chromium playing on by itself. So one click or
+one drag posts one `userInteracted`.
+
+**The overlay passes pointer moves on.** Chromium shows its control bar when the pointer moves
+over the video, and the overlay would take those moves. So it dispatches each `pointermove` to the
+video, and the bar appears on hover as it does without an overlay (gate round 1).
+
+![The control bar hidden after 3 s without a move while the Lesson plays](assets/0009-hover-before.png)
+![The control bar back after a move over the picture](assets/0009-hover-after.png)
 
 **One mechanism holds a gesture that is not finished.** `Interactions` (`src/player/interactions.ts`)
-posts on `ended()`, except between `beginGesture()` and `endGesture()`; `endGesture()` posts once.
-The native slider uses it from `gotpointercapture` to `lostpointercapture`, so focus never leaves
-mid-drag. A zoom-area drag (#46) and a pan (#47) begin and end their gestures the same way.
+reports on `ended()`, except while a gesture is under way. `beginGesture(pointerId)` and
+`endGesture(pointerId)` track each pointer, so a touch drag and a mouse drag at once hold the report
+until both end. The native slider uses them from `gotpointercapture` to `lostpointercapture`, so
+focus never leaves mid-drag. A zoom-area drag (#46) and a pan (#47) begin and end their gestures
+the same way. `focused()` is the fallback for the control bar described above.
 
 **The core decides that focus returns.** On `userInteracted` it calls `UiSink.returnFocus()`.
 
@@ -37,8 +54,10 @@ There is no way to read a context key, and `activeTextEditor` stays set while th
 focus. So `FocusReturn` (`src/adapters/vscode/focus-return.ts`) remembers the last target from the
 signals the API does give:
 
-- an editor: a file or untitled text editor became active, its selection changed, or the active
-  editor's document was edited;
+- an editor: a file or untitled text editor became active, or the learner moved its selection
+  with the keyboard, the mouse or a command (typing moves it too). A selection change without a
+  `kind`, such as a file reloaded after a `git checkout` or a formatter run in the terminal, is
+  not the learner and moves nothing (gate round 1);
 - a terminal: a terminal became active, a shell command started in it, or it got its first input.
 
 On `returnFocus` it shows that terminal with focus. For an editor, it focuses the editor showing
@@ -93,12 +112,14 @@ noremoteplayback"`, `disablepictureinpicture`, `disableremoteplayback`). It open
   ![The control bar without the overflow menu](assets/0009-control-bar.png)
 
 - Chromium pauses a playing Lesson while the seek bar is scrubbed and plays it on release. The
-  core receives `paused {byUser: true}` and then `played`, and the release can post
-  `userInteracted` twice (the gesture's end, then the `play`). Focus returns twice to the same
-  target, which is harmless. A Space on a focused native control posts twice in the same way.
+  core receives `paused {byUser: true}` and then `played`. The release posts one
+  `userInteracted`. Space on a focused native control can still post twice (on the toggle at
+  keydown, then on the keyup). Focus returns twice to the same target, which is harmless.
+- A click on an empty part of the control bar returns focus but does not play or pause: it is a
+  click on the control bar, not on the picture.
 - Any key released in the player returns focus, so the learner cannot tab through the native
-  controls. FollowAlong's own controls are keybindings used from the Practice area, so nothing
-  depends on that.
+  controls, even after reaching the player on purpose from the keyboard. FollowAlong's own
+  controls are keybindings used from the Practice area, so nothing depends on that.
 - `onDidChangeActiveTerminal` also fires for terminals that a task or another extension
   creates, so the target can become a terminal the learner never typed in. Returning focus to a
   terminal also reopens the panel if the learner has hidden it since. Both are on the Manual QA
