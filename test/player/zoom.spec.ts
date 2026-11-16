@@ -357,6 +357,38 @@ test.describe('the wheel', () => {
   });
 });
 
+test.describe('the wheel while zoomed, at the edge of the picture', () => {
+  test('zooms out toward the cursor and stays inside the picture', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      await drag(page, { x: 1270, y: 700 }, { x: 10, y: 20 });
+    }
+    expectArea(await shownArea(page), { left: 0.75, top: 0.75, width: 0.25, height: 0.25 });
+
+    // The bottom right corner stays where it is: 4× out to 3.2×, whose view ends at the picture.
+    await wheel(page, { x: 1279, y: 719 }, 100);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 3.2 });
+    expectArea(await shownArea(page), { left: 0.6875, top: 0.6875, width: 0.3125, height: 0.3125 });
+  });
+
+  test('ignores a turn to the side, and does not lose the turns before it', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    await page.mouse.move(640, 360);
+
+    for (let turn = 0; turn < 5; turn += 1) {
+      await page.mouse.wheel(0, -10);
+    }
+    await page.mouse.wheel(30, 0);
+    for (let turn = 0; turn < 5; turn += 1) {
+      await page.mouse.wheel(0, -10);
+    }
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+  });
+});
+
 test.describe('the wheel during a drag', () => {
   test('changes nothing: the drag keeps its view', async ({ page }) => {
     const player = await zoomedPaused(page);
@@ -740,7 +772,8 @@ test.describe('a pan that a reset interrupts', () => {
 
     expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
     expect((await player.video()).paused).toBe(true);
-    await expect(page.locator('body')).not.toHaveClass(/panning/);
+    // No pan is under way: the hand is not closed.
+    await expect(page.locator('.overlay')).not.toHaveCSS('cursor', 'grabbing');
   });
 });
 

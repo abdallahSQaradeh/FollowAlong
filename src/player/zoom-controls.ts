@@ -85,8 +85,8 @@ export class ZoomControls {
   private areaMode = false;
   private press: Press | undefined;
   /** The turn of the wheel, in px of `deltaY`, not yet enough for a step, and when it came. */
-  private wheelRest = 0;
-  private wheelAt = 0;
+  private wheelLeftover = 0;
+  private lastWheelAt = 0;
   /** Set when a drag ended: the `click` the browser fires after it is not a click. */
   private dragEnded = false;
   private readonly levelOutput: HTMLElement;
@@ -222,10 +222,10 @@ export class ZoomControls {
       }
       if (!press.dragging) {
         press.dragging = true;
+        document.body.classList.toggle('panning', press.kind === 'pan');
         interactions.beginGesture(event.pointerId);
       }
       if (press.kind === 'pan') {
-        document.body.classList.add('panning');
         const stage = this.stage();
         this.render(
           panBy(
@@ -275,28 +275,26 @@ export class ZoomControls {
       (event) => {
         // The page must not scroll, nor the browser zoom on a Ctrl+wheel or a pinch.
         event.preventDefault();
+        // A turn to the side (Shift+wheel on some systems) is not a zoom, nor the end of one.
+        if (event.deltaY === 0) {
+          return;
+        }
         // A drag under way owns the view: it would be drawn over, or moved from, a view that moved.
         if (this.press !== undefined) {
           return;
         }
         const turned = event.deltaY;
-        const reversed = Math.sign(turned) !== Math.sign(this.wheelRest);
-        const pause = event.timeStamp - this.wheelAt > wheelIdleMs;
-        this.wheelAt = event.timeStamp;
-        const total = (reversed || pause ? 0 : this.wheelRest) + turned;
+        const reversed = Math.sign(turned) !== Math.sign(this.wheelLeftover);
+        const pause = event.timeStamp - this.lastWheelAt > wheelIdleMs;
+        this.lastWheelAt = event.timeStamp;
+        const total = (reversed || pause ? 0 : this.wheelLeftover) + turned;
         const steps = Math.trunc(total / wheelNotch);
-        this.wheelRest = total - steps * wheelNotch;
+        this.wheelLeftover = total - steps * wheelNotch;
         if (steps === 0) {
           return;
         }
-        const stage = this.stage();
         // Turning away from the learner (a negative `deltaY`) zooms in.
-        this.show(
-          zoomAt(this.view, zoomStep ** -steps, {
-            x: (event.clientX - stage.x) / stage.width,
-            y: (event.clientY - stage.y) / stage.height,
-          }),
-        );
+        this.show(zoomAt(this.view, zoomStep ** -steps, this.onStage(event)));
       },
       { passive: false },
     );
@@ -329,6 +327,15 @@ export class ZoomControls {
   /** The player's box, in px of the page: at 1× the overlay stops above the native control bar. */
   private stage(): DOMRect {
     return (this.options.overlay.parentElement ?? this.options.overlay).getBoundingClientRect();
+  }
+
+  /** Where the pointer of `event` is on the player, in fractions of its width and height. */
+  private onStage(event: MouseEvent): { x: number; y: number } {
+    const stage = this.stage();
+    return {
+      x: (event.clientX - stage.x) / stage.width,
+      y: (event.clientY - stage.y) / stage.height,
+    };
   }
 
   /** Zooms to the area of a box drawn over the picture, when it is big enough to mean one. */

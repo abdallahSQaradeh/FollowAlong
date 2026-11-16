@@ -217,7 +217,7 @@ body:hover .zoom-tools,
   height: 16px;
 }
 
-/* In area mode the next drag draws a box, and so does a drag with Shift (ADR 0087). */
+/* In area mode the next drag draws a box, at any zoom (ADR 0087). */
 .area-mode .overlay {
   cursor: crosshair;
 }
