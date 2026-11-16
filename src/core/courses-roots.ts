@@ -57,6 +57,14 @@ export function keyOf(normalised: string): string {
   return caseInsensitive ? normalised.toLowerCase() : normalised;
 }
 
+/**
+ * Whether two paths name one folder, however each is spelled: resolved, with the drive letter
+ * upper-cased, and on Windows without regard to letter case.
+ */
+export function sameFolder(a: string, b: string): boolean {
+  return keyOf(normalisedRoot(a) ?? a) === keyOf(normalisedRoot(b) ?? b);
+}
+
 /** The setting's entries that are text, as written. */
 function entriesOf(config: Pick<Config, 'get'>): unknown[] {
   const value = config.get(coursesRootsSetting);

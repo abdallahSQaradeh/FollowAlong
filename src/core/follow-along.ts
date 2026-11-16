@@ -7,9 +7,9 @@ import { basename } from 'node:path';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
-import { buildCoursePicker, type RecentCourse } from './course-picker.js';
-import { folderLabel, scanCourses, type ScannedCourse } from './course-scanner.js';
-import { addCoursesRoot, keyOf, playerFolders, readCoursesRoots } from './courses-roots.js';
+import { buildCoursePicker } from './course-picker.js';
+import { scanCourses } from './course-scanner.js';
+import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { locateCourse } from './locate-course.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
@@ -25,7 +25,7 @@ import { openResources, type ResourceStore } from './resource-store.js';
 import { resourcePath, resourceTarget, type ResourceRecord } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
-import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
+import { readRecent, recentCourses, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
@@ -148,6 +148,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Offers, once, to add the one-press commands to the terminal's skip-shell setting. */
   const offerTerminalKeys = createTerminalKeysOffer(ports);
 
+  /** The folders the player may read for `course` (ADR 0022). */
+  function resourceRootsOf(course: Course): string[] {
+    return playerFolders(
+      readCoursesRoots(config).roots,
+      course.folder,
+      fallbackRoot(storage.folder),
+    );
+  }
+
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
@@ -155,11 +164,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     loaded.load(lesson, {
       startAt,
       autoplay,
-      resourceRoots: playerFolders(
-        readCoursesRoots(config).roots,
-        course.folder,
-        fallbackRoot(storage.folder),
-      ),
+      resourceRoots: resourceRootsOf(course),
     });
     offerTerminalKeys();
   }
@@ -279,7 +284,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (
       playing !== undefined &&
       openedCourse !== undefined &&
-      keyOf(openedCourse.folder) === keyOf(folder)
+      sameFolder(openedCourse.folder, folder)
     ) {
       // The Course is open and its Lesson is in the player: picking it again changes nothing, so
       // the Lesson is not reloaded and the learner does not land on Lesson 1 (ADR 0041).
@@ -287,11 +292,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       ui.selectLesson(playing.id);
       ports.player.show({
         title: playing.title,
-        resourceRoots: playerFolders(
-          readCoursesRoots(config).roots,
-          openedCourse.folder,
-          fallbackRoot(storage.folder),
-        ),
+        resourceRoots: resourceRootsOf(openedCourse),
       });
       return;
     }
@@ -476,39 +477,6 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     });
   }
 
-  /** Whether the folder is gone: the folder is not there, or its drive is not. */
-  async function isMissing(folder: string): Promise<boolean> {
-    try {
-      await ports.fileSystem.readDirectory(folder);
-      return false;
-    } catch (error) {
-      if (error instanceof FileSystemError) {
-        return error.reason === 'notFound';
-      }
-      throw error;
-    }
-  }
-
-  /** The Recent Courses as the picker shows them: named and filed as the scan has them. */
-  async function recentCourses(
-    folders: readonly string[],
-    scanned: readonly ScannedCourse[],
-  ): Promise<RecentCourse[]> {
-    const byFolder = new Map(scanned.map((course) => [keyOf(course.folder), course]));
-    return Promise.all(
-      folders.map(async (folder): Promise<RecentCourse> => {
-        const found = byFolder.get(keyOf(folder));
-        return {
-          folder,
-          name: found?.name ?? folderLabel(folder),
-          categories: found?.categories ?? [],
-          // A Course the scan found is there; any other is looked for.
-          missing: found === undefined && (await isMissing(folder)),
-        };
-      }),
-    );
-  }
-
   /** The Course picker. */
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
@@ -528,7 +496,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       buildCoursePicker({
         hasRoots: roots.length > 0,
         courses: scan.courses,
-        recent: await recentCourses(recent, scan.courses),
+        recent: await recentCourses(ports, recent, scan.courses),
         openFolder: openedCourse?.folder,
       }),
     );
@@ -547,6 +515,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         await pickCourse();
         break;
       case 'locateCourse':
+        if (openedCourse !== undefined && sameFolder(openedCourse.folder, intent.folder)) {
+          // The Course that moved is still open: what it has not saved yet is carried too.
+          await progress?.save();
+        }
         // Shown again either way: the entry is re-pointed, or still missing after a cancel.
         await locateCourse(ports, intent.folder);
         await pickCourse();

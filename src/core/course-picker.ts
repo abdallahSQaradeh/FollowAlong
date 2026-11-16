@@ -3,7 +3,7 @@
  * function from the scanned Courses and the Recent Courses to the quick pick behind “Open
  * Course…”. Picking returns an intent; the core carries it out.
  */
-import { keyOf } from './courses-roots.js';
+import { keyOf, sameFolder } from './courses-roots.js';
 import type { ScannedCourse } from './course-scanner.js';
 import type { QuickPickEntry, QuickPickModel } from './quick-pick.js';
 
@@ -52,7 +52,7 @@ function placeholderOf({ hasRoots, courses, recent }: CoursePickerInput): string
 
 export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<CoursePickerIntent> {
   const isOpen = (folder: string): boolean =>
-    input.openFolder !== undefined && keyOf(input.openFolder) === keyOf(folder);
+    input.openFolder !== undefined && sameFolder(input.openFolder, folder);
   const description = (categories: readonly string[], folder: string, missing: boolean) => {
     const parts = [
       ...(categories.length === 0 ? [] : [categories.join(' / ')]),

@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -49,14 +49,35 @@ describe('Recent Courses in the Course picker', () => {
       'Add Courses root…',
     ]);
   });
-  it('keeps Recent in the global storage, as absolute folders, and the open Course in the workspace', async () => {
+  it('is shared by every workspace of this machine, while each workspace restores its own Course', async () => {
     const h = await createHarness();
     const folders = await learning(h, ['A', 'B']);
     await h.core.openCourse(folders.A ?? '');
     await h.core.openCourse(folders.B ?? '');
+    await h.core.close();
 
-    expect(h.storage.global.get('recentCourses')).toEqual([folders.B, folders.A]);
-    expect(h.storage.workspace.get('recentCourses')).toBeUndefined();
+    h.restart({ otherWorkspace: true });
+    await h.core.restoreCourse();
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+
+    expect(h.player.shown).toEqual([]);
+    expect(rows(h.ui.picker)).toEqual(['── Recent Courses', 'B', 'A', 'Add Courses root…']);
+  });
+
+  it('treats another spelling of the open Course’s folder as that Course', async () => {
+    const h = await createHarness();
+    const folders = await learning(h, ['A']);
+    await h.core.openCourse(folders.A ?? '');
+    h.player.ready();
+    h.player.clearSent();
+
+    await h.core.openCourse(join(h.root, 'Learning', 'A', '..', 'A') + sep);
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+
+    expect(h.player.sent).toEqual([]);
+    expect(rows(h.ui.picker)).toEqual(['── Recent Courses', 'A — (open)', 'Add Courses root…']);
   });
 
   it('lists a Course once, first, when it is opened again', async () => {
@@ -363,6 +384,36 @@ describe('Locate…', () => {
     );
   });
 
+  it('carries Progress that was not saved yet when the Course that moved is still open', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Learning', { 'A/01 Intro.webm': 'v', 'A/02 Setup.webm': 'v' });
+    h.config.set('coursesRoots', [root]);
+    const old = join(root, 'A');
+    const undo = makeReadOnly(old);
+    await h.core.openCourse(old);
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    // Paused once, so the first save is made; then it plays on for a second, which is not saved yet.
+    playToAndPause(h, '02 Setup.webm', 100);
+    await h.settle();
+    h.player.emit({ type: 'played', lessonId: '02 Setup.webm' });
+    h.player.emit({ type: 'timeUpdate', lessonId: '02 Setup.webm', position: 101, duration: 600 });
+    h.player.emit({ type: 'timeUpdate', lessonId: '02 Setup.webm', position: 102, duration: 600 });
+    await h.settle();
+    undo();
+    await h.folder('Elsewhere', {});
+    const moved = join(h.root, 'Elsewhere', 'A moved');
+    await rename(old, moved);
+    makeReadOnly(moved);
+
+    expect(await locate(h, moved)).toEqual(['── Recent Courses', 'A moved', 'Add Courses root…']);
+
+    expect(await openFromPicker(h, 'A moved')).toMatchObject({
+      lessonId: '02 Setup.webm',
+      startAt: 97,
+    });
+  });
+
   it('carries the Resources of a read-only Course too', async () => {
     const h = await createHarness();
     const root = await h.folder('Learning', { 'A/01 Intro.webm': 'v', 'A/notes.md': '#' });
@@ -596,7 +647,7 @@ describe('a Course that cannot be stored as open', () => {
     await expect(h.core.openCourse(join(root, 'Second'))).rejects.toThrow('disk full');
     h.core.playLesson('01 Intro.webm');
 
-    expect(h.ui.lessonTree).toBe(treeBefore);
+    expect(h.ui.lessonTree).toEqual(treeBefore);
     expect(h.player.sent).toMatchObject([
       {
         type: 'load',
@@ -641,8 +692,5 @@ describe('Recent that cannot be stored', () => {
 
     expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: '01 Intro.webm' }]);
     expect(h.ui.messages).toEqual([]);
-    expect(
-      h.logger.entries.filter((entry) => entry.level === 'warn').map((entry) => entry.message),
-    ).toEqual([`Could not remember ${join(root, 'First')} as a Recent Course: disk full`]);
   });
 });

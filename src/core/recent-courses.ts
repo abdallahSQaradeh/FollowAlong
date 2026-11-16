@@ -4,8 +4,10 @@
  * Course is a known Course for the scan (ADR 0032). The list is read and changed whole, through
  * the Storage port, so nothing here depends on VS Code.
  */
+import type { RecentCourse } from './course-picker.js';
+import { folderLabel, type ScannedCourse } from './course-scanner.js';
 import { keyOf, normalisedRoot } from './courses-roots.js';
-import type { KeyValueStore } from './ports.js';
+import { FileSystemError, type KeyValueStore, type Ports } from './ports.js';
 
 /** Global storage key of the list. */
 const recentKey = 'recentCourses';
@@ -13,37 +15,39 @@ const recentKey = 'recentCourses';
 /** How many Courses Recent keeps and the Course picker shows. */
 export const recentLimit = 5;
 
-/** The folder as Recent spells it: the one spelling of ADR 0022. `undefined` if not a full path. */
-function spelled(folder: string): string | undefined {
-  return normalisedRoot(folder);
+/** Each folder once, in the order given: the first of two spellings of one folder stays. */
+function onceEach(folders: readonly string[]): string[] {
+  const seen = new Map<string, string>();
+  for (const folder of folders) {
+    if (!seen.has(keyOf(folder))) {
+      seen.set(keyOf(folder), folder);
+    }
+  }
+  return [...seen.values()];
 }
 
 /** The Recent Courses' folders, newest first. Anything stored that is not a full path is ignored. */
 export function readRecent(store: KeyValueStore): readonly string[] {
   const stored = store.get(recentKey);
-  const folders = new Map<string, string>();
-  for (const entry of Array.isArray(stored) ? (stored as unknown[]) : []) {
-    const folder = typeof entry === 'string' ? spelled(entry) : undefined;
-    if (folder !== undefined && !folders.has(keyOf(folder))) {
-      folders.set(keyOf(folder), folder);
-    }
-  }
-  return [...folders.values()].slice(0, recentLimit);
+  const entries = Array.isArray(stored) ? (stored as unknown[]) : [];
+  const folders = entries.flatMap((entry) =>
+    typeof entry === 'string' ? (normalisedRoot(entry) ?? []) : [],
+  );
+  return onceEach(folders).slice(0, recentLimit);
 }
 
 /** Puts `folder` first, once, and drops what no longer fits. */
 export async function recordOpened(store: KeyValueStore, folder: string): Promise<void> {
-  const opened = spelled(folder);
+  const opened = normalisedRoot(folder);
   if (opened === undefined) {
     return;
   }
-  const others = readRecent(store).filter((other) => keyOf(other) !== keyOf(opened));
-  await store.set(recentKey, [opened, ...others].slice(0, recentLimit));
+  await store.set(recentKey, onceEach([opened, ...readRecent(store)]).slice(0, recentLimit));
 }
 
 /** Drops `folder` from Recent. */
 export async function removeRecent(store: KeyValueStore, folder: string): Promise<void> {
-  const removed = spelled(folder);
+  const removed = normalisedRoot(folder);
   await store.set(
     recentKey,
     readRecent(store).filter((other) => removed === undefined || keyOf(other) !== keyOf(removed)),
@@ -59,17 +63,48 @@ export async function relocateRecent(
   from: string,
   to: string,
 ): Promise<void> {
-  const source = spelled(from);
-  const target = spelled(to);
+  const source = normalisedRoot(from);
+  const target = normalisedRoot(to);
   if (target === undefined) {
     return;
   }
-  const folders = new Map<string, string>();
-  for (const folder of readRecent(store)) {
-    const moved = source !== undefined && keyOf(folder) === keyOf(source) ? target : folder;
-    if (!folders.has(keyOf(moved))) {
-      folders.set(keyOf(moved), moved);
+  const moved = readRecent(store).map((folder) =>
+    source !== undefined && keyOf(folder) === keyOf(source) ? target : folder,
+  );
+  await store.set(recentKey, onceEach(moved));
+}
+
+/** Whether the folder is gone: the folder is not there, or its drive is not. */
+async function isMissing(ports: Pick<Ports, 'fileSystem'>, folder: string): Promise<boolean> {
+  try {
+    await ports.fileSystem.readDirectory(folder);
+    return false;
+  } catch (error) {
+    if (error instanceof FileSystemError) {
+      // Any other failure (not allowed, not a folder) is for opening the Course to explain.
+      return error.reason === 'notFound';
     }
+    throw error;
   }
-  await store.set(recentKey, [...folders.values()]);
+}
+
+/** The Recent Courses as the Course picker shows them: named and filed as the scan has them. */
+export async function recentCourses(
+  ports: Pick<Ports, 'fileSystem'>,
+  folders: readonly string[],
+  scanned: readonly ScannedCourse[],
+): Promise<RecentCourse[]> {
+  const byFolder = new Map(scanned.map((course) => [keyOf(course.folder), course]));
+  return Promise.all(
+    folders.map(async (folder): Promise<RecentCourse> => {
+      const found = byFolder.get(keyOf(folder));
+      return {
+        folder,
+        name: found?.name ?? folderLabel(folder),
+        categories: found?.categories ?? [],
+        // A Course the scan found is there; any other is looked for.
+        missing: found === undefined && (await isMissing(ports, folder)),
+      };
+    }),
+  );
 }

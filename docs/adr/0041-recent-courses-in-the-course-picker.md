@@ -18,6 +18,10 @@ routed here.
   counts as opened: it is open in this window.
 - **One spelling**, the one of ADR 0022: resolved, and on Windows with an upper-case drive letter.
   Two spellings of one folder (compared without letter case on Windows) are one entry.
+- **Comparing folders.** Whether two paths name one Course, for the _(open)_ tag and for picking the
+  open Course again, is `sameFolder`: both resolved (no `.`/`..`, no trailing separator), the drive
+  letter upper-cased, and on Windows without regard to letter case. `C:\a\` and `C:\a` are one
+  Course.
 - **Recording Recent never fails an open.** A failing write is logged as a warning; the Course is
   open all the same.
 
@@ -29,6 +33,8 @@ routed here.
   can start one I haven't opened yet" (its reason): a Recent Course is not repeated in the A–Z list,
   as the Command Palette does not repeat a recently used command. A typed filter never shows one
   Course twice.
+- **The placeholder** says "Type a Course name to open it" whenever Recent is not empty, also with
+  no Courses root: the learner has Courses to pick.
 - **Recent Courses outside the Courses roots** (opened with a folder URI, later with _Browse…_)
   are listed too, and with no Courses root at all the picker is the Recent list and _Add Courses
   root…_.
@@ -81,6 +87,9 @@ routed here.
 
 - A global-storage write per open, and up to five folder reads per picker open for the Recent Courses
   the scan did not find.
+- A Recent folder that holds Lessons only deeper down, such as a category folder opened by mistake,
+  becomes one Course and its children are not listed beside it, as with a `.followalong` folder
+  (ADR 0032). It leaves the list after five other opens, or with _Remove_ once it is missing.
 - Recent is not carried to another machine; so is `coursesRoots`.
 - Windows letter case beyond the drive letter is not normalised (ADR 0022): a Course opened with
   another spelling is a second entry until the first leaves the list.

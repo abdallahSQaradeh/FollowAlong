@@ -43,4 +43,6 @@ was, so _Locate…_ can be tried again.
 
 - A new Course data file joins the two in `locateCourse` when it is added.
 - The open Course is not re-pointed: if its own folder moved while it is open, _Locate…_ fixes the
-  entry, and picking it then opens the Course at its new folder, like any other.
+  entry, and picking it then opens the Course at its new folder, like any other. Its Progress that
+  was not saved yet is saved first, so the carry takes it along. For a writable Course that save
+  cannot reach the folder that moved (ADR 0010), so what was played after the move is not kept.
