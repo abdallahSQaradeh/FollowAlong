@@ -17,10 +17,10 @@ const LESSON_PREFIX = /^Lesson\s+\d+\s*[-–—]\s*/iu;
  */
 export function cleanFileName(fileName: string, courseName: string): string {
   const stem = fileName.slice(0, fileName.length - extname(fileName).length).trim();
-  const suffix = ` _ ${courseName}`.toLowerCase();
-  const withoutCourse = stem.toLowerCase().endsWith(suffix)
-    ? stem.slice(0, stem.length - suffix.length)
-    : stem;
+  const suffix = ` _ ${courseName}`;
+  const cut = stem.length - suffix.length;
+  const withoutCourse =
+    cut > 0 && stem.slice(cut).toLowerCase() === suffix.toLowerCase() ? stem.slice(0, cut) : stem;
   const cleaned = withoutCourse.replace(LEADING_NUMBER, '').replace(LESSON_PREFIX, '').trim();
   return cleaned === '' ? stem : cleaned;
 }

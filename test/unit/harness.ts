@@ -244,8 +244,9 @@ export interface Harness {
   readonly root: string;
   /**
    * Makes reading `folder` (or a file) fail as it does for a folder the learner may not read
-   * (Windows "System Volume Information"). Containers often run as root, which reads everything, so the
-   * denial is applied at the File system port with the error the Node adapter gives for EACCES.
+   * (Windows "System Volume Information"). Containers often run as root, which reads everything,
+   * so the denial is applied at the File system port with the error the Node adapter gives for
+   * EACCES.
    */
   makeUnreadable(folder: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */

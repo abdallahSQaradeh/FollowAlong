@@ -136,6 +136,31 @@ describe('Lesson titles from a .txt title list', () => {
     expect(titles).toEqual(['One', 'Two']);
   });
 
+  it('finds the list in a wrapper folder that has an empty folder beside the Lessons', async () => {
+    const titles = await openedTitles(
+      {
+        'Wrapper/titles.txt': 'One\nTwo\n',
+        'Wrapper/Inner/a.mp4': 'v',
+        'Wrapper/Inner/b.mp4': 'v',
+        'Wrapper/Empty/readme.pdf': 'x',
+      },
+      'Course',
+    );
+
+    expect(titles).toEqual(['One', 'Two']);
+  });
+
+  it('tries the list of the outer wrapper before the one inside it', async () => {
+    const titles = await openedTitles({
+      'Outer/titles.txt': 'Outer one\nOuter two\n',
+      'Outer/Inner/titles.txt': 'Inner one\nInner two\n',
+      'Outer/Inner/a.mp4': 'v',
+      'Outer/Inner/b.mp4': 'v',
+    });
+
+    expect(titles).toEqual(['Outer one', 'Outer two']);
+  });
+
   it('does not take a .txt inside a Section for the Course title list', async () => {
     const titles = await openedTitles({
       'a.mp4': 'v',

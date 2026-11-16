@@ -7,8 +7,9 @@ trailing ` _ <Course name>` removed). These are the details it leaves open:
 
 - **Where the list can sit.** In the Course folder, or in a wrapper folder collapsed into it (the
   folders ADR 0007 shows no Section for). A `.txt` inside a Section is not the Course's list.
-  `readFolderListing` reads the text of `.txt` files only there, so a big Course does not read every
-  text file in it.
+  `readFolderListing` reads the text of `.txt` files only in the Course folder and in folders below
+  it that hold no Lesson of their own (possible wrappers), never in a folder that does hold
+  Lessons, so a big Course does not read every text file in it.
 - **Which list.** The `.txt` files are tried in natural order of their names, outermost folder
   first, and the first whose line count equals the Lesson count is used. A notes or README file
   with another line count never blocks the real list. A notes file that happens to have exactly the
@@ -22,13 +23,16 @@ trailing ` _ <Course name>` removed). These are the details it leaves open:
   opens with the next list, or with cleaned file names.
 - **File-name cleanup**, in this order, on the name without its extension:
   1. a trailing ` _ <Course name>` goes (case-insensitive). The Course name is the name of the
-     Course folder (its outermost wrapper, as in ADR 0007);
+     folder the learner opened as the Course, which is the outermost wrapper when they open that
+     one (ADR 0007); opening an inner folder names the Course after it;
   2. a leading number goes, with the separator after it (`01 `, `02. `, `03 - `, `04_`, `05)`),
      but not when the number is part of the title: `3D Graphics` and `1.5x Speed` keep theirs;
   3. a `Lesson N -` prefix goes (hyphen, en dash or em dash, any letter case), also after the
      number (`03 Lesson 3 - Loops`).
 
-  A name that cleanup would leave empty (`01.mp4`) keeps its name without the extension.
+  Cleanup is literal: `2024 Review` loses its `2024` like any leading number, and
+  `Lesson 3: Loops` keeps its prefix, since the spec names the `-` form. A name that cleanup
+  would leave empty (`01.mp4`) keeps its name without the extension.
 
 - **Ids are untouched.** A Lesson's `id` stays its path, so Progress and the pickers do not depend
   on titles.

@@ -26,7 +26,8 @@ export async function readFolderListing(
     (entry) => entry.kind === 'directory' && !isSkippedFolder(entry.name),
   );
   // Only the Course folder and a chain of possible wrapper folders can hold the title list.
-  const wrapperBelow = readsTitleLists && !files.some(isLessonFile) && subfolders.length === 1;
+  // A folder without Lessons of its own may be a wrapper; the model decides which one is.
+  const wrapperBelow = readsTitleLists && !files.some(isLessonFile);
   const folders: FolderListing[] = [];
   for (const entry of subfolders) {
     const subfolder = join(path, entry.name);

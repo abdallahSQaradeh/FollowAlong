@@ -29,7 +29,7 @@ A folder inside a Course that holds no Lessons of its own and only one other fol
 _Avoid_: Container folder, parent folder
 
 **Title list**:
-A `.txt` file in the Course folder with one line per Lesson, giving the instructor's real Lesson titles in Lesson order.
+A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with one line per Lesson, giving the instructor's real Lesson titles in Lesson order.
 _Avoid_: Index, table of contents, names file
 
 **Progress**:

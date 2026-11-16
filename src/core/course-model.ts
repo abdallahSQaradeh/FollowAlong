@@ -128,14 +128,18 @@ function titleListTexts(listing: FolderListing): string[] {
     .map(([, text]) => text);
   const [only, ...others] = listing.folders
     .filter((folder) => !isSkippedFolder(folder.name))
-    .filter((folder) => holdsLessons(outlineOf(folder, '', folder.name)));
+    .filter(holdsLessons);
   return !listing.files.some(isLessonFile) && only !== undefined && others.length === 0
     ? [...own, ...titleListTexts(only)]
     : own;
 }
 
-function holdsLessons({ lessons, sections }: Outline): boolean {
-  return lessons.length > 0 || sections.length > 0;
+/** Whether the folder holds a Lesson at any depth (hidden folders and `node_modules` aside). */
+function holdsLessons(listing: FolderListing): boolean {
+  return (
+    listing.files.some(isLessonFile) ||
+    listing.folders.some((folder) => !isSkippedFolder(folder.name) && holdsLessons(folder))
+  );
 }
 
 function withTitles({ lessons, sections }: Outline, titles: ReadonlyMap<string, string>): Outline {
