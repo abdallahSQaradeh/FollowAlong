@@ -46,13 +46,13 @@ export interface ResourceStore {
   relink(resourceId: string, absolutePath: string): Promise<boolean>;
 }
 
-type ResourceStorePorts = Pick<Ports, 'fileSystem' | 'storage' | 'ui' | 'logger'>;
+type ResourceStorePorts = Pick<Ports, 'fileSystem' | 'storage' | 'clock' | 'ui' | 'logger'>;
 
 export async function openResources(
   folder: string,
   ports: ResourceStorePorts,
 ): Promise<ResourceStore> {
-  const { fileSystem, ui, logger } = ports;
+  const { fileSystem, clock, ui, logger } = ports;
   const data: CourseData = openCourseData(folder, ports);
   let resources: ResourcesData = noResources;
   try {
@@ -155,7 +155,7 @@ export async function openResources(
     },
     async detach(resourceId) {
       const done = await change(`detaching ${resourceId}`, (stored) =>
-        withoutResource(stored, resourceId),
+        withoutResource(stored, resourceId, clock.now()),
       );
       if (done) {
         logger.log({ level: 'info', message: `Detached ${resourceId}` });
@@ -164,7 +164,7 @@ export async function openResources(
     },
     async relink(resourceId, absolutePath) {
       const done = await change(`relinking ${resourceId} to ${absolutePath}`, (stored) =>
-        withRelinkedResource(stored, resourceId, newResource(folder, absolutePath)),
+        withRelinkedResource(stored, resourceId, newResource(folder, absolutePath), clock.now()),
       );
       if (done) {
         logger.log({ level: 'info', message: `Relinked ${resourceId} to ${absolutePath}` });

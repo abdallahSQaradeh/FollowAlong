@@ -16,6 +16,12 @@ export interface ResourceRecord {
   /** Relative to the Course folder, with `/` separators, or absolute. */
   readonly path: string;
   readonly relative: boolean;
+  /**
+   * When the Resource was relinked (ms since the epoch); absent until it is. When two copies of
+   * the file (in the Course, and in the extension storage) both hold the Resource, the later
+   * relink wins (ADR 0039).
+   */
+  readonly changedAt?: number;
 }
 
 export interface ResourcesData {
@@ -26,15 +32,46 @@ export interface ResourcesData {
   readonly course: readonly ResourceRecord[];
   /** The Resources of each Lesson, by the Lesson's id, in the order they were attached. */
   readonly lessons: Readonly<Record<string, readonly ResourceRecord[]>>;
+  /**
+   * The Resources that were detached, by id, with the time they were (ms since the epoch). Present
+   * only once something was detached. It keeps an older copy of the file from bringing a detached
+   * Resource back when the two copies are merged (ADR 0039).
+   */
+  readonly detached?: Readonly<Record<string, number>>;
 }
 
 export const noResources: ResourcesData = { course: [], lessons: {} };
+
+function isTime(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function parseDetached(value: unknown): Record<string, number> {
+  const detached: Record<string, number> = {};
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    for (const [id, at] of Object.entries(value)) {
+      if (isTime(at)) {
+        detached[id] = at;
+      }
+    }
+  }
+  return detached;
+}
+
+/** `data`, with `detached` only when something was detached, so a file never grows a bare key. */
+function withDetached(
+  data: ResourcesData,
+  detached: Readonly<Record<string, number>>,
+): ResourcesData {
+  const { course, lessons } = data;
+  return Object.keys(detached).length === 0 ? { course, lessons } : { course, lessons, detached };
+}
 
 function parseRecord(value: unknown): ResourceRecord | undefined {
   if (typeof value !== 'object' || value === null) {
     return undefined;
   }
-  const { id, kind, path, relative: isRelative } = value as Record<string, unknown>;
+  const { id, kind, path, relative: isRelative, changedAt } = value as Record<string, unknown>;
   if (
     typeof id !== 'string' ||
     kind !== 'file' ||
@@ -43,7 +80,13 @@ function parseRecord(value: unknown): ResourceRecord | undefined {
   ) {
     return undefined;
   }
-  return { id, kind, path, relative: isRelative };
+  return {
+    id,
+    kind,
+    path,
+    relative: isRelative,
+    ...(isTime(changedAt) ? { changedAt } : {}),
+  };
 }
 
 function parseRecords(value: unknown): ResourceRecord[] {
@@ -52,25 +95,55 @@ function parseRecords(value: unknown): ResourceRecord[] {
     : [];
 }
 
-/** The records of `a`, then those of `b` whose id `a` does not have. */
+/** The later of the two versions of a Resource: the one relinked last, `a` when neither was. */
+function newer(a: ResourceRecord, b: ResourceRecord): ResourceRecord {
+  return (b.changedAt ?? 0) > (a.changedAt ?? 0) ? b : a;
+}
+
+/** Every Resource of either copy, in the order of `a`'s, then the ones only `b` has. */
 function unionById(
   a: readonly ResourceRecord[],
   b: readonly ResourceRecord[],
 ): readonly ResourceRecord[] {
+  const inB = new Map(b.map((record) => [record.id, record]));
   const known = new Set(a.map((record) => record.id));
-  return [...a, ...b.filter((record) => !known.has(record.id))];
+  return [
+    ...a.map((record) => {
+      const other = inB.get(record.id);
+      return other === undefined ? record : newer(record, other);
+    }),
+    ...b.filter((record) => !known.has(record.id)),
+  ];
 }
 
-/** Both copies of the Resources file (ADR 0005): per Lesson, every Resource of either copy. */
+/**
+ * Both copies of the Resources file (ADR 0005, ADR 0039): per Lesson, every Resource of either
+ * copy, the later relink of a Resource winning, and no Resource that was detached after it was last
+ * relinked in either copy.
+ */
 function mergeResources(a: ResourcesData, b: ResourcesData): ResourcesData {
-  const lessons: Record<string, readonly ResourceRecord[]> = { ...a.lessons };
-  for (const [lessonId, records] of Object.entries(b.lessons)) {
-    lessons[lessonId] = unionById(
-      Object.hasOwn(lessons, lessonId) ? (lessons[lessonId] ?? []) : [],
-      records,
-    );
+  const detached: Record<string, number> = { ...a.detached };
+  for (const [id, at] of Object.entries(b.detached ?? {})) {
+    detached[id] = Math.max(at, detached[id] ?? 0);
   }
-  return { course: unionById(a.course, b.course), lessons };
+  const alive = (records: readonly ResourceRecord[]): ResourceRecord[] =>
+    records.filter((record) => {
+      const at = Object.hasOwn(detached, record.id) ? detached[record.id] : undefined;
+      return at === undefined || (record.changedAt ?? 0) > at;
+    });
+  const lessons: Record<string, readonly ResourceRecord[]> = {};
+  for (const lessonId of new Set([...Object.keys(a.lessons), ...Object.keys(b.lessons)])) {
+    const records = alive(
+      unionById(
+        Object.hasOwn(a.lessons, lessonId) ? (a.lessons[lessonId] ?? []) : [],
+        Object.hasOwn(b.lessons, lessonId) ? (b.lessons[lessonId] ?? []) : [],
+      ),
+    );
+    if (records.length > 0) {
+      lessons[lessonId] = records;
+    }
+  }
+  return withDetached({ course: alive(unionById(a.course, b.course)), lessons }, detached);
 }
 
 /** `resources.json`, version 1. A malformed Resource is dropped; a malformed file is ignored. */
@@ -95,7 +168,8 @@ export const resourcesFile: CourseDataFile<ResourcesData> = {
         }
       }
     }
-    return { course: parseRecords(course), lessons: parsed };
+    const detached = parseDetached('detached' in data ? data.detached : undefined);
+    return withDetached({ course: parseRecords(course), lessons: parsed }, detached);
   },
   merge: mergeResources,
 };
@@ -153,13 +227,15 @@ export function withRelinkedResource(
   data: ResourcesData,
   id: string,
   target: ResourceRecord,
+  at: number,
 ): ResourcesData | undefined {
   if (findResource(data, id) === undefined) {
     return undefined;
   }
   const relink = (records: readonly ResourceRecord[]): ResourceRecord[] =>
-    records.map((record) => (record.id === id ? { ...target, id } : record));
+    records.map((record) => (record.id === id ? { ...target, id, changedAt: at } : record));
   return {
+    ...data,
     course: relink(data.course),
     lessons: Object.fromEntries(
       Object.entries(data.lessons).map(([lessonId, records]) => [lessonId, relink(records)]),
@@ -167,8 +243,15 @@ export function withRelinkedResource(
   };
 }
 
-/** `data` without the Resource with this id, or `undefined` when it holds no such Resource. */
-export function withoutResource(data: ResourcesData, id: string): ResourcesData | undefined {
+/**
+ * `data` without the Resource with this id, which it remembers as detached at time `at`, or
+ * `undefined` when it holds no such Resource.
+ */
+export function withoutResource(
+  data: ResourcesData,
+  id: string,
+  at: number,
+): ResourcesData | undefined {
   if (findResource(data, id) === undefined) {
     return undefined;
   }
@@ -179,7 +262,7 @@ export function withoutResource(data: ResourcesData, id: string): ResourcesData 
       .map(([lessonId, records]) => [lessonId, without(records)] as const)
       .filter(([, records]) => records.length > 0),
   );
-  return { course: without(data.course), lessons };
+  return withDetached({ course: without(data.course), lessons }, { ...data.detached, [id]: at });
 }
 
 /** The opener per file type, by extension without regard to case; every other type is a file. */

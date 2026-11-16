@@ -394,3 +394,61 @@ describe('in a read-only Course whose fallback Resources file cannot be read eit
     ]);
   });
 });
+
+describe('with a copy of the Resources file in the Course and one in the extension storage', () => {
+  const labels = (h: Harness): string[] =>
+    resourceNodes(h, 'intro.webm').map((resource) => resource.label);
+
+  it('keeps a Resource detached, although an older copy in the other location still holds it', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { 'intro.webm': 'video', 'a.md': '#', 'b.md': '#' });
+    await h.core.openCourse(course);
+    // The Course is read-only for a while: the Resource is kept in the extension storage.
+    const writableAgain = makeReadOnly(course);
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+    writableAgain();
+    h.restart();
+    await h.core.openCourse(course);
+    expect(labels(h)).toEqual(['a.md']);
+
+    await h.core.detachResource(resourceNamed(h, 'intro.webm', 'a.md').id);
+
+    h.restart();
+    await h.core.openCourse(course);
+    expect(labels(h)).toEqual([]);
+  });
+
+  /** A Course that was writable, with a.md attached, and is read-only from now on. */
+  async function becomesReadOnly(h: Harness): Promise<string> {
+    const course = await h.folder('Course', { 'intro.webm': 'video', 'a.md': '#', 'new.md': '#' });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+    makeReadOnly(join(course, '.followalong'));
+    makeReadOnly(course);
+    h.restart();
+    await h.core.openCourse(course);
+    return course;
+  }
+
+  it('shows the file a Resource was relinked to, not the one the older copy still holds', async () => {
+    const h = await createHarness();
+    const course = await becomesReadOnly(h);
+
+    await h.core.relinkResource(resourceNamed(h, 'intro.webm', 'a.md').id, join(course, 'new.md'));
+
+    h.restart();
+    await h.core.openCourse(course);
+    expect(labels(h)).toEqual(['new.md']);
+  });
+
+  it('keeps a Resource detached in a read-only Course, though its file still lists it', async () => {
+    const h = await createHarness();
+    const course = await becomesReadOnly(h);
+
+    await h.core.detachResource(resourceNamed(h, 'intro.webm', 'a.md').id);
+
+    h.restart();
+    await h.core.openCourse(course);
+    expect(labels(h)).toEqual([]);
+  });
+});
