@@ -45,7 +45,7 @@ A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with
 _Avoid_: Index, table of contents, names file
 
 **Progress**:
-How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done.
+How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done. A Lesson is in progress after 10 s of play, and done when its playhead reaches the last 5 % or the end. Done stays until the learner un-marks it, and a done Lesson saved in its last 5 % starts again at 0:00.
 _Avoid_: History, completion
 
 **Resource**:
