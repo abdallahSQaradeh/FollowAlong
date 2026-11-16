@@ -11,10 +11,37 @@
  */
 import type { Lesson } from './course-model.js';
 import type { Logger } from './logger.js';
-import type { PreparedSound, SoundRequest } from './sidecar-sound.js';
 
 /** How many Lessons after the opened one get their sound ahead of time. */
 const aheadCount = 3;
+
+/**
+ * What an MP4 Lesson's sound needs:
+ * - `sidecar`: its sound as an MP3 at `path`;
+ * - `none`: no sidecar, because the Lesson has no sound (`silent`), or its sound is one the page
+ *   decodes itself (`ownSound`).
+ */
+export type PreparedSound =
+  | { readonly kind: 'sidecar'; readonly path: string }
+  | { readonly kind: 'none'; readonly why: 'silent' | 'ownSound' };
+
+/** What preparing a Lesson's sound is told, and tells back. */
+export interface SoundRequest {
+  /** Aborting it stops the preparation, and rejects it. */
+  readonly signal: AbortSignal;
+  /**
+   * How far a conversion is, in whole percent: 0 when it starts, then as ffmpeg reports. Never
+   * called for a sound that was prepared before, or that needs no sidecar.
+   */
+  readonly onProgress: (percent: number) => void;
+  /**
+   * The sound codecs, by ffmpeg's names, the player page decodes in an MP4 besides AAC: what it
+   * reported in `ready` (ADR 0056). A Lesson with such sound plays its own track: a sidecar would
+   * play the sound twice (ADR 0034). Any other codec is converted, so a Lesson never stays silent
+   * because of a guess here.
+   */
+  readonly pageDecodes: ReadonlySet<string>;
+}
 
 /** Prepares one Lesson's sound, now: what the queue orders. */
 export type PrepareNow = (lesson: Lesson, request: SoundRequest) => Promise<PreparedSound>;
@@ -39,6 +66,13 @@ export interface SoundQueue {
   ): void;
   /** Stops all work and rejects what waits for it: the Course is closed. */
   stop(): void;
+}
+
+const stoppedMessage = 'The sound was stopped.';
+
+/** Why `signal` aborted, as an Error. */
+function stopReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error(stoppedMessage);
 }
 
 /** Someone waiting for a Lesson's sound: the opened Lesson. */
@@ -228,12 +262,10 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
     prepare(lesson, request) {
       const { signal, onProgress } = request;
       if (stopped) {
-        return Promise.reject(new Error('The sound was stopped.'));
+        return Promise.reject(new Error(stoppedMessage));
       }
       if (signal.aborted) {
-        return Promise.reject(
-          signal.reason instanceof Error ? signal.reason : new Error('The sound was stopped.'),
-        );
+        return Promise.reject(stopReason(signal));
       }
       failed.delete(lesson.id);
       const job = jobs.get(lesson.id) ?? newJob(lesson, request.pageDecodes);
@@ -253,9 +285,7 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
         const leave = (): void => {
           job.waiters.delete(waiter);
           dropUnneeded();
-          reject(
-            signal.reason instanceof Error ? signal.reason : new Error('The sound was stopped.'),
-          );
+          reject(stopReason(signal));
         };
         signal.addEventListener('abort', leave, { once: true });
         job.outcome.then(
@@ -284,8 +314,8 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
       stopped = true;
       ahead = [];
       for (const job of [...jobs.values()]) {
-        job.settle.reject(new Error('The sound was stopped.'));
-        drop(job, 'The sound was stopped.');
+        job.settle.reject(new Error(stoppedMessage));
+        drop(job, stoppedMessage);
       }
     },
   };
