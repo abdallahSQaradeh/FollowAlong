@@ -1,5 +1,6 @@
 node_modules/
 out/
+bin/
 .logs/
 .claude/logs/
 .vscode-test/

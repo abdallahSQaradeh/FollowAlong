@@ -67,8 +67,51 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+  ffmpeg:
+    name: ffmpeg (build the bundled LGPL ffmpeg.exe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # The key holds everything the binary depends on: the build script and the pinned versions,
+      # checksums and configure flags. Change one, and it is built again (ADR 0070).
+      - name: Restore the built ffmpeg
+        id: cache
+        uses: actions/cache@v5
+        with:
+          path: bin
+          key: ffmpeg-win32-x64-${{ hashFiles('scripts/build-ffmpeg.mjs', 'scripts/bundled-ffmpeg.json') }}
+
+      - name: Install mingw-w64 and nasm
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 make nasm xz-utils
+
+      - name: Build ffmpeg.exe from the pinned sources
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          BUILD_JOBS: '4'
+        run: node scripts/build-ffmpeg.mjs
+
+      - name: Show what was built
+        run: |
+          ls -l bin
+          cat bin/FFMPEG-BUILD.txt
+
+      - name: Upload ffmpeg-win32-x64
+        uses: actions/upload-artifact@v6
+        with:
+          name: ffmpeg-win32-x64
+          path: bin/
+          if-no-files-found: error
+
   windows:
-    name: windows (typecheck, unit, smoke, package)
+    name: windows (typecheck, unit, smoke, bundled ffmpeg, package)
+    needs: ffmpeg
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -80,6 +123,15 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Download the built ffmpeg
+        uses: actions/download-artifact@v6
+        with:
+          name: ffmpeg-win32-x64
+          path: bin
+
+      - name: Check the bundled ffmpeg runs, is LGPL, and converts AAC sound to MP3
+        run: node scripts/check-bundled-ffmpeg.mjs
 
       - name: Cache VS Code for the smoke test
         uses: actions/cache@v5
@@ -97,8 +149,19 @@ jobs:
         if: always()
         run: npm run check-logs
 
-      - name: Package the .vsix (once a package script exists)
-        run: npm run package --if-present
+      - name: Package the .vsix
+        run: npm run package
+
+      - name: The .vsix holds ffmpeg.exe, its licences and its source offer
+        shell: bash
+        run: |
+          tar -tf ./*.vsix | tee vsix-files.txt
+          for file in extension/bin/ffmpeg.exe extension/bin/FFMPEG-LICENSE-LGPL-2.1.txt \
+            extension/bin/LAME-LICENSE-LGPL.txt extension/bin/FFMPEG-BUILD.txt \
+            extension/scripts/build-ffmpeg.mjs extension/scripts/bundled-ffmpeg.json \
+            extension/THIRD_PARTY_NOTICES.txt; do
+            grep -qxF "$file" vsix-files.txt || { echo "::error::$file is not in the .vsix"; exit 1; }
+          done
 
       - name: Upload .vsix
         uses: actions/upload-artifact@v6

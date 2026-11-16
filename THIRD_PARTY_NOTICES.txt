@@ -188,3 +188,44 @@ Licensed under the Apache License, Version 2.0, reproduced below. Source: https:
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
+
+
+FFmpeg 7.1.1 and LAME 3.100 (`bin/ffmpeg.exe`, Windows x64 only)
+------------------------------------------------------------------
+
+Used by the audio sidecar to turn the sound of an MP4 Lesson (AAC, which VS Code cannot play) into
+MP3. FollowAlong starts `bin/ffmpeg.exe` as a separate program, only when the setting
+`followalong.ffmpegPath` is empty; the setting can name any other ffmpeg instead. FollowAlong's own
+code is not linked with it.
+
+  FFmpeg    Copyright (c) the FFmpeg developers. https://ffmpeg.org
+            Licensed under the GNU Lesser General Public License, version 2.1 or later.
+  LAME      Copyright (c) the LAME project. https://lame.sourceforge.io
+            Licensed under the GNU Lesser General Public License (version 2 or later); it is linked
+            statically into `ffmpeg.exe` through FFmpeg's libmp3lame encoder.
+
+This ffmpeg is a minimal LGPL build made for FollowAlong. It is built without `--enable-gpl` and
+without `--enable-nonfree`, and contains only the MP4 and WebM readers, the AAC decoder, the MP3
+encoder and writer, and the file protocol. It carries no patch: it is the unmodified FFmpeg and LAME
+sources below, configured with the options in `bin/FFMPEG-BUILD.txt`.
+
+The full licence texts are in `bin/FFMPEG-LICENSE-LGPL-2.1.txt` (FFmpeg's `COPYING.LGPLv2.1`) and
+`bin/LAME-LICENSE-LGPL.txt` (LAME's `COPYING`), next to `ffmpeg.exe` in this package.
+
+Source, and how to build it again. The exact sources are these tarballs, with the SHA-256 that the
+build checks them against:
+
+  FFmpeg 7.1.1  https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz
+                733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
+  LAME 3.100    https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
+                ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+
+The build is `scripts/build-ffmpeg.mjs` with `scripts/bundled-ffmpeg.json` (versions, checksums and
+every configure option), both included in this package: on Linux with mingw-w64, `node
+scripts/build-ffmpeg.mjs` produces the same `ffmpeg.exe`. Everything needed to rebuild it is the
+two public tarballs above plus those two files, which are in this package. This is also
+FollowAlong's written offer: for as long as this version of FollowAlong is distributed, and for at
+least three years after, anyone who has this package can ask the publisher for a copy of those
+tarballs on a medium customarily used for software interchange, for the cost of making it. You may
+replace the bundled program with an ffmpeg of your own, built from modified sources: set
+`followalong.ffmpegPath` to it, and FollowAlong runs that one instead.
