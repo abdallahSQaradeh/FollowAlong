@@ -329,7 +329,10 @@ describe('the Course picker', () => {
   it('skips a Courses root that is not an absolute path, and says so once', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', { 'Some Course/intro.webm': 'v' });
-    h.config.set('coursesRoots', ['.', '~', `relative${sep}folder`, learning]);
+    // On Windows a rooted path without a drive (`\Learning`) is not a full path either: it would
+    // name a folder on whatever drive VS Code runs from.
+    const driveless = process.platform === 'win32' ? ['\\Learning', '/Learning'] : [];
+    h.config.set('coursesRoots', ['.', '~', `relative${sep}folder`, ...driveless, learning]);
 
     const first = h.core.pickCourse();
     await h.ui.pickerShown();
@@ -344,7 +347,7 @@ describe('the Course picker', () => {
     expect(h.ui.messages).toEqual([
       {
         severity: 'warning',
-        text: `FollowAlong skips the Courses roots “.”, “~”, “relative${sep}folder”: a Courses root must be a full path, such as D:\\Learning.`,
+        text: `FollowAlong skips the Courses roots ${['.', '~', `relative${sep}folder`, ...driveless].map((entry) => `“${entry}”`).join(', ')}: a Courses root must be a full path, such as D:\\Learning.`,
       },
     ]);
     expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([

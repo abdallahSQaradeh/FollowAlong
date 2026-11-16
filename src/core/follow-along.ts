@@ -536,6 +536,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
+    // A save timer left from the Lesson before must not write into this Lesson's Course.
+    stopSaving();
     current = { lesson, startAt, autoplay, engaged: false, startSeekPending: false };
     // Nothing is known about this Lesson until the player loads it and reports.
     resetPlayhead(false);
@@ -613,43 +615,50 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (superseded()) {
       return;
     }
-    // The Lesson playing now is left only once the new Course can be opened.
-    const hadLesson = current !== undefined;
-    await leaveCurrent();
-    // Read first, then switch, so no click sees one Course's Resources next to another's folder.
-    const data = openCourseData(folder, ports);
-    const stored = await readResources(data, folder);
-    const inOrder = lessonsInOrder(course);
-    const first = inOrder[0];
-    const recorder = first === undefined ? undefined : await openProgress(folder, ports);
-    openedCourse = course;
-    courseData = data;
-    resources = stored;
-    progress = recorder;
-    if (first === undefined || recorder === undefined) {
-      const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
-      ui.showLessonTree({ message: text, nodes: [] });
-      ui.showMessage({ severity: 'warning', text });
-      // The player still shows the Lesson it had, but this Course has none to offer: the
-      // commands and the status bar items follow the Course the learner opened.
-      // The video would play on with every control gone, so it is stopped first.
-      if (hadLesson && playerReady) {
-        player.send({ type: 'pause' });
+    // From leaving the Lesson that plays to playing the new Course's, no other Lesson may start:
+    // it would be loaded from the Course being left and recorded into the new one's Progress.
+    switching = true;
+    try {
+      // The Lesson playing now is left only once the new Course can be opened.
+      const hadLesson = current !== undefined;
+      await leaveCurrent();
+      // Read first, then switch, so no click sees one Course's Resources next to another's folder.
+      const data = openCourseData(folder, ports);
+      const stored = await readResources(data, folder);
+      const inOrder = lessonsInOrder(course);
+      const first = inOrder[0];
+      const recorder = first === undefined ? undefined : await openProgress(folder, ports);
+      openedCourse = course;
+      courseData = data;
+      resources = stored;
+      progress = recorder;
+      if (first === undefined || recorder === undefined) {
+        const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
+        ui.showLessonTree({ message: text, nodes: [] });
+        ui.showMessage({ severity: 'warning', text });
+        // The player still shows the Lesson it had, but this Course has none to offer: the
+        // commands and the status bar items follow the Course the learner opened.
+        // The video would play on with every control gone, so it is stopped first.
+        if (hadLesson && playerReady) {
+          player.send({ type: 'pause' });
+        }
+        unloadLesson();
+        return;
       }
-      unloadLesson();
-      return;
-    }
-    await storage.workspace.set(openCourseKey, folder);
-    ui.showLessonTree(buildLessonTree(course, resources));
-    logger.log({ level: 'info', message: `Opened Course ${folder}` });
-    const saved = recorder.current();
-    const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
-    if (last === undefined) {
-      // A Lesson the learner did not ask for in this session does not start by itself.
-      play(course, first, 0, !restoring);
-    } else {
-      // Back where the learner left off, paused: no autoplay, no prompt (spec #12, Resume).
-      play(course, last, resumePosition(saved, last.id), false);
+      await storage.workspace.set(openCourseKey, folder);
+      ui.showLessonTree(buildLessonTree(course, resources));
+      logger.log({ level: 'info', message: `Opened Course ${folder}` });
+      const saved = recorder.current();
+      const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
+      if (last === undefined) {
+        // A Lesson the learner did not ask for in this session does not start by itself.
+        play(course, first, 0, !restoring);
+      } else {
+        // Back where the learner left off, paused: no autoplay, no prompt (spec #12, Resume).
+        play(course, last, resumePosition(saved, last.id), false);
+      }
+    } finally {
+      switching = false;
     }
   }
 
@@ -732,6 +741,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
   function playLesson(lessonId: string): void {
+    if (switching) {
+      logger.log({
+        level: 'info',
+        message: `Not playing ${lessonId}: another Course is opening.`,
+      });
+      return;
+    }
     const course = openedCourse;
     const lesson = course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
     if (course === undefined || lesson === undefined) {
@@ -757,6 +773,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let opening: Promise<void> = Promise.resolve();
   /** How many opens were asked for: the number of the latest, which is the one that wins. */
   let openRequests = 0;
+  /** Set while an open has left the Lesson that played and has not played the new Course yet. */
+  let switching = false;
   function openInTurn(folder: string, restoring: boolean): Promise<void> {
     openRequests += 1;
     const request = openRequests;

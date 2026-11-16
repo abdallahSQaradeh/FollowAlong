@@ -22,14 +22,25 @@ export interface CoursesRoots {
 
 /**
  * The one spelling of a root: resolved (no `.` or `..` segments, no trailing separator) and, on
- * Windows, with an upper-case drive letter. `undefined` for a path that is not absolute, which
- * could otherwise resolve against whatever folder VS Code runs in.
+ * Windows, with an upper-case drive letter. `undefined` for a path that is not a full path, which
+ * could otherwise resolve against whatever folder or drive VS Code runs in.
  */
 function normalisedRoot(path: string): string | undefined {
-  if (!isAbsolute(path)) {
+  if (!isFullPath(path)) {
     return undefined;
   }
   return resolve(path).replace(/^([a-z]):/, (drive) => drive.toUpperCase());
+}
+
+/**
+ * Whether `path` names one folder wherever VS Code runs. On Windows that takes a drive (`D:\`) or
+ * a share (`\\server\share`): `\Learning` counts as absolute there, but on whichever drive
+ * VS Code happens to run from.
+ */
+function isFullPath(path: string): boolean {
+  return caseInsensitive
+    ? /^([a-zA-Z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)/.test(path)
+    : isAbsolute(path);
 }
 
 /** What two spellings of one folder share, for comparing roots. */

@@ -177,7 +177,32 @@ class MemoryStore implements KeyValueStore {
 
   set(key: string, value: unknown): Promise<void> {
     this.values.set(key, structuredClone(value));
+    const gate = this.gate;
+    if (gate !== undefined) {
+      this.gate = undefined;
+      gate.reach();
+      return gate.released;
+    }
     return this.settlesLater ? new Promise((resolve) => setImmediate(resolve)) : Promise.resolve();
+  }
+
+  private gate: { readonly reach: () => void; readonly released: Promise<void> } | undefined;
+
+  /**
+   * Holds the next `set` until `release` is called, as a slow disk would. `reached` settles when
+   * that `set` has been called, so a test can act at exactly that moment.
+   */
+  holdNextSet(): { readonly reached: Promise<void>; release(): void } {
+    let reach = (): void => undefined;
+    let release = (): void => undefined;
+    const reached = new Promise<void>((resolve) => {
+      reach = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.gate = { reach, released };
+    return { reached, release };
   }
 }
 
@@ -422,6 +447,11 @@ export interface Harness {
    * or network drive would, so a test can make reads finish in another order than they started.
    */
   holdReads(folder: string): () => void;
+  /**
+   * Holds the next write to the workspace state (a Course open stores its folder there) until
+   * `release` is called; `reached` settles once the write has started.
+   */
+  holdWorkspaceWrite(): { readonly reached: Promise<void>; release(): void };
   /** Undoes {@link Harness.makeUnreadable}: the path reads as usual again. */
   makeReadable(path: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
@@ -450,9 +480,10 @@ export async function createHarness(): Promise<Harness> {
   const ui = new RecordingUi();
   const logger = new RecordingLogger();
   const terminalSettings = new FakeTerminalSettings();
+  const workspace = new MemoryStore(true);
   const storage: Storage = {
     global: new MemoryStore(),
-    workspace: new MemoryStore(true),
+    workspace,
     folder: join(root, 'extension-storage'),
   };
   const nodeFileSystem = createNodeFileSystem();
@@ -528,6 +559,9 @@ export async function createHarness(): Promise<Harness> {
     root,
     makeUnreadable(folder) {
       unreadable.add(folder);
+    },
+    holdWorkspaceWrite() {
+      return workspace.holdNextSet();
     },
     holdReads(folder) {
       let release = (): void => undefined;

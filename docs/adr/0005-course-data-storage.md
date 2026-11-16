@@ -38,7 +38,10 @@ readable.
 ## Consequences
 
 - The fallback key is the absolute path as given. The Course picker must pass the same spelling of
-  a path each time (Windows paths are case-insensitive).
+  a path each time (Windows paths are case-insensitive). ADR 0022: it does, for every Course it
+  lists, and the drive letter is always upper case. A Course opened another way with other letter
+  case in the rest of its path still gets a second key, so a read-only Course's data can be split
+  between the two spellings.
 - A Course that becomes read-only after FollowAlong wrote to it keeps its old `.followalong` files.
   In a later session, reads prefer them over the newer fallback files until a write falls back
   again, unless the file defines a `merge`: then both copies are read and merged. Progress does

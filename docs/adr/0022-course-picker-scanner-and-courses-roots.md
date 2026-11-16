@@ -18,14 +18,23 @@ the setting, the scanner and the picker model. These are the choices spec #12 le
   segments, no trailing separator) and, on Windows, with an upper-case drive letter. Two entries
   for one folder (`D:\Learning`, `D:\Learning\`, and on Windows `d:\learning`, compared
   without letter case) count once, and _Add Courses root…_ does not add a root that is already
-  there in any spelling. A Course's path is its normalised root joined with folder names, so the
-  same Course always has the same spelling, as ADR 0005 needs for the fallback-storage key, and
-  its Progress is never split between two keys. Where a path comes from VS Code (the folder
-  dialog, a folder URI passed to _Open Course…_), the adapter also upper-cases the drive letter
-  that VS Code's `fsPath` spells in lower case.
-- **Only full paths.** An entry that is not absolute (`.`, `~`, `Courses`) is skipped, with one
-  warning per window naming it: it would resolve against whatever folder VS Code runs in, and,
-  as one of the player's folders, could hand the page a whole disk.
+  there in any spelling. Where a path comes from VS Code (the folder dialog, a folder URI passed
+  to _Open Course…_), the adapter also upper-cases the drive letter that VS Code's `fsPath` spells
+  in lower case.
+- **What that guarantees, and what not.** A Course reached through the picker always has the same
+  spelling: its root's first spelling in the setting, joined with folder names as the disk lists
+  them. Only the drive letter is normalised, though, never the rest of a path's letter case. A
+  Course opened another way with other letter case (the setting says `D:\learning`, a folder
+  opened from Explorer says `D:\Learning`) is spelled differently there. For a read-only Course,
+  whose Course data is keyed by its absolute path (ADR 0005), that is a second key: its Progress
+  and Resources are split between the two spellings. Writable Courses keep theirs in
+  `.followalong` and are not affected. Making Windows paths canonical (`realpath.native`) would
+  need a new File system port call, and is left for when such a split is seen (Manual QA).
+- **Only full paths.** An entry that is not a full path is skipped, with one warning per window
+  naming it: `.`, `~` and `Courses` everywhere, and on Windows also a rooted path without a drive
+  (`\Learning`, `/Learning`), which names a folder on whatever drive VS Code runs from. Such a
+  path would resolve against VS Code's own folder or drive and, as one of the player's folders,
+  could hand the page a whole disk.
 - **A changed setting is not acted on at once.** The player's folders follow the setting at the
   next Lesson shown. Narrowing them live would reload the page under the Lesson that plays, at
   0:00 and without the click (#12 D3), for a page that only fetches what the core sends it.
