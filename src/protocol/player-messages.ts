@@ -51,9 +51,15 @@ export type PlayerCommand =
    */
   | { readonly type: 'soundReady'; readonly audioUri: string }
   /**
-   * The loaded MP4 Lesson's sound could not be prepared: the player stops waiting for it and lets
-   * the video play without sound (ADR 0034). Ticket #42 replaces that with an overlay and a "Play
-   * without sound" button.
+   * How far the loaded MP4 Lesson's sound is prepared, in whole percent from 0 to 100: the player
+   * shows "Preparing sound… N%" over the first frame (ADR 0055). Sent after the `load` it belongs
+   * to, and only while that `load` is the current one.
+   */
+  | { readonly type: 'soundProgress'; readonly percent: number }
+  /**
+   * The loaded MP4 Lesson's sound could not be prepared: the player shows `message` over the first
+   * frame with a "Play without sound" button, and waits for it (ADR 0055). Sent after the `load`
+   * it belongs to.
    */
   | { readonly type: 'soundFailed'; readonly message: string }
   /**
@@ -84,7 +90,16 @@ export interface AboutLesson {
 
 /** Player → extension. */
 export type PlayerEvent =
-  | { readonly type: 'ready'; readonly aacSupported: boolean }
+  | {
+      readonly type: 'ready';
+      readonly aacSupported: boolean;
+      /**
+       * The sound codecs besides AAC the page decodes in an MP4, by ffmpeg's names (`mp3`, `opus`,
+       * `flac`), from its `canPlayType` (ADR 0056). An MP4 Lesson with such sound plays its own
+       * track and gets no sidecar. Optional: a page that omits it decodes none of them.
+       */
+      readonly soundCodecs?: readonly string[];
+    }
   | (AboutLesson & {
       readonly type: 'timeUpdate';
       readonly position: number;
@@ -105,6 +120,11 @@ export type PlayerEvent =
   | (AboutLesson & { readonly type: 'error'; readonly message: string })
   /** The learner clicked the "Next: <title>" overlay shown for this Lesson's end. */
   | (AboutLesson & { readonly type: 'nextClicked' })
+  /**
+   * The learner chose "Play without sound" after the sound failed to prepare (ADR 0055). The player
+   * has already started the picture alone; this tells the extension the choice was made.
+   */
+  | (AboutLesson & { readonly type: 'playWithoutSound' })
   /**
    * The learner finished an interaction with the player page (a click, a key, a native control,
    * the release of a seek-bar drag), so the extension hands keyboard focus back to the Practice
@@ -129,6 +149,16 @@ export function zoomLabel(level: number): string {
 export function shownZoomLevel(level: number): number {
   return Number(level.toFixed(1));
 }
+
+/**
+ * The sound codecs besides AAC that the player page is asked about (`ready {soundCodecs}`, ADR 0056):
+ * ffmpeg's name for each, and the codec string `canPlayType('audio/mp4; codecs="…"')` is asked.
+ */
+export const pageSoundCodecs = [
+  ['mp3', 'mp4a.6B'],
+  ['opus', 'opus'],
+  ['flac', 'flac'],
+] as const;
 
 /** The closest the player zooms in (from the prototype: further is only blur), ADR 0037. */
 export const maxZoomLevel = 8;
@@ -205,6 +235,10 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return isText(raw.title) ? { type: 'showNext', title: raw.title } : undefined;
     case 'soundReady':
       return isText(raw.audioUri) ? { type: 'soundReady', audioUri: raw.audioUri } : undefined;
+    case 'soundProgress':
+      return typeof raw.percent === 'number' && raw.percent >= 0 && raw.percent <= 100
+        ? { type: 'soundProgress', percent: raw.percent }
+        : undefined;
     case 'soundFailed':
       return isText(raw.message) ? { type: 'soundFailed', message: raw.message } : undefined;
     case 'noSidecar':
@@ -223,8 +257,15 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
   }
   const { type, lessonId } = raw;
   if (type === 'ready') {
-    return typeof raw.aacSupported === 'boolean'
-      ? { type, aacSupported: raw.aacSupported }
+    const { aacSupported, soundCodecs } = raw;
+    if (typeof aacSupported !== 'boolean') {
+      return undefined;
+    }
+    if (soundCodecs === undefined) {
+      return { type, aacSupported };
+    }
+    return Array.isArray(soundCodecs) && soundCodecs.every(isText)
+      ? { type, aacSupported, soundCodecs: [...soundCodecs] }
       : undefined;
   }
   if (type === 'userInteracted') {
@@ -257,6 +298,7 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
     case 'played':
     case 'ended':
     case 'nextClicked':
+    case 'playWithoutSound':
       return { type, ...about };
     case 'rateChanged':
       return isRate(raw.rate) ? { type, ...about, rate: raw.rate } : undefined;
