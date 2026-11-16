@@ -9,10 +9,15 @@ import type { Config } from './ports.js';
 /** The `followalong.autoPause` setting. */
 export type AutoPauseMode = 'off' | 'pause' | 'pauseAndResume';
 
+/** Whether `value` is a mode in which auto-pause acts. */
+export function isAutoPauseOnMode(value: unknown): value is Exclude<AutoPauseMode, 'off'> {
+  return value === 'pause' || value === 'pauseAndResume';
+}
+
 /** The setting as the learner has it; anything else (unset, a hand-edited typo) is `off`. */
 export function readAutoPauseMode(config: Pick<Config, 'get'>): AutoPauseMode {
   const value = config.get('autoPause');
-  return value === 'pause' || value === 'pauseAndResume' ? value : 'off';
+  return isAutoPauseOnMode(value) ? value : 'off';
 }
 
 /**
@@ -69,8 +74,9 @@ export type AutoPauseInput =
   | { readonly type: 'lessonOver' }
   /**
    * The Quiet period of `pauseAndResume` passed with no edit. `canResume`: the page auto-pause
-   * paused the Lesson in still holds it, is ready, has reported it paused, and is not being moved. `playAsked`: a `play` is on its way to the player
-   * (the learner's), whose answer ends the auto-pause.
+   * paused the Lesson in still holds it, is ready, has reported it paused, and is not being
+   * moved. `playAsked`: a `play` is on its way to the player (the learner's), whose answer ends
+   * the auto-pause.
    */
   | { readonly type: 'quiet'; readonly canResume: boolean; readonly playAsked: boolean };
 

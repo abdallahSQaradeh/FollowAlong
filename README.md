@@ -39,6 +39,10 @@ stays on top of VS Code; resize it with its edges. It is never the default, beca
 moves the focus out of the main window. Closing that window closes the Lesson's player, as closing its
 tab does; its Progress is saved, and the next Lesson opens where `followalong.videoLocation` says.
 
+Press `Ctrl+'` then `A` (or run **FollowAlong: Toggle Auto-pause**) to switch auto-pause off, or back
+on in the mode you used last (`pause` the first time). Press `Ctrl+'` then `R` (or run
+**FollowAlong: Attach Resource**) to attach a file to the Lesson that plays.
+
 ## Develop
 
 Read `AGENTS.md` and `CODING_STANDARDS.md` first. `npm run build` bundles the extension into

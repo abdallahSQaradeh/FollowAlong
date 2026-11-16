@@ -138,6 +138,7 @@ export async function run(): Promise<void> {
     'followalong.attachToLoadedLesson',
     'followalong.moveVideo',
     'followalong.toggleVideo',
+    'followalong.toggleAutoPause',
     'followalong.toggleLessonDone',
     'followalong.markLessonDone',
     'followalong.markLessonNotDone',
@@ -210,9 +211,14 @@ export async function run(): Promise<void> {
   say('the audio cache limit defaults to 5 GB');
 
   chordCommandsAreBound(extension.packageJSON, [
-    ['attachToLoadedLesson', 'Attach Resource', "ctrl+' a"],
+    ['attachToLoadedLesson', 'Attach Resource', "ctrl+' r"],
   ]);
-  say("FollowAlong: Attach Resource is in the Command Palette, bound to Ctrl+' A");
+  say("FollowAlong: Attach Resource is in the Command Palette, bound to Ctrl+' R");
+
+  chordCommandsAreBound(extension.packageJSON, [
+    ['toggleAutoPause', 'Toggle Auto-pause', "ctrl+' a"],
+  ]);
+  say("FollowAlong: Toggle Auto-pause is in the Command Palette, bound to Ctrl+' A");
 
   chordCommandsAreBound(extension.packageJSON, [['toggleVideo', 'Toggle video', "ctrl+' v"]]);
   say("FollowAlong: Toggle video is in the Command Palette, bound to Ctrl+' V");
