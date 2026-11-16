@@ -244,30 +244,30 @@ async function aClickOnThePicture(
   const from = events.length;
   try {
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-    const frames = () =>
-      browser
-        .contexts()
-        .flatMap((context) => context.pages())
-        .flatMap((page) => page.frames());
-    // The player page is a frame inside the webview's frame, inside the workbench page.
-    const findOverlay = async () => {
-      for (const frame of frames()) {
-        const found = frame.locator('.overlay');
-        if ((await found.count().catch(() => 0)) === 1) {
-          return found;
+    const pages = () => browser.contexts().flatMap((context) => context.pages());
+    // The player page lives in an out-of-process frame that the DevTools connection does not
+    // list, so the click goes to the workbench page at the middle of the player's <iframe>: the
+    // middle of the picture. Chromium routes it into the player as real input.
+    const player = await waitForAsync('the player <iframe> in the VS Code window', async () => {
+      for (const page of pages()) {
+        const frames = page.locator('iframe[src^="vscode-webview:"]');
+        if ((await frames.count().catch(() => 0)) === 1) {
+          const box = await frames.boundingBox();
+          if (box !== null && box.width > 0 && box.height > 0) {
+            return { page, box };
+          }
         }
       }
       return undefined;
-    };
-    const overlay = await waitForAsync(
-      'the player page among the VS Code frames',
-      findOverlay,
-    ).catch((error: unknown) => {
-      // Say which frames there were, so a failure in CI can be read without a rerun.
-      const seen = frames().map((frame) => frame.url() || '(no URL)');
-      throw new Error(`${String(error)}; frames seen: ${seen.join(', ') || 'none'}`);
+    }).catch((error: unknown) => {
+      // Say which pages there were, so a failure in CI can be read without a rerun.
+      const seen = pages().map((page) => page.url() || '(no URL)');
+      throw new Error(`${String(error)}; pages seen: ${seen.join(', ') || 'none'}`);
     });
-    await overlay.click({ timeout: 10_000 });
+    await player.page.mouse.click(
+      player.box.x + player.box.width / 2,
+      player.box.y + player.box.height / 2,
+    );
 
     const expected = wasPlaying ? 'paused' : 'played';
     await waitFor(`the player to report ${expected} after the click`, () =>
