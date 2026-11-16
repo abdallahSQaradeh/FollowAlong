@@ -14,9 +14,14 @@ caller catches up with what the other window wrote. D5 as amended (spec #12) hol
 too: a copy that has turned unreadable meanwhile (damaged, or rewritten by a newer FollowAlong) is
 never written over. The data goes to the fallback storage and the learner is told once, as when
 the Course opened with it (ADR 0005, ADR 0010). A copy that read fine until now and fails to read
-outright at a write (an antivirus scan holding it for a moment) is neither written over nor sent
-elsewhere: that one save fails, and the next reads it again (ADR 0010's "a passing lock does not
-divert saves"). Only a copy that keeps failing goes the fallback way. Reads already take the newest per Lesson across
+outright at a write (an antivirus scan holding it for a moment) is read again, up to 3 times,
+under the lock. If it still cannot be read, it is neither written over nor sent elsewhere
+(ADR 0010's "a passing lock does not divert saves"). The write rejects with `CourseDataBusyError`,
+the Progress store logs it once, keeps the data and saves it at the next save, and the learner is
+told nothing. Only a copy that keeps failing goes the fallback way. The one loss left is when the
+window's last save, as it closes, meets such a hold: the place since the save before is lost, and a
+log line says so. Retries are immediate, with no wait: the core has no real-time wait on the
+learner's path (gate return 1 on PR #105). Reads already take the newest per Lesson across
 `.followalong` and the fallback (ADR 0010), so nothing changes there.
 
 The Resources follow the same rule. Their changes already re-read the file first (ADR 0039), and
@@ -39,7 +44,7 @@ adapter:
   leaves behind (a write takes milliseconds). Each lock holds a token of the window that made it.
   A takeover removes the old lock only if it still holds the token first read, and a window gives
   back only a lock that holds its own token. So a window never removes a lock another window has
-  just taken. A lock that cannot be removed is waited on, never taken for a read-only folder.
+  just taken. A lock that cannot be removed is waited on, never taken for a read-only folder. A lock whose token cannot be read is judged by its age alone, and a lock made whose token could not be written (a full disk) is removed at once, so none is left without an owner.
   **Residual case:** two windows that both find the same lock left behind can still both win, in
   one way. The second re-reads the old token after the first has removed the lock, then removes
   the first one's new lock before the first has written its token. That window is the few
@@ -66,14 +71,21 @@ playing it with the entry it read earlier, and saves its place a moment later. B
 so A's done mark would go (#26 left this to #27, ADR 0030). So an entry now has two stamps:
 
 - `savedAt`: when its place (`position`, `duration`) was saved;
-- `statusAt`: when its status was last set, by play crossing a threshold (10 s of play, the last
-  5 %, `ended`), or by hand (mark done, reset). An entry without it is read as `savedAt` when it
-  has a status, else as never (0). It is written only when it differs from that.
+- `statusAt`: when the learner last set its status by hand (mark done, reset), or 0 when never.
+  Play raises a status (10 s of play, the last 5 %, `ended`, ADR 0030) but keeps the stamp of the
+  status it rose from. So play in a window that had not seen another window's mark or reset carries
+  an older stamp and loses to it. Play after this window's own reset carries the reset's stamp and
+  beats a done mark another window still holds. An entry without `statusAt` is read as `savedAt`:
+  it was written before the field existed (every reset of ADR 0061 among them) or by an older
+  FollowAlong, and its whole entry was saved then. So it is written only when it differs from
+  `savedAt`, and a status never set is written as `statusAt: 0`.
 
 Merging two entries of one Lesson takes the place with the later `savedAt` and the status with the
-later `statusAt`; the first copy wins a tie. One exception: in progress never replaces done. Play
-only raises a status (ADR 0030), so a later in progress is play in a window that had not seen the
-mark yet. Only a reset, a later not started, un-marks a done Lesson. Every change is stamped after the entry it replaces,
+later `statusAt`; the first copy wins a tie. There is no exception for done. (A first version made
+in progress never replace done, and stamped play with the time of the raise. Then a reset followed
+by play lost to the other window's stale done mark: gate return 1 on PR #105, HARD 1. A first
+version also read a missing `statusAt` as never on entries without a status, so a pre-#27 reset
+lost to an older done in the other copy: HARD 2.) Every change is stamped after the entry it replaces,
 recorded play included (`savedAfter`, ADR 0061). A window's own last write comes back at its next
 write, through the re-read, and must never win over what that window did since.
 
@@ -83,12 +95,14 @@ write, through the re-read, and must never win over what that window did since.
 | A marks done while B's place is newer than anything A read                                               | done, at B's place (mark done changes only the status)                                                               |
 | A resets; B then writes a place stamped before the reset (B's write landed late, or B's clock is behind) | reset: 0:00, not started                                                                                             |
 | A resets; B then saves a place stamped after the reset                                                   | B's place counts again; the status stays reset until B's play sets one                                               |
-| A marks done; B, which had not seen it, then plays past 10 s and saves                                   | done, at B's place (in progress never replaces done)                                                                 |
+| A marks done; B, which had not seen it, then plays past 10 s and saves                                   | done, at B's place (B's in progress keeps its old stamp)                                                             |
+| B still has the Lesson done; A resets it, plays it past 10 s and saves; B then saves                     | in progress, at A's place (A's play keeps the reset's stamp, newer than B's done)                                    |
+| `.followalong` holds a reset written before `statusAt`; the fallback holds an older done mark            | reset (the reset's `statusAt` is its `savedAt`)                                                                      |
 | B still had the Lesson done when A reset it, and B saves a newer place                                   | B's place, not done: B's done mark is older than the reset                                                           |
 | A resets the whole Course                                                                                | every Lesson of the Course gets a reset entry, also those only B saved, and `last` is reset even when A knew of none |
 
-A reset still writes a reset entry rather than removing one (ADR 0061). It now carries `statusAt`
-too, so it beats an older done mark in the other copy.
+A reset still writes a reset entry rather than removing one (ADR 0061). Its `statusAt` is its
+`savedAt`, so it beats an older done mark in the other copy.
 
 ## Two machines on one share
 
@@ -113,7 +127,10 @@ one look fresh (then each save waits 2 s and goes ahead).
   is optional and additive, so a FollowAlong that knows only version 1 still reads the file. A
   version 2 file would be unreadable to it, and under D5 it would then keep its Progress elsewhere
   rather than write over the file. Such a reader drops `statusAt` when it writes, and the entries
-  then read with the defaults above (a status set at `savedAt`, or never).
+  then read with the default above (a status set at `savedAt`).
+  Mixed builds have one more gap. Mark done keeps the entry's old `savedAt` (it changes only the
+  status), so a FollowAlong from before #27 merges a newer place from another window over the
+  whole entry and drops the done mark. The done mark comes back only if marked again.
 
 ## Consequences
 
