@@ -335,4 +335,10 @@ export interface Ports {
   readonly ui: UiSink;
   readonly logger: Logger;
   readonly terminalSettings: TerminalSettings;
+  /**
+   * The full path of the ffmpeg this extension ships, where one exists for the machine it runs on
+   * (the .vsix is Windows x64 only), whether or not the file is still there. Absent elsewhere: the
+   * core then runs the ffmpeg on PATH. `followalong.ffmpegPath` overrides it (ADR 0071).
+   */
+  readonly bundledFfmpeg?: string | undefined;
 }
