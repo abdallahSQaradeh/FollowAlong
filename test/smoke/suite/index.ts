@@ -217,9 +217,9 @@ export async function run(): Promise<void> {
 
 /**
  * The three spots of #49 (ADR 0049): `followalong.videoLocation` opens the Lesson in the bottom
- * panel, and _Move video to…_ moves it to the secondary sidebar and back beside the code. In each
- * spot VS Code shows the player, a new page loads the Lesson through asWebviewUri, the CSP and
- * localResourceRoots, and the code keeps the focus. What a move carries (time, speed, play,
+ * panel, and _Move video to…_ moves it to the secondary sidebar, beside the code, and back to the
+ * panel. In each spot VS Code shows the player, a new page loads the Lesson through asWebviewUri,
+ * the CSP and localResourceRoots, and the code keeps the focus. What a move carries (time, speed, play,
  * zoom) is covered at Seam 1 and Seam 2.
  */
 async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): Promise<void> {
@@ -244,7 +244,8 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
     await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
     say(await theLessonLoadsIn(hooks, 'bottomPanel', from, code));
 
-    for (const spot of ['secondarySidebar', 'editorSplit'] as const) {
+    // Back into the bottom panel at the end: a view spot used before takes a new page.
+    for (const spot of ['secondarySidebar', 'editorSplit', 'bottomPanel'] as const) {
       from = hooks.playerEvents.length;
       await vscode.commands.executeCommand('followalong.moveVideo', spot);
       say(await theLessonLoadsIn(hooks, spot, from, code));

@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 
 import { createFollowAlong } from '../../core/follow-along.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
-import { isVideoSpot, type VideoSpot } from '../../core/video-placement.js';
+import { isVideoSpot } from '../../core/video-placement.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { createSystemClock } from '../node/clock.js';
@@ -15,7 +15,7 @@ import { createNodeFileSystem } from '../node/file-system.js';
 import { courseNodeId, type LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { FocusReturn } from './focus-return.js';
-import { PlayerPanel } from './player-panel.js';
+import { PlayerPanel, type PlayerPlace } from './player-panel.js';
 import { quickPickStats } from './quick-pick.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
@@ -101,7 +101,7 @@ export interface TestHooks {
   /** The label of the active (highlighted) item of the quick pick shown last, once it has one. */
   activeQuickPickItem(): string | undefined;
   /** The spot the player is in, and whether VS Code shows it; none while no player is open. */
-  playerSpot(): { readonly spot: VideoSpot; readonly visible: boolean } | undefined;
+  playerSpot(): PlayerPlace | undefined;
 }
 
 /** Saves Progress when the window closes; set while the extension is active. */
@@ -171,7 +171,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       selectedLesson: () => lessonTree.selectedLesson(),
       quickPicksShown: () => quickPickStats.shown,
       activeQuickPickItem: () => quickPickStats.active,
-      playerSpot: () => player.hosted,
+      playerSpot: () => player.place,
     };
   }
 

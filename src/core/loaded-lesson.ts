@@ -764,11 +764,11 @@ export function createLoadedLesson(
   function showPlayer(lesson: Lesson, resourceRoots: readonly string[]): PlayerShowResult {
     spot ??= settingSpot(config);
     shownRoots = resourceRoots;
-    const shown = player.show({ title: lesson.title, resourceRoots, spot });
-    if (shown === 'created') {
+    const result = player.show({ title: lesson.title, resourceRoots, spot });
+    if (result === 'created') {
       newPage(false);
     }
-    return shown;
+    return result;
   }
 
   /**
@@ -803,9 +803,9 @@ export function createLoadedLesson(
     shown: LessonLoad,
     snapshot: PlayerSnapshot | undefined,
   ): { readonly position: number; readonly playing: boolean } {
-    const said = snapshot?.lesson;
-    if (said !== undefined && shownLesson(said) === shown) {
-      return { position: said.position, playing: said.playing };
+    const reported = snapshot?.lesson;
+    if (reported !== undefined && shownLesson(reported) === shown) {
+      return { position: reported.position, playing: reported.playing };
     }
     if (!playerReady) {
       return { position: shown.startAt, playing: shown.autoplay };
@@ -819,8 +819,8 @@ export function createLoadedLesson(
   }
 
   async function move(to: VideoSpot): Promise<void> {
+    // `moveVideo` has told the learner already: it asks `spot()` before it asks for a spot.
     if (current === undefined || spot === undefined) {
-      ui.showMessage({ severity: 'info', text: noLessonText });
       return;
     }
     if (to === spot || awaitingSnapshot !== undefined) {

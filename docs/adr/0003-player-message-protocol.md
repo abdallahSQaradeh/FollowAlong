@@ -77,3 +77,9 @@ player), for the audio sidecar of an MP4 Lesson when the page cannot decode AAC;
 Ticket #46 added `zoom {action}` (extension → player; `reset` only, until #48) and
 `zoomChanged {level}` (player → extension, without `lessonId`: zoom belongs to the page); see
 ADR 0037.
+
+Ticket #49 added `takeSnapshot` and `restore {zoom}` (extension → player) and
+`snapshot {snapshot: {rate, zoom, lesson?}}` (player → extension, the answer to `takeSnapshot`;
+the Lesson inside carries `lessonId` and `loadId`, with its `position` and whether it is `playing`),
+to move the player to another spot; see ADR 0049. `ZoomView` and `isZoomView` now live in this
+protocol module.

@@ -48,9 +48,17 @@ interface Host {
   /** The editor group it is in, for a panel. */
   readonly viewColumn: vscode.ViewColumn | undefined;
   readonly visible: boolean;
+  /** Shows the Lesson's title: the panel's tab title, or the view's description. */
+  setTitle(title: string): void;
   reveal(): void;
-  /** Drops the page; the core is not told, because it asked for it (a move). */
+  /** Drops the page and stops forwarding what it posts; the core is not told (it asked: a move). */
   drop(): void;
+}
+
+/** Where the player is, and whether VS Code shows it. */
+export interface PlayerPlace {
+  readonly spot: VideoSpot;
+  readonly visible: boolean;
 }
 
 export class PlayerPanel implements PlayerPort, vscode.Disposable {
@@ -71,16 +79,13 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     /** Hands focus back to the code after VS Code focused a view it opened. */
     private readonly returnFocus: () => void,
   ) {
-    for (const [spot, { view }] of Object.entries(playerViews) as [
-      ViewSpot,
-      typeof playerViews.bottomPanel,
-    ][]) {
+    for (const spot of ['bottomPanel', 'secondarySidebar'] as const) {
       this.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
-          view,
+          playerViews[spot].view,
           {
-            resolveWebviewView: (resolved) => {
-              this.resolved(spot, resolved);
+            resolveWebviewView: (view) => {
+              this.viewResolved(spot, view);
             },
           },
           // The Lesson keeps playing while the panel or the sidebar is closed.
@@ -96,7 +101,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   }
 
   /** Where the player is, and whether VS Code shows it, for the smoke test. */
-  get hosted(): { readonly spot: VideoSpot; readonly visible: boolean } | undefined {
+  get place(): PlayerPlace | undefined {
     return this.host === undefined
       ? undefined
       : { spot: this.host.spot, visible: this.host.visible };
@@ -109,7 +114,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       resourceRoots.every((root, index) => root === this.roots[index]);
     this.roots = resourceRoots;
     if (this.host?.spot === spot) {
-      this.retitle(title);
+      this.host.setTitle(title);
       if (!sameRoots) {
         // Other folders: the same page takes them, and VS Code reloads it, which posts `ready`
         // again. The reload loses the click that lets the page start playback (#12 D3), which is
@@ -124,15 +129,18 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       return 'created';
     }
     // Another spot: a new page there (a panel and a view cannot share one, ADR 0049).
-    const old = this.host;
+    this.host?.drop();
     this.host = undefined;
     this.awaitedView = undefined;
-    old?.drop();
-    void vscode.commands.executeCommand('setContext', spotContextKey, spot);
     if (spot === 'editorSplit') {
+      void this.showSpot(spot);
       this.host = this.openPanel(title);
     } else {
-      this.openView(spot, title);
+      this.awaitedView = { spot, title };
+      // The view shows only once its `when` clause holds: set the key first, then open it.
+      void this.showSpot(spot).then(() => {
+        this.openView(spot);
+      });
     }
     return 'created';
   }
@@ -175,23 +183,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     };
   }
 
-  private retitle(title: string): void {
-    const host = this.host;
-    if (host === undefined) {
-      return;
-    }
-    if (host.spot === 'editorSplit') {
-      this.panelTitle?.(title);
-    } else {
-      const view = this.views.get(host.spot);
-      if (view !== undefined) {
-        view.description = title;
-      }
-    }
+  /** Sets the context key the views' `when` clauses read: only `spot`'s view, if any, shows. */
+  private async showSpot(spot: VideoSpot | undefined): Promise<void> {
+    await vscode.commands.executeCommand('setContext', spotContextKey, spot);
   }
-
-  /** Sets the title of the open panel; set while the player is a panel. */
-  private panelTitle: ((title: string) => void) | undefined;
 
   /** The player page in a webview panel beside the code (`editorSplit`). */
   private openPanel(title: string): Host {
@@ -203,6 +198,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       { ...this.webviewOptions(), retainContextWhenHidden: true },
     );
     let dropped = false;
+    /** What the page posts is forwarded until the host is dropped. */
+    const forwarding: vscode.Disposable[] = [];
     const host: Host = {
       spot: 'editorSplit',
       webview: panel.webview,
@@ -212,106 +209,130 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       get visible() {
         return panel.visible;
       },
+      setTitle: (next) => {
+        panel.title = next;
+      },
       reveal: () => {
         panel.reveal(undefined, true);
       },
       drop: () => {
         dropped = true;
+        for (const subscription of forwarding) {
+          subscription.dispose();
+        }
         panel.dispose();
       },
-    };
-    this.panelTitle = (next) => {
-      panel.title = next;
     };
     panel.onDidDispose(() => {
       // A panel dropped for a move is not a close: the Lesson is still there.
       if (!dropped && this.host === host) {
-        this.lost();
+        this.playerGone();
       }
     });
-    this.startPage(host);
+    forwarding.push(this.startPage(host));
     return host;
   }
 
   /**
-   * Shows the view of `spot`: VS Code makes its view container visible (the `when` clause now
-   * holds) and resolves the view, or the view it resolved before takes a new page.
+   * Shows the view of the spot the player is awaited in: the view VS Code resolved before takes
+   * a new page, or VS Code makes the view container visible and resolves the view.
    */
-  private openView(spot: ViewSpot, title: string): void {
+  private openView(spot: ViewSpot): void {
+    const awaited = this.awaitedView;
+    if (awaited?.spot !== spot) {
+      // Moved on meanwhile.
+      return;
+    }
     const existing = this.views.get(spot);
     if (existing !== undefined) {
-      this.host = this.viewHost(spot, existing);
-      existing.description = title;
-      this.startPage(this.host);
+      this.awaitedView = undefined;
+      this.host = this.viewHost(spot, existing, awaited.title);
       this.host.reveal();
       return;
     }
-    this.awaitedView = { spot, title };
     // Opening the container focuses the view: focus goes back to the code once it is open.
-    void vscode.commands
+    vscode.commands
       .executeCommand(`workbench.view.extension.${playerViews[spot].container}`)
       .then(this.returnFocus, (error: unknown) => {
         this.logger.log({
           level: 'error',
           message: `Could not open the ${spot} view: ${error instanceof Error ? error.message : String(error)}`,
         });
+        // No player will come: the core must not wait for it.
+        if (this.awaitedView?.spot === spot) {
+          this.awaitedView = undefined;
+          this.playerGone();
+        }
       });
   }
 
-  /** VS Code resolved the view of `spot`: it is the player when the player was moved there. */
-  private resolved(spot: ViewSpot, view: vscode.WebviewView): void {
+  /** VS Code resolved the view of `spot`: it is the player when the player is awaited there. */
+  private viewResolved(spot: ViewSpot, view: vscode.WebviewView): void {
     this.views.set(spot, view);
     view.onDidDispose(() => {
       this.views.delete(spot);
       // A view hidden for a move is not a close; the learner closing the view is.
-      if (this.host?.spot === spot) {
-        this.lost();
+      if (this.host?.webview === view.webview) {
+        this.playerGone();
       }
     });
-    if (this.awaitedView?.spot !== spot) {
+    const awaited = this.awaitedView;
+    if (awaited?.spot !== spot) {
       return;
     }
-    view.description = this.awaitedView.title;
     this.awaitedView = undefined;
-    this.host = this.viewHost(spot, view);
-    this.startPage(this.host);
+    this.host = this.viewHost(spot, view, awaited.title);
   }
 
-  private viewHost(spot: ViewSpot, view: vscode.WebviewView): Host {
-    return {
+  /** A new player page in `view`, titled `title`. */
+  private viewHost(spot: ViewSpot, view: vscode.WebviewView, title: string): Host {
+    /** What the page posts is forwarded until the host is dropped. */
+    const forwarding: vscode.Disposable[] = [];
+    const host: Host = {
       spot,
       webview: view.webview,
       viewColumn: undefined,
       get visible() {
         return view.visible;
       },
+      setTitle: (next) => {
+        view.description = next;
+      },
       reveal: () => {
         view.show(true);
       },
       drop: () => {
+        for (const subscription of forwarding) {
+          subscription.dispose();
+        }
         // The `when` clause hides the view once the context key names another spot; until then
         // it must not play on.
         view.webview.html = '';
       },
     };
+    host.setTitle(title);
+    forwarding.push(this.startPage(host));
+    return host;
   }
 
-  /** The learner closed the player: whatever it had loaded is gone. */
-  private lost(): void {
+  /** The player is gone (closed by the learner, or never opened): whatever it had loaded is gone. */
+  private playerGone(): void {
     this.host = undefined;
     this.roots = [];
-    void vscode.commands.executeCommand('setContext', spotContextKey, undefined);
+    void this.showSpot(undefined);
     this.closed.fire(undefined);
   }
 
-  /** Starts a new player page in `host`, and forwards what it posts while it is the player. */
-  private startPage(host: Host): void {
+  /**
+   * Starts a new player page in `host`, and forwards what it posts while it is the player.
+   * Returns the subscription, which the host disposes when it is dropped.
+   */
+  private startPage(host: Host): vscode.Disposable {
     const { webview } = host;
     webview.options = this.webviewOptions();
     const listening = webview.onDidReceiveMessage((raw: unknown) => {
+      // A message already queued from a page dropped for a move is about a player that is gone.
       if (this.host !== host) {
-        // A page dropped for a move: what it posts is about a player that is gone.
-        listening.dispose();
         return;
       }
       const event = parsePlayerEvent(raw);
@@ -331,6 +352,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       script: page.script,
       style: page.style,
     });
+    return listening;
   }
 
   private loadPage(): { readonly script: string; readonly style: string } {
