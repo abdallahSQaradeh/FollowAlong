@@ -81,8 +81,11 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
   }
 
   private revealSelected(): void {
-    const node = pathTo(this.model.nodes, this.selectedLessonId ?? '').at(-1);
-    if (node === undefined || !this.view.visible) {
+    if (this.selectedLessonId === undefined || !this.view.visible) {
+      return;
+    }
+    const node = pathTo(this.model.nodes, this.selectedLessonId).at(-1);
+    if (node === undefined) {
       return;
     }
     this.view
