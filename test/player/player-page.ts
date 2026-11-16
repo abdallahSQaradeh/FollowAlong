@@ -146,6 +146,7 @@ export interface VideoState {
 export interface SoundState {
   readonly paused: boolean;
   readonly muted: boolean;
+  readonly volume: number;
   readonly currentTime: number;
   readonly playbackRate: number;
   /** The sound file it holds: its `src`, empty when it holds none. */
@@ -392,6 +393,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         return {
           paused: element.paused,
           muted: element.muted,
+          volume: element.volume,
           currentTime: element.currentTime,
           playbackRate: element.playbackRate,
           source: element.getAttribute('src') ?? '',

@@ -61,33 +61,44 @@ function run(request: ConversionRequest, temporary: string): Promise<void> {
         }
       }
     });
+    // Settled on `close` only, once ffmpeg has exited: on Windows a file a running ffmpeg still
+    // holds cannot be removed, so a cancel or a failure must wait for it before cleaning up.
+    let failure: Error | undefined;
     child.on('error', (error) => {
       const code = 'code' in error ? error.code : undefined;
-      reject(
+      failure ??=
         code === 'ENOENT'
           ? new Error(
               `ffmpeg was not found (${program}). Install ffmpeg, or set followalong.ffmpegPath to it.`,
             )
-          : error,
-      );
+          : error;
     });
     child.on('close', (code) => {
-      if (code === 0) {
+      if (failure !== undefined) {
+        reject(failure);
+      } else if (code === 0) {
         onProgress(100);
         resolve();
-      } else if (!signal.aborted) {
+      } else {
         reject(new Error(`ffmpeg exited with code ${String(code)}: ${tail.join(' ')}`));
       }
     });
   });
 }
 
+/** Numbers the temp files, so a new conversion never writes where a cancelled one may still be. */
+let conversions = 0;
+
 export function createFfmpegConverter(): Converter {
   return {
     async extractSound(request) {
       const { output, signal } = request;
       signal.throwIfAborted();
-      const temporary = join(dirname(output), `.${basename(output)}.${String(process.pid)}.part`);
+      conversions += 1;
+      const temporary = join(
+        dirname(output),
+        `.${basename(output)}.${String(process.pid)}-${String(conversions)}.part`,
+      );
       try {
         await run(request, temporary);
         await rename(temporary, output);

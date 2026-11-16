@@ -263,4 +263,36 @@ describe('sound for MP4 Lessons', () => {
 
     expect(h.converter.requests[0]?.request.signal.aborted).toBe(true);
   });
+
+  it('keeps preparing the sound when the learner picks the Lesson again while it is prepared', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+
+    h.core.playLesson(lessonId);
+    await h.settle();
+
+    expect(h.converter.requests).toHaveLength(1);
+    expect(h.converter.requests[0]?.request.signal.aborted).toBe(false);
+    await h.converter.requests[0]?.succeed();
+    await h.settle();
+    expect(h.player.sent.at(-1)).toEqual({
+      type: 'soundReady',
+      audioUri: h.player.resourceUri(h.converter.requests[0]?.request.output ?? ''),
+    });
+  });
+
+  it('stops preparing the sound when the learner moves on to a WebM Lesson', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      '01 Intro.mp4': 'first mp4',
+      '02 Setup.webm': 'second webm',
+    });
+    await h.core.openCourse(course);
+    h.player.ready(false);
+    await h.settle();
+
+    h.core.nextLesson();
+
+    expect(h.converter.requests[0]?.request.signal.aborted).toBe(true);
+  });
 });

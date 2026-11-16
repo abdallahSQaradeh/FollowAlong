@@ -136,20 +136,17 @@ function dropSound(): void {
 }
 
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
-  // The Lesson before had its video muted by the player when it had no sound of its own to play.
-  const mutedForSound = current !== undefined && current.sound !== 'own';
+  // The learner's mute: on the video, or on the sidecar while the player kept the video muted.
+  const learnerMuted = mutedForSound() ? sidecar.muted : media.muted;
   current?.stop.abort();
   hideNext();
   dropSound();
   // An MP4 whose AAC sound the page cannot decode waits for its sound, muted. The native controls
   // are hidden meanwhile: their play button would start the picture without its sound.
   const awaitsSound = command.container === 'mp4' && !aacSupported;
-  if (awaitsSound) {
-    media.muted = true;
-  } else if (mutedForSound) {
-    // Only the player's own mute is undone: a mute the learner chose stays.
-    media.muted = false;
-  }
+  // The video stays muted while its sound is the sidecar's; the learner's mute moves with it.
+  sidecar.muted = learnerMuted;
+  media.muted = awaitsSound || learnerMuted;
   media.controls = !awaitsSound;
   // A pause or play whose event the new load cancels must not mark the next one.
   pauseBy = undefined;
@@ -192,6 +189,11 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
   if (command.autoplay) {
     play(media);
   }
+}
+
+/** Whether the player keeps the video muted because the Lesson's sound is not its own. */
+function mutedForSound(): boolean {
+  return current !== undefined && current.sound !== 'own';
 }
 
 /** Moves the sidecar to the video's playhead and rate. */
@@ -465,6 +467,12 @@ function followWithSound(media: HTMLVideoElement): void {
   });
   media.addEventListener('volumechange', () => {
     sidecar.volume = media.volume;
+    // The video is kept muted, so its mute button can only unmute it: that press is the learner's
+    // mute button for the sound, which is the sidecar's. The video goes back to muted.
+    if (mutedForSound() && !media.muted) {
+      sidecar.muted = !sidecar.muted;
+      media.muted = true;
+    }
   });
 }
 

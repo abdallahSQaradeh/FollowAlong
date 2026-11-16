@@ -102,7 +102,10 @@ interface LessonLoad {
   startSeekPending: boolean;
 }
 
-/** The sound being prepared for a Lesson, so a page reload or a second load does not start again. */
+/**
+ * The sound being prepared for the Loaded Lesson, kept while it stays loaded: a page reload, or the
+ * learner picking the same Lesson again, does not start the conversion again.
+ */
 interface SoundPreparation {
   readonly lesson: Lesson;
   readonly stop: AbortController;
@@ -279,8 +282,8 @@ export function createLoadedLesson(
    * prepared, if load `loadId` is still the current one: a later `load` gets its own.
    */
   function sendSoundWhenPrepared(lesson: Lesson, loadId: number): void {
+    // A `load` of another Lesson has stopped the sound of the one before (`load`).
     if (sound?.lesson !== lesson) {
-      stopSound();
       const stop = new AbortController();
       sound = { lesson, stop, path: course.prepareSound(lesson, stop.signal), toldFailure: false };
     }
@@ -521,7 +524,8 @@ export function createLoadedLesson(
 
   function leave(): Promise<void> {
     stopSaving();
-    stopSound();
+    // The sound under way is kept: the next `load` may be this Lesson again (picked once more), and
+    // a `load` of another Lesson, or `unload`, stops it.
     // From now on its late events are ignored, so none is recorded into the next Course.
     current = undefined;
     // Also waits for a save still under way, such as the one of the Lesson before.
@@ -533,6 +537,7 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
+    stopSound();
     resetPlayhead(false);
     refreshStatusBar();
   }

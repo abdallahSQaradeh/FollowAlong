@@ -4,6 +4,8 @@
  * play, pause, seeks and rate, within about 0.1 s. Stock Chromium decodes AAC, so the harness
  * forces the "AAC unsupported" answer VS Code gives.
  */
+import type { Page } from '@playwright/test';
+
 import type { PlayerCommand } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
 import { media, openPlayer, spots, type PlayerHarness } from './player-page.js';
@@ -235,4 +237,88 @@ test.describe('an MP4 Lesson when AAC plays', () => {
     // The index at the end was reached with a Range request, as VS Code serves local files.
     expect(player.rangeRequests().length).toBeGreaterThan(0);
   });
+});
+
+test('loading an MP4 Lesson that waits for its sound is not an interaction of the learner', async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
+  await player.postAll([loadMp4(), soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+  await player.post({
+    type: 'load',
+    lessonId: 'Section 1/04 Scope.webm',
+    videoUri: media.webm,
+    container: 'webm',
+    startAt: 0,
+    autoplay: false,
+  });
+  await aMoment();
+
+  expect((await player.events()).map((event) => event.type)).not.toContain('userInteracted');
+});
+
+/**
+ * What the native mute button does: it flips the video's `muted`. Pressed through the page, as a
+ * click on the control bar would, without depending on when Chromium shows the bar.
+ */
+async function pressMute(player: PlayerHarness, page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    if (video !== null) {
+      video.muted = !video.muted;
+    }
+  });
+  // The page answers in its `volumechange` listener, a task later.
+  await player.video();
+}
+
+test('the mute button and the volume slider act on the sound of the sidecar', async ({ page }) => {
+  const player = await openPlayer(page, { aac: false });
+  await player.postAll([loadMp4(), soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+
+  await pressMute(player, page);
+  await expect.poll(async () => (await player.sound()).muted).toBe(true);
+  expect((await player.video()).muted).toBe(true);
+
+  await pressMute(player, page);
+  await expect.poll(async () => (await player.sound()).muted).toBe(false);
+  expect((await player.video()).muted).toBe(true);
+
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    if (video !== null) {
+      video.volume = 0.4;
+    }
+  });
+  await expect.poll(async () => (await player.sound()).volume).toBeCloseTo(0.4);
+});
+
+test("keeps the learner's mute from an MP4 Lesson with a sidecar to a WebM Lesson and back", async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
+  await player.postAll([loadMp4(), soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+  await pressMute(player, page);
+  await expect.poll(async () => (await player.sound()).muted).toBe(true);
+  const webm: PlayerCommand = {
+    type: 'load',
+    lessonId: 'Section 1/04 Scope.webm',
+    videoUri: media.webm,
+    container: 'webm',
+    startAt: 0,
+    autoplay: false,
+  };
+
+  await player.post(webm);
+  expect((await player.video()).muted).toBe(true);
+
+  await pressMute(player, page);
+  await expect.poll(async () => (await player.video()).muted).toBe(false);
+  await player.postAll([loadMp4({ autoplay: false }), soundReady]);
+  await aMoment();
+  expect((await player.video()).muted).toBe(true);
+  expect((await player.sound()).muted).toBe(false);
 });
