@@ -785,6 +785,17 @@ export interface Harness {
    */
   holdFileReads(path: string): { readonly reached: Promise<void>; release(): void };
   /**
+   * Holds every deletion of a file until `release` is called, as a slow disk would; `reached`
+   * settles once one has started. Not waited for by {@link Harness.settle} while held.
+   */
+  holdRemovals(): { readonly reached: Promise<void>; release(): void };
+  /** Makes every deletion of a file fail, as a file another program holds open does on Windows. */
+  failRemovals(reason: string): void;
+  /** Makes looking at the file at `path` fail, as a file another program locks does on Windows. */
+  failStat(path: string, reason: string): void;
+  /** Undoes {@link Harness.failStat}. */
+  restoreStat(path: string): void;
+  /**
    * Holds the next write of the file at `path` until `release` is called; writes after it go
    * through. `reached` settles once that write has started: the core has read what it needed and
    * waits to replace the file, as a window paused between its read and its rename would.
@@ -882,6 +893,9 @@ export async function createHarness(): Promise<Harness> {
     call.then(done, done);
     return call;
   };
+  const failingStats = new Map<string, string>();
+  let removalFailure: string | undefined;
+  let removalGate: { readonly reach: () => void; readonly released: Promise<void> } | undefined;
   const fileSystem: FileSystem = {
     readDirectory(path) {
       const read = (): ReturnType<FileSystem['readDirectory']> =>
@@ -919,7 +933,12 @@ export async function createHarness(): Promise<Harness> {
           : hold.released.then(() => nodeFileSystem.readText(path)),
       );
     },
-    stat: (path) => track(nodeFileSystem.stat(path)),
+    stat: (path) => {
+      const failure = failingStats.get(path);
+      return failure === undefined
+        ? track(nodeFileSystem.stat(path))
+        : Promise.reject(new FileSystemError('other', path, failure));
+    },
     startingFolders: () => Promise.resolve(startFolders),
     exists: (path) => track(nodeFileSystem.exists(path)),
     writeText(path, content) {
@@ -930,6 +949,19 @@ export async function createHarness(): Promise<Harness> {
       heldWrites.delete(path);
       hold.reach();
       return track(hold.released.then(() => nodeFileSystem.writeText(path, content)));
+    },
+    remove(path) {
+      const failure = removalFailure;
+      if (failure !== undefined) {
+        return Promise.reject(new FileSystemError('other', path, failure));
+      }
+      const gate = removalGate;
+      if (gate !== undefined) {
+        // Not counted by `settle` until it goes ahead: a held removal is not a call that finishes.
+        gate.reach();
+        return gate.released.then(() => track(nodeFileSystem.remove(path)));
+      }
+      return track(nodeFileSystem.remove(path));
     },
     lock: (path) =>
       track(nodeFileSystem.lock(path).then((release) => (): Promise<void> => track(release()))),
@@ -1038,6 +1070,30 @@ export async function createHarness(): Promise<Harness> {
       });
       heldWrites.set(path, { reach, released });
       return { reached, release };
+    },
+    holdRemovals() {
+      let reach = (): void => undefined;
+      let release = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = () => {
+          removalGate = undefined;
+          resolve();
+        };
+      });
+      removalGate = { reach, released };
+      return { reached, release };
+    },
+    failStat(path, reason) {
+      failingStats.set(path, reason);
+    },
+    restoreStat(path) {
+      failingStats.delete(path);
+    },
+    failRemovals(reason) {
+      removalFailure = reason;
     },
     holdFileReads(path) {
       let reach = (): void => undefined;
