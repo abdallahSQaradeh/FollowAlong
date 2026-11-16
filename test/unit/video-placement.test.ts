@@ -166,6 +166,39 @@ describe('Move video to… a floating window', () => {
   });
 });
 
+describe('a floating window VS Code cannot make', () => {
+  it('leaves no player half-open: Progress is saved, and the next Lesson opens at the setting', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.ready();
+    h.player.emit({ type: 'played', lessonId });
+    for (let position = 0; position <= 12; position += 2) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position, duration: 300 });
+    }
+    const moving = h.core.moveVideo('floatingWindow');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1,
+        zoom: { level: 1, left: 0, top: 0 },
+        lesson: { lessonId, position: 20, playing: false },
+      },
+    });
+    await moving;
+    h.player.clearSent();
+
+    // The adapter could not move the tab into a new window: it reports the player closed before
+    // the new page ever started.
+    h.player.close();
+    await h.settle();
+
+    expect(h.player.sent).toEqual([]);
+    expect(descriptionOf(h, lessonId)).toBe('00:20 / 05:00');
+    h.core.playLesson('02 Next.webm');
+    expect(lastSpot(h)).toBe('editorSplit');
+  });
+});
+
 describe('Move video to… when the page cannot say what it shows', () => {
   it('moves after 1 s with what FollowAlong knows, at the whole picture', async () => {
     const h = await createHarness();

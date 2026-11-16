@@ -38,14 +38,17 @@ ADR 0092, the orchestrator's binding notes on #51, and the VS Code 1.146.0 sourc
 - **`enableWindowAlwaysOnTop`, not `toggleWindowAlwaysOnTop`.** Both exist in 1.146 and both act
   only when the window with the focus is an auxiliary window (`isAuxiliaryWindow`), so neither can
   pin the main window. The enable command cannot turn the pin off if a window was already on top;
-  the toggle could. Likewise `enableCompactAuxiliaryWindow` only reaches an auxiliary window.
+  the toggle could (orchestrator, note 1 on #51). Likewise `enableCompactAuxiliaryWindow` only reaches
+  an auxiliary window. A VS Code without either command, or one that refuses it, is logged and the
+  float goes on: a floating window that is not on top, or not compact, is still the feature.
 - **Focus goes back to the code** after the window is made. The window stays visible because it is
   on top; the prototype kept the focus in it only because, without the pin, the main window would
   cover it. This follows #12 D12 (focus return wins) and ADR 0009.
 - **When it cannot float.** A tab that does not become active within 5 s, or a move VS Code refuses,
   is handled like a view that does not open (ADR 0049): the tab is dropped, the learner is told
-  once, and the core is told the player closed, so it never waits for a page. A compact or
-  always-on-top command that fails is only logged: the video still floats.
+  once, and the core is told the player closed, so it never waits for a page: nothing is left
+  half-open, and the next Lesson opens at the setting (orchestrator, note 4; Seam 1 covers it with
+  the fake player closing before its page starts).
 - **Resources stay in the main window** (D4, ADR 0012). The floating player is in no editor group of
   the main window: the adapter reports no column for it, so a Resource opens `ViewColumn.Beside`
   the code, as for a view spot.
@@ -58,7 +61,8 @@ ADR 0092, the orchestrator's binding notes on #51, and the VS Code 1.146.0 sourc
   rest into the main window. The player tab asks nothing, so it closes, and the panel's dispose is
   the close the core already handles: Progress is saved, the Lesson unloads, and the next Lesson
   opens at the setting (ADR 0049), as when the learner closes the player tab. The smoke test
-  checks it by closing the window's page itself, which runs the same unload.
+  checks it by closing the window's page itself, which runs the same unload. It never writes
+  `followalong.videoLocation` (orchestrator, note 2).
 
 ## Measured (smoke test, CI)
 
@@ -70,6 +74,8 @@ MEASUREMENTS
   OS focus to that window, and whether the focus return after the click (ADR 0009) brings the OS
   focus back to the main window cannot be seen from a headless run.
 - Whether the OS keeps the window on top is also Windows manual QA: no page can read it.
-- A learner who drags the floating tab back into the main window by hand leaves the core believing
-  the video floats. Picking another spot moves it as usual; picking _Floating window_ again moves
-  nothing until then. Not handled: VS Code tells an extension nothing about which window a tab is in.
+- A learner who drags the floating tab back into the main window (or into another floating window)
+  by hand is not fought (orchestrator, note 3): the page plays on, and the spot is still reported as
+  `floatingWindow` until the next move. Picking another spot moves it as usual; picking
+  _Floating window_ again moves nothing until then. Not handled: `onDidChangeViewState` and the tab
+  API tell an extension nothing about which window a tab is in.
