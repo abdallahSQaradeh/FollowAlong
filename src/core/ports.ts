@@ -275,7 +275,8 @@ export interface UiSink {
   /**
    * Shows a quick pick whose list the core may replace while it is open (the Course picker, which
    * opens from a cache and updates when the rescan is done). `onToolbarButton` gets the intent of
-   * a title bar button the learner presses; the quick pick stays open.
+   * a title bar button, or an item button with `staysOpen`, the learner presses; the quick pick
+   * stays open.
    */
   openPicker<Intent>(
     model: QuickPickModel<Intent>,

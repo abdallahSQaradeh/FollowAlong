@@ -554,6 +554,10 @@ export class RecordingUi implements UiSink {
     if (this.answer === undefined || pressed === undefined) {
       throw new Error(`No button “${button}” beside “${label}” in the open quick pick`);
     }
+    if (pressed.staysOpen === true) {
+      this.toolbarHandler?.(pressed.intent);
+      return;
+    }
     const answer = this.answer;
     this.answer = undefined;
     answer(pressed.intent);

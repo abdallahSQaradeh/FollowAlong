@@ -43,6 +43,8 @@ export const commands = {
    * as the Course without the picker.
    */
   openCourse: 'followalong.openCourse',
+  /** `FollowAlong: Unhide a Course…`: gives a Course hidden from the Course picker back to it. */
+  unhideCourse: 'followalong.unhideCourse',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */
   playLesson: playLessonCommand,
   /** The "+" on a Lesson in the tree; it is run with the Lesson's tree node. */
@@ -201,6 +203,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.openCourse, (folder) =>
       folder instanceof vscode.Uri ? core.openCourse(folderPath(folder)) : core.pickCourse(),
     ),
+    register(commands.unhideCourse, () => core.unhideCourse()),
     register(commands.attachResource, async (node, file) => {
       const nodeKey = nodeId(node);
       if (nodeKey === undefined) {
