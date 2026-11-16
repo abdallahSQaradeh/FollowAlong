@@ -187,6 +187,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         if (event.lessonId === current?.id) {
           // Also ends a run of refusals: the player did what it was asked.
           playback = { ...freshPlayback(false), playing: event.type === 'played' };
+          if (event.type === 'ended') {
+            offerNextLesson();
+          }
+        }
+        break;
+      case 'nextClicked':
+        if (event.lessonId === current?.id) {
+          moveToLesson(1);
         }
         break;
       case 'rateChanged': {
@@ -204,6 +212,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       case 'timeUpdate':
         break;
+    }
+  }
+
+  /**
+   * The Lesson has ended: the player stops on its last frame and, when a Lesson follows in Course
+   * order, shows "Next: <title>". The core never loads it by itself (spec #12, story 50); that is
+   * the learner's click on the overlay, or `nextLesson`.
+   */
+  function offerNextLesson(): void {
+    const lessons = openedCourse === undefined ? [] : lessonsInOrder(openedCourse);
+    const next = lessons[lessons.findIndex((lesson) => lesson.id === current?.id) + 1];
+    if (next !== undefined) {
+      player.send({ type: 'showNext', title: next.title });
     }
   }
 
