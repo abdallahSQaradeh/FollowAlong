@@ -12,17 +12,12 @@ function rows(picker: QuickPickModel<unknown> | undefined): string[] {
   );
 }
 
-/** Lets the core's file system reads and writes run until the next quick pick or dialog. */
-async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 50));
-}
-
 describe('the Course picker', () => {
   it('offers only “Add Courses root…” while no Courses root is set', async () => {
     const h = await createHarness();
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual(['Add Courses root…']);
   });
@@ -33,9 +28,9 @@ describe('the Course picker', () => {
     h.ui.folderAnswers.push(root);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Add Courses root…');
-    await settle();
+    await h.ui.pickerShown();
 
     expect(h.ui.folderDialogs).toEqual([{ title: 'Add Courses root', openLabel: 'Add' }]);
     expect(h.config.get('coursesRoots')).toEqual([root]);
@@ -47,9 +42,9 @@ describe('the Course picker', () => {
     h.ui.folderAnswers.push(learning);
 
     const picking = h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Add Courses root…');
-    await settle();
+    await h.ui.pickerShown();
     expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
     h.ui.choose('Some Course');
     await picking;
@@ -68,11 +63,11 @@ describe('the Course picker', () => {
     h.ui.folderAnswers.push(more, more);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Add Courses root…');
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Add Courses root…');
-    await settle();
+    await h.ui.pickerShown();
 
     expect(h.config.get('coursesRoots')).toEqual([learning, more]);
   });
@@ -81,7 +76,7 @@ describe('the Course picker', () => {
     const h = await createHarness();
 
     const picking = h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Add Courses root…');
     await picking;
 
@@ -101,7 +96,7 @@ describe('the Course picker', () => {
     h.config.set('coursesRoots', [learning, more]);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual([
       'algorithms',
@@ -122,7 +117,7 @@ describe('the Course picker', () => {
     h.config.set('coursesRoots', [learning]);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual(['Node Course', 'Add Courses root…']);
   });
@@ -133,13 +128,13 @@ describe('the Course picker', () => {
       'Real Course/01 Intro.mp4': 'v',
       '.hidden course/01 Intro.mp4': 'v',
       'project/node_modules/some-package/demo.mp4': 'v',
-      'project/.git/objects/clip.webm': 'v',
+      'project/.git/objects/demo.webm': 'v',
       '.followalong/sound.webm': 'v',
     });
     h.config.set('coursesRoots', [learning]);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
   });
@@ -151,7 +146,7 @@ describe('the Course picker', () => {
     h.config.set('coursesRoots', [unplugged, learning]);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
     expect(h.ui.messages).toEqual([
@@ -166,13 +161,13 @@ describe('the Course picker', () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
       'Real Course/01 Intro.mp4': 'v',
-      'System Volume Information/clip.mp4': 'v',
+      'System Volume Information/demo.mp4': 'v',
     });
     h.makeUnreadable(join(learning, 'System Volume Information'));
     h.config.set('coursesRoots', [learning]);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
     expect(h.ui.messages).toEqual([]);
@@ -191,7 +186,7 @@ describe('the Course picker', () => {
     h.player.clearSent();
 
     const picking = h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Second Course');
     await picking;
 
@@ -217,7 +212,7 @@ describe('the Course picker', () => {
     h.config.set('coursesRoots', [learning]);
 
     const picking = h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Second Course');
     await picking;
     h.player.ready();
@@ -234,7 +229,7 @@ describe('the Course picker', () => {
     h.config.set('coursesRoots', [learning, join(learning, 'Web')]);
 
     void h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual(['Node Course', 'React Basics', 'Add Courses root…']);
   });
@@ -247,7 +242,7 @@ describe('the Course picker', () => {
     });
     h.config.set('coursesRoots', [learning]);
     const first = h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('First Course');
     await first;
     h.player.ready();
@@ -256,7 +251,7 @@ describe('the Course picker', () => {
     // The page keeps the click that lets it start playback (#12 D3) only if it is not reloaded,
     // which it is whenever the folders it may read change: they are the Courses roots.
     const second = h.core.pickCourse();
-    await settle();
+    await h.ui.pickerShown();
     h.ui.choose('Second Course');
     await second;
 

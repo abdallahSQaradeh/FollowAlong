@@ -201,6 +201,7 @@ export class RecordingUi implements UiSink {
   /** Every quick pick the core opened, in order. */
   readonly pickers: QuickPickModel<unknown>[] = [];
   private answer: ((intent: unknown) => void) | undefined;
+  private readonly pickerWaiters: (() => void)[] = [];
   /** How many times the core asked to hand keyboard focus back to the Practice area. */
   focusReturns = 0;
   /** Every folder dialog the core opened, in order. */
@@ -214,11 +215,27 @@ export class RecordingUi implements UiSink {
 
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
     this.pickers.push(model);
-    return new Promise((resolve) => {
+    const shown = new Promise<Intent | undefined>((resolve) => {
       this.answer = (intent) => {
         resolve(intent as Intent | undefined);
       };
     });
+    for (const waiter of this.pickerWaiters.splice(0)) {
+      waiter();
+    }
+    return shown;
+  }
+
+  /**
+   * Resolves once a quick pick is open: at once if one is, else when the core opens the next one
+   * (after it has read what it lists), so a test never guesses how long that takes.
+   */
+  pickerShown(): Promise<void> {
+    return this.answer === undefined
+      ? new Promise((resolve) => {
+          this.pickerWaiters.push(resolve);
+        })
+      : Promise.resolve();
   }
 
   /** The quick pick the learner sees now, if one is open. */

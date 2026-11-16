@@ -87,7 +87,7 @@ describe('Go to Lesson…', () => {
     h.config.set('coursesRoots', [learning]);
 
     void h.core.goToLesson();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await h.ui.pickerShown();
 
     expect(h.ui.picker?.title).toBe('Open Course');
     expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
