@@ -122,6 +122,8 @@ export interface PlayerHarness {
 
 export interface VideoState {
   readonly paused: boolean;
+  /** Whether the native control bar is on (it shows on hover). */
+  readonly controls: boolean;
   readonly muted: boolean;
   readonly volume: number;
   readonly ended: boolean;
@@ -372,6 +374,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         };
         return {
           paused: element.paused,
+          controls: element.controls,
           muted: element.muted,
           volume: element.volume,
           ended: element.ended,

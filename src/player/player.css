@@ -37,6 +37,11 @@ video {
   inset: 0 0 72px;
 }
 
+/* While zoomed the control bar is off (ADR 0037): the whole player is picture. */
+.zoomed .overlay {
+  inset: 0;
+}
+
 /*
  * "Next: <title>" at the end of a Lesson. It covers the picture, stopping above Chromium's native
  * control bar (which stays usable), and is stacked above the click overlay that #23 adds over the picture, so a click

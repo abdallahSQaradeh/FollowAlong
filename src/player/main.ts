@@ -108,6 +108,8 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
   hideNext();
+  // A click waiting out the double-click window was meant for the Lesson before.
+  cancelPendingToggle();
   // A pause or play whose event the new load cancels must not mark the next one.
   pauseBy = undefined;
   playRequested = false;
@@ -329,24 +331,58 @@ function togglePlayback(media: HTMLVideoElement): void {
 }
 
 /**
+ * How long a click on the zoomed picture waits for a second click before it plays or pauses: a
+ * double-click resets the zoom and must not toggle twice (ADR 0037).
+ */
+const doubleClickWindowMs = 300;
+/** The play/pause of a click on the zoomed picture, waiting out the double-click window. */
+let pendingToggle: ReturnType<typeof setTimeout> | undefined;
+
+function cancelPendingToggle(): void {
+  clearTimeout(pendingToggle);
+  pendingToggle = undefined;
+}
+
+/**
+ * A click on the picture plays or pauses the Lesson: at once at 1× (ADR 0009), where a
+ * double-click does nothing. While zoomed a double-click resets the zoom, so a click plays or
+ * pauses only once no second click followed it, and the second click of a pair toggles nothing.
+ */
+function clickOnPicture(clicks: number, media: HTMLVideoElement): void {
+  cancelPendingToggle();
+  if (zoom.level === 1) {
+    togglePlayback(media);
+  } else if (clicks === 1) {
+    pendingToggle = setTimeout(() => {
+      pendingToggle = undefined;
+      togglePlayback(media);
+    }, doubleClickWindowMs);
+  }
+}
+
+/**
  * Reports the end of each learner interaction as `userInteracted` (ADR 0009). The native control
  * bar keeps its pointer events to itself, so its buttons show only through what they change, and
  * its sliders through their pointer capture, which ends when the learner lets go.
  */
-function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
+function reportInteractions(media: HTMLVideoElement, overlay: HTMLElement): void {
   const ended = () => {
     interactions.ended();
   };
-  overlay.addEventListener('click', () => {
+  overlay.addEventListener('click', (event) => {
     if (dragEnded) {
       dragEnded = false;
       return;
     }
-    togglePlayback(media);
+    clickOnPicture(event.detail, media);
+  });
+  overlay.addEventListener('dblclick', () => {
+    cancelPendingToggle();
+    showZoom(wholePicture, media);
   });
   // The overlay takes the pointer moves that would show the native control bar: pass them on.
   overlay.addEventListener('pointermove', (event) => {
-    const { clientX, clientY, pointerId, pointerType } = event as PointerEvent;
+    const { clientX, clientY, pointerId, pointerType } = event;
     media.dispatchEvent(
       new PointerEvent('pointermove', { bubbles: true, clientX, clientY, pointerId, pointerType }),
     );
@@ -402,6 +438,11 @@ function showZoom(view: ZoomView, media: HTMLVideoElement): void {
   const before = zoom.level;
   zoom = view;
   media.style.transform = zoomTransform(view);
+  // The native control bar would be magnified with the picture: it is off while zoomed, and the
+  // overlay then covers the whole player, so the strip along the bottom is picture too.
+  const zoomed = view.level > 1;
+  media.controls = !zoomed;
+  document.body.classList.toggle('zoomed', zoomed);
   if (view.level !== before) {
     post({ type: 'zoomChanged', level: view.level });
   }

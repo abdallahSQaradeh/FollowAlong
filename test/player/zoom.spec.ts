@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import type { PlayerCommand } from '../../src/protocol/player-messages.js';
+import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
 import { media, openPlayer, type PlayerHarness } from './player-page.js';
 
@@ -118,5 +118,85 @@ test.describe('a zoom drag', () => {
     await player.waitForEvent({ type: 'userInteracted' });
     await page.waitForTimeout(300);
     expect(await interactions(player)).toBe(1);
+  });
+});
+
+test.describe('while zoomed', () => {
+  test('the native control bar is off, since it would be magnified too', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    expect((await player.video()).controls).toBe(true);
+
+    await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+
+    expect((await player.video()).controls).toBe(false);
+  });
+});
+
+/** The player with the Lesson loaded and paused, zoomed 4× to the box of the first test. */
+async function zoomedPaused(page: Page, options: { userGestures?: boolean } = {}) {
+  const player = await openPlayer(page, options);
+  await loadPaused(player);
+  await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
+  await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+  return player;
+}
+
+function count(events: readonly PlayerEvent[], type: PlayerEvent['type']): number {
+  return events.filter((event) => event.type === type).length;
+}
+
+test.describe('a double-click while zoomed', () => {
+  test('resets the zoom, without playing or pausing the Lesson', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    await page.mouse.dblclick(600, 300);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    expect((await player.video()).controls).toBe(true);
+    await page.waitForTimeout(600);
+    expect((await player.video()).paused).toBe(true);
+    expect(count(await player.events(), 'played')).toBe(0);
+  });
+});
+
+test.describe('a click while zoomed', () => {
+  test('plays the Lesson once the double-click window has passed, and hands focus back', async ({
+    page,
+  }) => {
+    const player = await zoomedPaused(page);
+    const before = await interactions(player);
+
+    await page.mouse.click(600, 300);
+
+    await player.waitForEvent({ type: 'played', lessonId });
+    await page.waitForTimeout(600);
+    const events = await player.events();
+    expect(count(events, 'played')).toBe(1);
+    expect(count(events, 'paused')).toBe(0);
+    expect(await interactions(player)).toBe(before + 1);
+    expect(events.at(-1)).not.toMatchObject({ type: 'zoomChanged' });
+  });
+
+  test('on the strip along the bottom plays too: the control bar is off', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    await page.mouse.click(640, 715);
+
+    await player.waitForEvent({ type: 'played', lessonId });
+  });
+
+  test('starts a Lesson whose autoplay VS Code refused (#12 D3)', async ({ page }) => {
+    const player = await openPlayer(page, { userGestures: false });
+    await player.post(load({ autoplay: true }));
+    await player.waitForEvent({ type: 'paused', lessonId, byUser: false });
+    await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+
+    await page.mouse.click(600, 300);
+
+    await player.waitForEvent({ type: 'played', lessonId });
   });
 });
