@@ -6,7 +6,7 @@ import { isFullPath } from '../../src/core/courses-roots.js';
  * Which setting entries name one folder wherever VS Code runs (ADR 0022), under each OS's path
  * rules, on every OS: CI runs the Windows rules only on Windows otherwise.
  * The `\\?\` (verbatim) and `\\.\` (device) prefixes are not full paths on Windows: they would
- * spell `D:\Learning` a second way, past the drive-letter normalisation (ADR 0032).
+ * spell `D:\Learning` a second way, past the drive-letter normalisation (ADR 0033).
  */
 const cases = [
   { path: 'D:', win32: false, posix: false },

@@ -43,7 +43,7 @@ function normalisedRoot(path: string): string | undefined {
  * a share (`\\server\share`): `\Learning` counts as absolute there, but on whichever drive
  * VS Code happens to run from. The verbatim (`\\?\D:\Learning`) and device (`\\.\…`) prefixes
  * are not full paths: they name a folder another way, which would count as a second root and
- * skip the drive-letter normalisation (ADR 0032). `flavour` is the host's; tests give each one
+ * skip the drive-letter normalisation (ADR 0033). `flavour` is the host's; tests give each one
  * on every OS.
  */
 export function isFullPath(path: string, flavour: PathFlavour = hostFlavour): boolean {
