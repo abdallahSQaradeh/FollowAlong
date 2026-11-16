@@ -9,6 +9,7 @@ read-only fallback without any code of its own. The file is version 1:
 {
   "version": 1,
   "data": {
+    "course": [],
     "lessons": {
       "Section 1/01 Welcome.webm": [
         { "id": "…", "kind": "file", "path": "notes/cheat sheet.md", "relative": true },
@@ -29,8 +30,10 @@ read-only fallback without any code of its own. The file is version 1:
   prefix.
 - **A generated `id` per Resource**, not the path. Detach and Relink (later tickets) change
   or remove a Resource without the tree losing track of which one it is.
-- **Course Resources** (story 91) will add a `course` key beside `lessons`. `parse` ignores keys it
-  does not know and tolerates their absence, so that ticket needs no version bump.
+- **The Course-level key is reserved now.** `course` (story 91) is written as `[]` and kept as it
+  is when a Lesson gets a Resource. Nothing attaches to the Course yet, but the file then needs no
+  migration when that ticket, or `kind: 'url'` for URLs, arrives. A file without `course` (the
+  first writes) reads as `[]`. `kind` is the discriminator of a Resource.
 - **A malformed entry is dropped when read; a malformed file is ignored** (ADR 0005), and the next
   attach writes a fresh file. A file from a newer FollowAlong is ignored the same way.
 - **Attaching re-reads the file before writing** and attaches in one window run one at a time, so
@@ -46,8 +49,11 @@ read-only fallback without any code of its own. The file is version 1:
 - **Opening a Course reads the Resources, and a read failure is only logged**: the Lessons still
   play without them. Attaching reads again and lets such a failure through as a command error,
   because writing after a failed read could drop what was there.
-- **Opening a file is a UI sink method** (`UiSink.openFile`), not a new port: the list of ports in
-  spec #12 stays as it is. The VS Code adapter runs `vscode.open` with `ViewColumn.Beside`: VS Code picks the
+- **Opening a Resource is a UI sink method** (`UiSink.openResource(target)`), not a new port: the
+  list of ports in spec #12 stays as it is. The target is `{kind: 'file', path}` today; the tickets
+  for opener types, URLs and PDFs add kinds and route them inside the adapter, without changing the
+  method's shape. The VS Code adapter runs `vscode.open` with `ViewColumn.Beside` and
+  `preserveFocus` (focus stays where the learner was): VS Code picks the
   editor for the file (text and code in the text editor), in the group beside the code. The player is `retainContextWhenHidden`, so a
   Resource tab in front of it does not stop the Lesson, but the learner cannot see it while the tab
   is in front: where the Resource should sit so both are visible is a Manual QA question (#64).

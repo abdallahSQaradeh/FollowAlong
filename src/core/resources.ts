@@ -18,11 +18,16 @@ export interface ResourceRecord {
 }
 
 export interface ResourcesData {
+  /**
+   * The Resources of the whole Course. Reserved: nothing attaches to the Course yet (a later
+   * ticket), but it is written and kept so that file needs no migration when that arrives.
+   */
+  readonly course: readonly ResourceRecord[];
   /** The Resources of each Lesson, by the Lesson's id, in the order they were attached. */
   readonly lessons: Readonly<Record<string, readonly ResourceRecord[]>>;
 }
 
-export const noResources: ResourcesData = { lessons: {} };
+export const noResources: ResourcesData = { course: [], lessons: {} };
 
 function parseRecord(value: unknown): ResourceRecord | undefined {
   if (typeof value !== 'object' || value === null) {
@@ -40,6 +45,12 @@ function parseRecord(value: unknown): ResourceRecord | undefined {
   return { id, kind, path, relative: isRelative };
 }
 
+function parseRecords(value: unknown): ResourceRecord[] {
+  return Array.isArray(value)
+    ? (value as unknown[]).flatMap((record) => parseRecord(record) ?? [])
+    : [];
+}
+
 /** `resources.json`, version 1. A malformed Resource is dropped; a malformed file is ignored. */
 export const resourcesFile: CourseDataFile<ResourcesData> = {
   name: 'resources.json',
@@ -52,16 +63,17 @@ export const resourcesFile: CourseDataFile<ResourcesData> = {
     if (typeof lessons !== 'object' || lessons === null || Array.isArray(lessons)) {
       return undefined;
     }
+    const course: unknown = 'course' in data ? data.course : [];
     const parsed: Record<string, readonly ResourceRecord[]> = {};
     for (const [lessonId, records] of Object.entries(lessons)) {
       if (Array.isArray(records)) {
-        const valid = (records as unknown[]).flatMap((record) => parseRecord(record) ?? []);
+        const valid = parseRecords(records);
         if (valid.length > 0) {
           parsed[lessonId] = valid;
         }
       }
     }
-    return { lessons: parsed };
+    return { course: parseRecords(course), lessons: parsed };
   },
 };
 
@@ -93,5 +105,8 @@ export function withResource(
   lessonId: string,
   record: ResourceRecord,
 ): ResourcesData {
-  return { lessons: { ...data.lessons, [lessonId]: [...(data.lessons[lessonId] ?? []), record] } };
+  return {
+    course: data.course,
+    lessons: { ...data.lessons, [lessonId]: [...(data.lessons[lessonId] ?? []), record] },
+  };
 }

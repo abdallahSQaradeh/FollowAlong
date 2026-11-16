@@ -86,6 +86,7 @@ describe('attaching a file Resource to a Lesson', () => {
     expect(await storedResources(course)).toEqual({
       version: 1,
       data: {
+        course: [],
         lessons: {
           'intro.webm': [
             {
@@ -167,7 +168,10 @@ describe('attaching a file Resource to a Lesson', () => {
       await h.core.openResource(id);
     }
 
-    expect(h.ui.opened).toEqual([join(moved, 'notes', 'cheat.md'), join(outside, 'snippet.ts')]);
+    expect(h.ui.opened).toEqual([
+      { kind: 'file', path: join(moved, 'notes', 'cheat.md') },
+      { kind: 'file', path: join(outside, 'snippet.ts') },
+    ]);
   });
 
   it('keeps the Resources of a Lesson in the order they were attached, each Lesson its own', async () => {
@@ -186,6 +190,46 @@ describe('attaching a file Resource to a Lesson', () => {
 
     expect(resourceLabels(h, 'one.webm')).toEqual(['b.md', 'a.md']);
     expect(resourceLabels(h, 'two.webm')).toEqual(['a.md']);
+  });
+
+  it('keeps what is attached to the whole Course when a Lesson gets a Resource', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'a.md': '#',
+      '.followalong/resources.json': JSON.stringify({
+        version: 1,
+        data: {
+          course: [{ id: 'cheat', kind: 'file', path: 'cheat.md', relative: true }],
+          lessons: {},
+        },
+      }),
+    });
+    await h.core.openCourse(course);
+
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+
+    expect(await storedResources(course)).toMatchObject({
+      data: { course: [{ id: 'cheat', path: 'cheat.md' }] },
+    });
+  });
+
+  it('reads a Resources file written before the Course key existed', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'a.md': '#',
+      '.followalong/resources.json': JSON.stringify({
+        version: 1,
+        data: {
+          lessons: { 'intro.webm': [{ id: 'x', kind: 'file', path: 'a.md', relative: true }] },
+        },
+      }),
+    });
+
+    await h.core.openCourse(course);
+
+    expect(resourceLabels(h, 'intro.webm')).toEqual(['a.md']);
   });
 
   it('keeps both Resources when two are attached at once', async () => {
@@ -273,7 +317,7 @@ describe('opening a Resource', () => {
 
     await h.core.openResource(firstResourceId(h, 'intro.webm'));
 
-    expect(h.ui.opened).toEqual([join(course, 'notes', 'cheat.md')]);
+    expect(h.ui.opened).toEqual([{ kind: 'file', path: join(course, 'notes', 'cheat.md') }]);
     expect(h.player.shown).toEqual(shown);
     expect(h.player.sent).toEqual(sent);
   });

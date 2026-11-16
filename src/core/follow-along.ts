@@ -277,7 +277,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       const path = resourcePath(course.folder, record);
       try {
-        await ui.openFile(path);
+        await ui.openResource({ kind: 'file', path });
       } catch (error) {
         logger.log({
           level: 'warn',
