@@ -100,6 +100,14 @@ _Avoid_: Metadata, cache, settings
 An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
 _Avoid_: Soundtrack, audio copy, audio cache
 
+**Sound notice**:
+The words over the first frame of an MP4 Lesson that waits for its Audio sidecar: "Preparing sound… N%" while the sound is converted (the status bar says the same), or the error and the _Play without sound_ button when preparing failed. The Lesson starts by itself when the sound is ready, or when the learner presses play if that is later.
+_Avoid_: Loading screen, spinner, splash
+
+**Play without sound**:
+The button on the error of a failed Sound notice. It plays the picture alone, and nothing else plays the Lesson until it is pressed, so the learner is never stuck and never left with a silent Lesson they did not choose.
+_Avoid_: Skip sound, mute, continue anyway
+
 **Practice area**:
 Where the learner types and runs code while following a Lesson.
 _Avoid_: Sandbox, playground, workspace
