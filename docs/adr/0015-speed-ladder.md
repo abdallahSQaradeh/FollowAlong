@@ -11,7 +11,10 @@ player message out, nothing read until the key is pressed).
   step if it ever drifted.
 - **The core tracks the rate.** It takes it from `rateChanged {lessonId, rate}`, and also counts
   its own `setRate` at once, so presses in a row climb a rung each before the player has answered
-  the first. The player reports every change, whoever made it, including a rate picked in the
+  the first. It remembers the rates it asked for and not yet heard back: the answer to a press
+  settles that press and the ones before it, so a late answer never undoes later presses, while a
+  rate nobody asked for replaces them. The rate belongs to the player, not to a Lesson, so the core
+  does not drop a `rateChanged` from another Lesson. The player reports every change, whoever made it, including a rate picked in the
   video's own menu, so the core never works from a stale number. It starts at 1 and starts again
   at 1 when the player page reports `ready` (a new page plays at 1).
 - **A rate between rungs** (1.1×, from the video's own menu) steps to the next rung in the

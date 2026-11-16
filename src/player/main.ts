@@ -189,11 +189,15 @@ function reportMediaEvents(media: HTMLVideoElement): void {
     post({ type: 'seeked', lessonId });
   });
   // Also for a rate the learner picks in the video's own menu, so the extension never drifts.
-  // `ratechange` also fires for a change of `defaultPlaybackRate`, which `setRate` makes too.
-  on('ratechange', ({ lessonId }) => {
-    if (media.playbackRate !== reportedRate) {
-      reportedRate = media.playbackRate;
-      post({ type: 'rateChanged', lessonId, rate: reportedRate });
+  // `ratechange` also fires for a change of `defaultPlaybackRate`, which `setRate` makes too, and
+  // it is tracked even when nothing can be reported (no Lesson, or a failed one).
+  media.addEventListener('ratechange', () => {
+    if (media.playbackRate === reportedRate) {
+      return;
+    }
+    reportedRate = media.playbackRate;
+    if (current !== undefined && !current.failed) {
+      post({ type: 'rateChanged', lessonId: current.lessonId, rate: reportedRate });
     }
   });
   on('ended', (lesson) => {

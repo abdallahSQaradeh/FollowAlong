@@ -35,18 +35,16 @@ export type StepDirection = 'back' | 'forward';
 export type SpeedDirection = 'up' | 'down';
 
 /** The fixed speed ladder (spec #12, story 41), slowest first. */
-const speedLadder = [0.75, 1, 1.25, 1.5, 2] as const;
+const slowest = 0.75;
+const fastest = 2;
+const speedLadder = [slowest, 1, 1.25, 1.5, fastest] as const;
 const normalRate = 1;
 
 /** The rung one step from `rate`: the next one beyond it, or the end of the ladder. */
 function nextRate(rate: number, direction: SpeedDirection): number {
-  const rung =
-    direction === 'up'
-      ? speedLadder.find((candidate) => candidate > rate)
-      : speedLadder.findLast((candidate) => candidate < rate);
-  return (
-    rung ?? (direction === 'up' ? speedLadder[speedLadder.length - 1] : speedLadder[0]) ?? rate
-  );
+  return direction === 'up'
+    ? (speedLadder.find((rung) => rung > rate) ?? fastest)
+    : (speedLadder.findLast((rung) => rung < rate) ?? slowest);
 }
 
 /** The settings' defaults, in seconds (spec #12, Settings). */
@@ -111,6 +109,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let playback = freshPlayback(false);
   /** The playback rate: what the player last reported, or what the core last asked for. */
   let rate: number = normalRate;
+  /** Rates asked of the player that it has not reported yet, oldest first. */
+  let askedRates: number[] = [];
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -133,6 +133,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'ready':
         playerReady = true;
         rate = normalRate;
+        askedRates = [];
         logger.log({
           level: 'debug',
           message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
@@ -169,10 +170,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           playback = { ...freshPlayback(false), playing: event.type === 'played' };
         }
         break;
-      case 'rateChanged':
-        rate = event.rate;
+      case 'rateChanged': {
+        // The answer to a press still counts it and every press before it; a late answer must not
+        // undo the presses after it. A rate nobody asked for (the video's own menu) replaces them.
+        const answered = askedRates.indexOf(event.rate);
+        if (answered === -1) {
+          askedRates = [];
+          rate = event.rate;
+        } else {
+          askedRates = askedRates.slice(answered + 1);
+          rate = askedRates.at(-1) ?? event.rate;
+        }
         break;
-      case 'seeked':
+      }
       case 'timeUpdate':
         break;
     }
@@ -308,7 +318,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       // Counted at once, so presses in a row climb before the player has answered the first.
-      rate = nextRate(rate, direction);
+      const next = nextRate(rate, direction);
+      if (next !== rate) {
+        // The player reports only a change, so a press that changes nothing has no answer to wait for.
+        askedRates.push(next);
+      }
+      rate = next;
       player.send({ type: 'setRate', rate });
     },
     dispose() {

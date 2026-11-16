@@ -64,6 +64,28 @@ describe('speed commands', () => {
     expect(pressSpeed(h, 'up')).toEqual([{ type: 'setRate', rate: 1 }]);
   });
 
+  it('keep climbing when the player answers an earlier press late', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+
+    expect(pressRates(h, 'up', 2)).toEqual([1.25, 1.5]);
+    h.player.emit({ type: 'rateChanged', lessonId, rate: 1.25 });
+    expect(pressRates(h, 'up', 1)).toEqual([2]);
+    h.player.emit({ type: 'rateChanged', lessonId, rate: 1.5 });
+    h.player.emit({ type: 'rateChanged', lessonId, rate: 2 });
+    expect(pressRates(h, 'down', 1)).toEqual([1.5]);
+  });
+
+  it('take a rate nobody asked for over the presses still on their way', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+
+    pressSpeed(h, 'up');
+    h.player.emit({ type: 'rateChanged', lessonId, rate: 0.75 });
+
+    expect(pressSpeed(h, 'up')).toEqual([{ type: 'setRate', rate: 1 }]);
+  });
+
   it('step to the next rung when the rate is between two rungs', async () => {
     const h = await createHarness();
     await openLesson(h);
