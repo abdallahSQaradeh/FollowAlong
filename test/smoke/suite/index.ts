@@ -271,9 +271,44 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
   }
 }
 
-/** Whether VS Code's context key `key` (such as `editorTextFocus`) holds now. */
-async function hasFocus(key: string): Promise<boolean> {
-  return (await vscode.commands.executeCommand('getContextKeyValue', key)) === true;
+/** Which part of the VS Code window has keyboard focus. */
+type FocusedPart = 'editor' | 'terminal' | 'webview' | 'other';
+
+/**
+ * Which part of the VS Code window has keyboard focus, read from the workbench page over the
+ * DevTools protocol. The extension API cannot say: `activeTextEditor` stays the code editor while
+ * focus sits in a webview view, and VS Code 1.146 has no command that reads a context key such as
+ * `editorTextFocus` (gate review of #49, item 2; `getContextKeyValue` is not found).
+ */
+async function focusedPart(): Promise<FocusedPart> {
+  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
+  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  try {
+    const workbench = browser
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((page) => page.url().includes('workbench'));
+    assert.ok(workbench, 'the DevTools connection lists no VS Code workbench page');
+    return await workbench.evaluate((): FocusedPart => {
+      const focused = document.activeElement;
+      if (focused === null) {
+        return 'other';
+      }
+      if (focused.closest('.terminal') !== null) {
+        return 'terminal';
+      }
+      if (focused.closest('.monaco-editor') !== null) {
+        return 'editor';
+      }
+      return focused.tagName === 'IFRAME' || focused.closest('.webview') !== null
+        ? 'webview'
+        : 'other';
+    });
+  } finally {
+    // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
+    await browser.close();
+  }
 }
 
 /**
@@ -286,11 +321,13 @@ async function aTerminalKeepsItsFocusOverTheBottomPanel(hooks: TestHooks): Promi
   await waitFor('the player in the editor group', () =>
     hooks.playerSpot()?.spot === 'editorSplit' ? true : undefined,
   );
-  const terminal = vscode.window.createTerminal({ name: 'FollowAlong smoke' });
+  // Outside the smoke workspace: on Windows a shell holds its working folder until it has exited,
+  // and scripts/run-smoke.mjs removes the workspace right after VS Code closes.
+  const terminal = vscode.window.createTerminal({ name: 'FollowAlong smoke', cwd: tmpdir() });
   try {
     terminal.show(false);
     await waitForAsync('the terminal to take the focus', async () =>
-      (await hasFocus('terminalFocus')) ? true : undefined,
+      (await focusedPart()) === 'terminal' ? true : undefined,
     );
     await vscode.commands.executeCommand('followalong.moveVideo', 'bottomPanel');
     await waitFor('the player in the bottom panel', () =>
@@ -298,7 +335,7 @@ async function aTerminalKeepsItsFocusOverTheBottomPanel(hooks: TestHooks): Promi
     );
     // Longer than the adapter's 1 s watch for a hidden view.
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    assert.equal(await hasFocus('terminalFocus'), true, 'the terminal lost the focus');
+    assert.equal(await focusedPart(), 'terminal', 'the terminal lost the focus');
     assert.equal(
       hooks.playerSpot()?.visible,
       false,
@@ -344,13 +381,18 @@ async function theLessonLoadsIn(
   });
   // Keyboard focus itself, not only the active editor: VS Code keeps reporting the code editor as
   // the active one while focus sits in a webview view (gate review of #49, item 2).
+  let lastFocused: FocusedPart = 'other';
   await waitForAsync(
     `keyboard focus back in the code after the player opened in ${spot}`,
-    async () =>
-      (await hasFocus('editorTextFocus')) && vscode.window.activeTextEditor?.document === code
+    async () => {
+      lastFocused = await focusedPart();
+      return lastFocused === 'editor' && vscode.window.activeTextEditor?.document === code
         ? true
-        : undefined,
-  );
+        : undefined;
+    },
+  ).catch((error: unknown) => {
+    throw new Error(`${String(error)}; keyboard focus is in: ${lastFocused}`);
+  });
   return `the Lesson loads in the ${where.spot} spot (length ${String(loaded.duration)} s), and the code keeps the focus`;
 }
 
