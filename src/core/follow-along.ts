@@ -38,9 +38,9 @@ export interface FollowAlong {
   attachResource(lessonId: string, absolutePath: string): Promise<void>;
   /**
    * The attach command from the chord or the Command Palette: asks for a file and attaches it to
-   * the Lesson that is current when the command runs. The Lesson keeps playing meanwhile.
+   * the Loaded Lesson when the command runs. The Lesson keeps playing meanwhile.
    */
-  attachToCurrentLesson(): Promise<void>;
+  attachToLoadedLesson(): Promise<void>;
   /** Opens a Resource of the open Course, by its tree id, in a tab beside the code. */
   openResource(resourceId: string): Promise<void>;
   /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
@@ -578,22 +578,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       attaching = done.catch(() => undefined);
       return done;
     },
-    async attachToCurrentLesson() {
+    async attachToLoadedLesson() {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
       // learner means the Lesson they were watching, even if the next one starts meanwhile.
       const lesson = current;
-      if (lesson === undefined || openedCourse === undefined) {
+      if (lesson === undefined) {
         ui.showMessage({
           severity: 'info',
           text: 'Open a Lesson first, then attach a Resource to it.',
         });
         return;
       }
-      const path = await ui.pickFile();
-      if (path !== undefined) {
-        await followAlong.attachResource(lesson.id, path);
+      try {
+        const path = await ui.pickFile();
+        if (path !== undefined) {
+          await followAlong.attachResource(lesson.id, path);
+        }
+      } finally {
+        // The dialog took keyboard focus: hand it back, also when the attach failed (ADR 0023).
+        ui.returnFocus();
       }
-      ui.returnFocus();
     },
     async openResource(resourceId) {
       const course = openedCourse;

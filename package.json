@@ -99,7 +99,7 @@
         "icon": "$(add)"
       },
       {
-        "command": "followalong.attachToCurrentLesson",
+        "command": "followalong.attachToLoadedLesson",
         "title": "Attach Resource",
         "category": "FollowAlong"
       },
@@ -189,7 +189,7 @@
         "when": "editorTextFocus || terminalFocus"
       },
       {
-        "command": "followalong.attachToCurrentLesson",
+        "command": "followalong.attachToLoadedLesson",
         "key": "ctrl+' a",
         "mac": "cmd+' a",
         "when": "editorTextFocus || terminalFocus"

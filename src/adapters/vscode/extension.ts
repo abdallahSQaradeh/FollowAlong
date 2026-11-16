@@ -33,7 +33,7 @@ export const commands = {
   /** The "+" on a Lesson in the tree; it is run with the Lesson's tree node. */
   attachResource: 'followalong.attachResource',
   /** `Ctrl+'` `A`: attaches a file to the Lesson that is playing. */
-  attachToCurrentLesson: 'followalong.attachToCurrentLesson',
+  attachToLoadedLesson: 'followalong.attachToLoadedLesson',
   /** Run by a click on a Resource in the tree, with the Resource's id. */
   openResource: openResourceCommand,
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
@@ -161,8 +161,8 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
         await core.attachResource(lessonId, target.fsPath);
       }
     }),
-    register(commands.attachToCurrentLesson, async () => {
-      await core.attachToCurrentLesson();
+    register(commands.attachToLoadedLesson, async () => {
+      await core.attachToLoadedLesson();
     }),
     register(commands.openResource, async (resourceId) => {
       if (typeof resourceId === 'string') {

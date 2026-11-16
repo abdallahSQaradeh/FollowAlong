@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -35,10 +35,10 @@ async function playingFirstLesson(): Promise<{ h: Harness; notes: string }> {
 }
 
 describe('attaching a Resource from the chord', () => {
-  it('asks for a file and attaches it to the Lesson that is playing', async () => {
+  it('asks for a file and attaches it to the Loaded Lesson', async () => {
     const { h, notes } = await playingFirstLesson();
 
-    const attached = h.core.attachToCurrentLesson();
+    const attached = h.core.attachToLoadedLesson();
     expect(h.ui.fileDialogOpen).toBe(true);
     h.ui.answerFileDialog(notes);
     await attached;
@@ -47,12 +47,12 @@ describe('attaching a Resource from the chord', () => {
     expect(resourceLabels(h, '02 Two.webm')).toEqual([]);
   });
 
-  it('attaches to the Lesson that became current, after the learner moved on', async () => {
+  it('attaches to the Loaded Lesson, after the learner moved on', async () => {
     const { h, notes } = await playingFirstLesson();
     h.core.nextLesson();
     h.player.ready();
 
-    const attached = h.core.attachToCurrentLesson();
+    const attached = h.core.attachToLoadedLesson();
     h.ui.answerFileDialog(notes);
     await attached;
 
@@ -63,7 +63,7 @@ describe('attaching a Resource from the chord', () => {
   it('keeps the Lesson that was playing when the chord was pressed, if another starts meanwhile', async () => {
     const { h, notes } = await playingFirstLesson();
 
-    const attached = h.core.attachToCurrentLesson();
+    const attached = h.core.attachToLoadedLesson();
     h.core.nextLesson();
     h.ui.answerFileDialog(notes);
     await attached;
@@ -76,7 +76,7 @@ describe('attaching a Resource from the chord', () => {
     const { h, notes } = await playingFirstLesson();
     h.player.clearSent();
 
-    const attached = h.core.attachToCurrentLesson();
+    const attached = h.core.attachToLoadedLesson();
     expect(h.player.sent).toEqual([]);
     h.ui.answerFileDialog(notes);
     await attached;
@@ -87,12 +87,12 @@ describe('attaching a Resource from the chord', () => {
   it('hands focus back to the code once the dialog closes, with or without a file', async () => {
     const { h, notes } = await playingFirstLesson();
 
-    const first = h.core.attachToCurrentLesson();
+    const first = h.core.attachToLoadedLesson();
     h.ui.answerFileDialog(notes);
     await first;
     expect(h.ui.focusReturns).toBe(1);
 
-    const second = h.core.attachToCurrentLesson();
+    const second = h.core.attachToLoadedLesson();
     h.ui.answerFileDialog(undefined);
     await second;
     expect(h.ui.focusReturns).toBe(2);
@@ -102,11 +102,26 @@ describe('attaching a Resource from the chord', () => {
   it('tells the learner to open a Lesson first when none is loaded, and opens no dialog', async () => {
     const h = await createHarness();
 
-    await h.core.attachToCurrentLesson();
+    await h.core.attachToLoadedLesson();
 
     expect(h.ui.fileDialogs).toBe(0);
     expect(h.ui.messages).toEqual([
       { severity: 'info', text: 'Open a Lesson first, then attach a Resource to it.' },
     ]);
+  });
+
+  it('leaves a damaged Resources file as it is, tells the learner, and still hands focus back', async () => {
+    const { h, notes } = await playingFirstLesson();
+    const file = join(join(notes, '..'), '.followalong', 'resources.json');
+    await mkdir(join(file, '..'), { recursive: true });
+    await writeFile(file, '{ not json');
+
+    const attached = h.core.attachToLoadedLesson();
+    h.ui.answerFileDialog(notes);
+    await attached;
+
+    expect(await readFile(file, 'utf8')).toBe('{ not json');
+    expect(h.ui.messages.map((message) => message.severity)).toEqual(['warning']);
+    expect(h.ui.focusReturns).toBe(1);
   });
 });
