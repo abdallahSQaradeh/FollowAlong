@@ -845,6 +845,9 @@ export function createLoadedLesson(
       lastPlayingPosition: undefined,
     };
     pendingRestore = { rate: snapshot?.rate ?? rate, zoom: snapshot?.zoom };
+    // The page that held this load is gone: nothing (a prepared sound) is sent for it, and nothing
+    // it still posts is about the Lesson. The page in the new spot gets its own `load`.
+    currentLoad = undefined;
     logger.log({ level: 'info', message: `Moving the video from ${spot} to ${to}` });
     spot = to;
     showPlayer(current.lesson, shownRoots);

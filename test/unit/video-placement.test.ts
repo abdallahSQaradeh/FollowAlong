@@ -243,3 +243,27 @@ describe('Progress across a move', () => {
     expect(descriptionOf(h, lessonId)).toBe('00:20 / 05:00');
   });
 });
+
+describe('sound for an MP4 Lesson across a move', () => {
+  it('goes to the page in the new spot once it is ready, never to the page that is gone', async () => {
+    const h = await createHarness();
+    const mp4 = 'Section 1/01 Intro.mp4';
+    const course = await h.folder('mp4 course', { [mp4]: 'mp4 video with AAC sound' });
+    await h.core.openCourse(course);
+    h.player.ready(false);
+    await h.settle();
+
+    // The page in the bottom panel is still starting when the sound is ready.
+    const moving = h.core.moveVideo('bottomPanel');
+    h.clock.advance(1000);
+    await moving;
+    h.player.clearSent();
+    await h.converter.requests[0]?.succeed();
+    await h.settle();
+    expect(h.player.sent).toEqual([]);
+
+    h.player.ready(false);
+    await h.settle();
+    expect(h.player.sent.map((command) => command.type)).toEqual(['load', 'soundReady']);
+  });
+});

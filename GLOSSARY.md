@@ -128,6 +128,10 @@ _Avoid_: Hotkey, shortcut, single key
 The Lesson the player holds: it is set when the learner picks a Lesson or opens a Course, and gone when the learner closes the player. Controls that only make sense with a Lesson, such as the status bar items, show only while one is loaded.
 _Avoid_: Active Lesson, current video
 
+**Video spot**:
+Where the player sits in the VS Code window: an editor group beside the code (the default), the bottom panel or the secondary sidebar. The learner moves the video from one spot to another without losing its place.
+_Avoid_: Location, dock, layout, position
+
 **Zoom**:
 Showing an area of the Lesson's picture enlarged to fill the player, so the learner can read the instructor's code. It belongs to the player, not to a Lesson: it stays while the Lesson plays and when the next one loads, until the learner resets it.
 _Avoid_: Magnify, crop, close-up
