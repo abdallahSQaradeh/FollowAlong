@@ -4,7 +4,7 @@
  * a click on the picture does stays with playback in `main.ts`; it asks these controls whether the
  * page is zoomed, and whether the click ends a drag.
  */
-import { zoomLabel } from '../protocol/player-messages.js';
+import { zoomLabel, type ZoomAction } from '../protocol/player-messages.js';
 import type { Interactions } from './interactions.js';
 import {
   isZoomView,
@@ -125,6 +125,33 @@ export class ZoomControls {
     this.setAreaMode(false);
     this.show(wholePicture);
   }
+
+  /**
+   * Runs a zoom action of the extension (the zoom keys and the status bar item, ADR 0094). `in` and
+   * `out` step like the toolbar's ＋ and −, and `areaMode` turns area mode on or off like its area
+   * button. Those three wait for a drag under way, as the wheel does (ADR 0088): its box is drawn
+   * over, or its pan moves from, the view as it was. `reset` ends the drag and shows the whole picture.
+   */
+  run(action: ZoomAction): void {
+    if (action === 'reset') {
+      this.reset();
+    } else if (this.press === undefined) {
+      this.actions[action]();
+    }
+  }
+
+  /** What each zoom action that is not a reset does. */
+  private readonly actions: Readonly<Record<Exclude<ZoomAction, 'reset'>, () => void>> = {
+    in: () => {
+      this.show(zoomBy(this.view, zoomStep));
+    },
+    out: () => {
+      this.show(zoomBy(this.view, 1 / zoomStep));
+    },
+    areaMode: () => {
+      this.setAreaMode(!this.areaMode);
+    },
+  };
 
   /** What part of the picture the page shows now. */
   get shown(): ZoomView {
@@ -356,24 +383,18 @@ export class ZoomControls {
 
   /** The toolbar's buttons (story 61). Their presses hand focus back like any click (ADR 0009). */
   private listenToToolbar(): void {
-    const actions: Readonly<Record<string, () => void>> = {
-      in: () => {
-        this.show(zoomBy(this.view, zoomStep));
-      },
-      out: () => {
-        this.show(zoomBy(this.view, 1 / zoomStep));
-      },
-      area: () => {
-        this.setAreaMode(!this.areaMode);
-      },
-      reset: () => {
-        this.reset();
-      },
+    const actions: Readonly<Record<string, ZoomAction>> = {
+      in: 'in',
+      out: 'out',
+      area: 'areaMode',
+      reset: 'reset',
     };
     for (const button of this.options.toolbar.querySelectorAll<HTMLElement>('[data-zoom]')) {
       const action = actions[button.dataset.zoom ?? ''];
       button.addEventListener('click', () => {
-        action?.();
+        if (action !== undefined) {
+          this.run(action);
+        }
       });
     }
   }

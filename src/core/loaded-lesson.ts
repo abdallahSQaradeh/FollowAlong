@@ -11,6 +11,7 @@ import {
   type PlayerCommand,
   type PlayerEvent,
   type PlayerSnapshot,
+  type ZoomAction,
   type ZoomView,
 } from '../protocol/player-messages.js';
 import {
@@ -149,6 +150,11 @@ export interface LoadedLesson {
   seekStep(size: StepSize, direction: StepDirection): void;
   /** Moves the playback rate one rung up or down the speed ladder. */
   speedStep(direction: SpeedDirection): void;
+  /**
+   * The zoom commands (`Ctrl+'` `Z`, `=`, `-`, `0`): asks the player to change its zoom. Focus stays
+   * where it is: a key press never took it.
+   */
+  zoom(action: ZoomAction): void;
   /** Runs the command a status bar item names, then hands focus back (ADR 0009, ADR 0018). */
   statusBarClick(command: StatusBarCommand): void;
   /**
@@ -1160,6 +1166,13 @@ export function createLoadedLesson(
     return true;
   }
 
+  /** Asks the player to change its zoom. It knows what it shows, and reports the level. */
+  function zoomPlayer(action: ZoomAction): void {
+    if (hasPlayableLesson('Zoom')) {
+      player.send({ type: 'zoom', action });
+    }
+  }
+
   /** The step in seconds, read when the command runs so a changed setting counts at once. */
   function stepSeconds(size: StepSize): number {
     return positiveSetting(config.get(stepSettings[size]), defaultStepSeconds[size]);
@@ -1253,6 +1266,7 @@ export function createLoadedLesson(
         setRate(nextRate(rate, direction));
       }
     },
+    zoom: zoomPlayer,
     statusBarClick(command) {
       switch (command) {
         case 'playPause':
@@ -1268,9 +1282,7 @@ export function createLoadedLesson(
           break;
         case 'zoomReset':
           // The item goes once the player reports the whole picture: it knows what it shows.
-          if (hasPlayableLesson('Zoom reset')) {
-            player.send({ type: 'zoom', action: 'reset' });
-          }
+          zoomPlayer('reset');
           break;
       }
       // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
