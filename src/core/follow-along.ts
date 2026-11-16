@@ -9,6 +9,7 @@ import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-
 import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
+import { scanCourses } from './course-scanner.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
@@ -478,7 +479,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** The Course picker. */
   async function pickCourse(): Promise<void> {
-    const intent = await ui.pick(buildCoursePicker());
+    const roots = coursesRoots();
+    const scan = await scanCourses(ports, roots);
+    const intent = await ui.pick(
+      buildCoursePicker({ hasRoots: roots.length > 0, courses: scan.courses }),
+    );
     if (intent?.type === 'addCoursesRoot') {
       await addCoursesRoot();
     }

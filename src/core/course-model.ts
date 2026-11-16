@@ -66,7 +66,7 @@ function containerOf(fileName: string): Container | undefined {
 /** "lesson2" before "lesson10"; a fixed locale, so the order does not depend on the machine. */
 const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 
-function naturalOrder(a: string, b: string): number {
+export function naturalOrder(a: string, b: string): number {
   return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
 }
 

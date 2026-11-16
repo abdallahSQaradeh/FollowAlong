@@ -38,4 +38,42 @@ describe('the Course picker', () => {
     expect(h.ui.folderDialogs).toEqual([{ title: 'Add Courses root', openLabel: 'Add' }]);
     expect(h.config.get('coursesRoots')).toEqual([root]);
   });
+
+  it('lists every Course under the Courses roots A–Z, then “Add Courses root…”', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'TypeScript Deep Dive/01 Intro.mp4': 'v',
+      'algorithms/lesson1.webm': 'v',
+      'Web/React Basics/01 Hello.webm': 'v',
+      'notes/readme.txt': 'not a Course',
+    });
+    const more = await h.folder('More', { 'CSS Grid/lesson10.mp4': 'v' });
+    h.config.set('coursesRoots', [learning, more]);
+
+    void h.core.pickCourse();
+    await settle();
+
+    expect(rows(h.ui.picker)).toEqual([
+      'algorithms',
+      'CSS Grid',
+      'React Basics',
+      'TypeScript Deep Dive',
+      'Add Courses root…',
+    ]);
+  });
+
+  it('stops at the first folder on a branch that holds a video: its subfolders are its Sections', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Node Course/01 Welcome.mp4': 'v',
+      'Node Course/Section 2/02 Modules.mp4': 'v',
+      'Node Course/Section 2/extra/03 Deep.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+
+    void h.core.pickCourse();
+    await settle();
+
+    expect(rows(h.ui.picker)).toEqual(['Node Course', 'Add Courses root…']);
+  });
 });
