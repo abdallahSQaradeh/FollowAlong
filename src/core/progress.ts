@@ -138,6 +138,8 @@ export async function openProgress(
   let saving: Promise<void> = Promise.resolve();
   /** The learner is told about a failing or refused save once per open Course, not every 5 s. */
   let failureShown = false;
+  /** The learner is told once that Progress went to the extension storage instead. */
+  let keptElsewhereShown = false;
   /** Set while saves keep failing, so a run of failures is logged once. */
   let failing = false;
 
@@ -147,11 +149,22 @@ export async function openProgress(
     }
     unsaved = false;
     try {
-      await data.write(progressFile, progress);
+      const written = await data.write(progressFile, progress);
       failing = false;
+      if (written.keptElsewhere !== undefined && !keptElsewhereShown) {
+        keptElsewhereShown = true;
+        logger.log({
+          level: 'warn',
+          message: `${written.keptElsewhere} cannot be read: keeping Progress in the extension storage.`,
+        });
+        ui.showMessage({
+          severity: 'warning',
+          text: "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer FollowAlong, so FollowAlong keeps your progress in its own storage for now.",
+        });
+      }
     } catch (error) {
       if (error instanceof UnreadableCourseDataError) {
-        // The copy a save would replace could not be read: it stays as it is (spec #12, D5), and
+        // Not even the fallback copy can be replaced: both stay as they are (spec #12, D5), and
         // this Course's Progress lives only for this session.
         if (!failureShown) {
           failureShown = true;

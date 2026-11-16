@@ -509,8 +509,8 @@ describe('Progress kept with the Course', () => {
 });
 
 describe('a progress file FollowAlong cannot read', () => {
-  const cannotUpdate =
-    "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer FollowAlong. Nothing was changed.";
+  const keptElsewhere =
+    "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer FollowAlong, so FollowAlong keeps your progress in its own storage for now.";
 
   for (const [what, content] of [
     ['damaged', '{"version": 1, "data": '],
@@ -519,7 +519,7 @@ describe('a progress file FollowAlong cannot read', () => {
       JSON.stringify({ version: 99, data: { lessons: {}, chapters: [] } }),
     ],
   ] as const) {
-    it(`is never overwritten when it is ${what}, and the learner is told once`, async () => {
+    it(`is never overwritten when it is ${what}: Progress goes to the extension storage`, async () => {
       const h = await createHarness();
       const course = await h.folder('course', {
         ...lessons,
@@ -535,16 +535,19 @@ describe('a progress file FollowAlong cannot read', () => {
       await h.core.close();
 
       expect(await readFile(join(course, '.followalong', 'progress.json'), 'utf8')).toBe(content);
-      expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
-      expect(h.ui.messages).toEqual([{ severity: 'warning', text: cannotUpdate }]);
+      expect(await h.listFiles(h.storage.folder)).toEqual([
+        expect.stringMatching(/^courses\/course-[0-9a-f]{16}\/progress\.json$/),
+      ]);
+      expect(h.ui.messages).toEqual([{ severity: 'warning', text: keptElsewhere }]);
       expect(
-        h.logger.entries.filter((entry) => entry.message.includes('Not saving Progress')),
+        h.logger.entries.filter((entry) => entry.message.includes('in the extension storage')),
       ).toEqual([
         {
           level: 'warn',
-          message: `Not saving Progress: ${join(course, '.followalong', 'progress.json')} cannot be read.`,
+          message: `${join(course, '.followalong', 'progress.json')} cannot be read: keeping Progress in the extension storage.`,
         },
       ]);
+      expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 36 });
     });
   }
 
@@ -590,6 +593,27 @@ describe('a progress file FollowAlong cannot read', () => {
     expect(
       JSON.parse(await readFile(join(course, '.followalong', 'progress.json'), 'utf8')),
     ).toEqual({ version: 1, data: { lessons: {} } });
-    expect(h.ui.messages).toEqual([{ severity: 'warning', text: cannotUpdate }]);
+    expect(h.ui.messages).toEqual([{ severity: 'warning', text: keptElsewhere }]);
+  });
+
+  it('saves into .followalong again once a read that failed for a moment succeeds', async () => {
+    const h = await createHarness();
+    const progressPath = join('.followalong', 'progress.json');
+    const course = await h.folder('course', {
+      ...lessons,
+      '.followalong/progress.json': JSON.stringify({ version: 1, data: { lessons: {} } }),
+    });
+    // An antivirus scan holds the file while the Course opens, then lets it go.
+    h.makeUnreadable(join(course, progressPath));
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.makeReadable(join(course, progressPath));
+    playTo(h, '01 Intro.webm', 40);
+    pause(h, '01 Intro.webm');
+    await h.core.close();
+
+    expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
+    expect(h.ui.messages).toEqual([]);
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 35 });
   });
 });

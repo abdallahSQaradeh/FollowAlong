@@ -43,13 +43,23 @@ export class UnreadableCourseDataError extends Error {
   }
 }
 
+/** Where a write went, when it was not where it would usually go. */
+export interface CourseDataWritten {
+  /**
+   * The copy in `.followalong` could not be read, so it was left as it was and the data went to the
+   * fallback storage instead (spec #12, D5 as amended); reads then use the fallback copy.
+   */
+  readonly keptElsewhere?: string;
+}
+
 export interface CourseData {
   read<T>(file: CourseDataFile<T>): Promise<T | undefined>;
   /**
-   * Rejects with {@link UnreadableCourseDataError} instead of replacing a copy that this store
-   * read and could not use.
+   * Never replaces a copy this store read and could not use. Such a copy in `.followalong` sends the
+   * data to the fallback storage; such a copy where the data must go rejects with
+   * {@link UnreadableCourseDataError}.
    */
-  write<T>(file: CourseDataFile<T>, value: T): Promise<void>;
+  write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten>;
 }
 
 type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
@@ -75,6 +85,8 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
   /** Copies this store has read, and those it found unusable: writes never replace one (D5). */
   const seen = new Set<string>();
   const unreadable = new Set<string>();
+  /** Of those, the copies whose read failed outright, rather than finding unusable content. */
+  const failedToRead = new Set<string>();
 
   /** The file's value in `location`; a file that exists but cannot be used is never written over. */
   async function readFrom<T>(location: string, file: CourseDataFile<T>): Promise<T | undefined> {
@@ -83,6 +95,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     // What this read finds replaces what an earlier read found: a file fixed or removed since is
     // writable again.
     unreadable.delete(path);
+    failedToRead.delete(path);
     const ignore = (why: string): void => {
       unreadable.add(path);
       logger.log({ level: 'warn', message: `Ignoring ${path}: ${why}` });
@@ -94,6 +107,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       if (FileSystemError.is(error, 'notFound')) {
         return undefined;
       }
+      failedToRead.add(path);
       ignore(`it cannot be read (${error instanceof Error ? error.message : String(error)}).`);
       return undefined;
     }
@@ -130,8 +144,9 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
 
   async function writeTo(location: string, file: CourseDataFile<unknown>, content: string) {
     const path = join(location, file.name);
-    if (!seen.has(path)) {
-      // Never replace a file unseen: a read can stop at the other location's copy.
+    if (!seen.has(path) || failedToRead.has(path)) {
+      // Never replace a file unseen: a read can stop at the other location's copy. A read that
+      // failed (an antivirus scan holding the file, say) is tried again first.
       await readFrom(location, file);
     }
     if (unreadable.has(path)) {
@@ -175,14 +190,19 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       return undefined;
     },
 
-    async write<T>(file: CourseDataFile<T>, value: T): Promise<void> {
+    async write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten> {
       const content = `${JSON.stringify({ version: file.version, data: value }, null, 2)}\n`;
       if (target !== fallback) {
         try {
           await writeTo(inCourse, file, content);
           target = inCourse;
-          return undefined;
+          return {};
         } catch (error) {
+          if (error instanceof UnreadableCourseDataError) {
+            // Left as it is, for whoever can read it; this data goes to the fallback for now.
+            await writeTo(fallback, file, content);
+            return { keptElsewhere: error.path };
+          }
           if (!FileSystemError.is(error, 'readOnly')) {
             throw error;
           }
@@ -190,6 +210,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
         }
       }
       await writeTo(fallback, file, content);
+      return {};
     },
   };
 }

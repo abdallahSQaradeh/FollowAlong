@@ -345,6 +345,8 @@ export interface Harness {
    * EACCES.
    */
   makeUnreadable(folder: string): void;
+  /** Undoes {@link Harness.makeUnreadable}: the path reads as usual again. */
+  makeReadable(path: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
   folder(name: string, tree: Tree): Promise<string>;
   /** Every file under `folder`, as sorted relative paths with `/`. */
@@ -446,6 +448,9 @@ export async function createHarness(): Promise<Harness> {
     root,
     makeUnreadable(folder) {
       unreadable.add(folder);
+    },
+    makeReadable(path) {
+      unreadable.delete(path);
     },
     async folder(name, tree) {
       const folder = join(root, name);
