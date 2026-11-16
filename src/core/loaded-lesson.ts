@@ -68,6 +68,10 @@ export type SpeedDirection = 'up' | 'down';
 /** What a playback command tells the learner when no Lesson is loaded. */
 export const noLessonText = 'FollowAlong: no Lesson is open. Open a Course first.';
 
+/** What a playback command tells the learner while the video is collapsed (ADR 0092). */
+export const collapsedText =
+  "FollowAlong: the video is collapsed. Press Ctrl+' V to bring it back.";
+
 /** What the Loaded Lesson needs from the open Course. */
 export interface OpenCourseView {
   /** The open Course's Progress, which the Loaded Lesson's playhead is recorded into. */
@@ -157,6 +161,11 @@ export interface LoadedLesson {
    * speed and the zoom. Resolves once the page in `to` is starting.
    */
   move(to: VideoSpot): Promise<void>;
+  /**
+   * Collapses the video where it is, or brings it back in the same spot (`Ctrl+'` `V`, ADR 0092).
+   * Like a move, it carries the playhead, play or pause, speed and zoom through the page it drops.
+   */
+  toggleVideo(): Promise<void>;
   /** The learner typed in the Practice area: an edit auto-pause counts (ADR 0052). */
   typed(): void;
   /** Stops listening to the player and the settings, and cancels the next save. */
@@ -338,7 +347,9 @@ export function createLoadedLesson(
    * The spot the learner asked for last while a move waited for its snapshot: the move goes there
    * (review of #49, item 7).
    */
-  let requestedSpot: VideoSpot | undefined;
+  let requestedSpot: VideoSpot | 'collapse' | undefined;
+  /** Set while the video is collapsed: the Lesson is loaded, but no page shows it (ADR 0092). */
+  let collapsed = false;
   /** Set while a move waits for the `snapshot` of the page it leaves. */
   let awaitingSnapshot: ((snapshot: PlayerSnapshot | undefined) => void) | undefined;
   /**
@@ -840,6 +851,7 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
+    forgetEnded();
     feedAutoPause({ type: 'lessonOver' });
     stopSound();
     course.prepareSoundAhead(undefined, pageDecodes);
@@ -847,10 +859,21 @@ export function createLoadedLesson(
     refreshStatusBar();
   }
 
+  /**
+   * A page that is still starting takes over its speed and zoom, but not that the Lesson before it
+   * had ended: a Lesson loaded or unloaded meanwhile is not at its end (review of #49, item 5).
+   */
+  function forgetEnded(): void {
+    if (pendingRestore !== undefined) {
+      pendingRestore = { ...pendingRestore, ended: false };
+    }
+  }
+
   /** The learner closed the player: a new page starts from scratch, at normal speed. */
   function onPlayerClosed(): void {
     newPage(false);
     spot = undefined;
+    collapsed = false;
     pendingRestore = undefined;
     awaitingSnapshot?.(undefined);
     // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
@@ -886,6 +909,7 @@ export function createLoadedLesson(
     if (sound?.lesson !== lesson) {
       stopSound();
     }
+    forgetEnded();
     current = {
       lesson,
       startAt,
@@ -906,6 +930,7 @@ export function createLoadedLesson(
   /** Shows the player for `lesson` in its spot; a page that is starting is a new page. */
   function showPlayer(lesson: Lesson, resourceRoots: readonly string[]): PlayerShowResult {
     spot ??= settingSpot(config);
+    collapsed = false;
     shownRoots = resourceRoots;
     const result = player.show({ title: lesson.title, resourceRoots, spot });
     if (result === 'created') {
@@ -964,9 +989,26 @@ export function createLoadedLesson(
     return current === shown && spot !== undefined;
   }
 
-  async function move(to: VideoSpot): Promise<void> {
+  function move(to: VideoSpot): Promise<void> {
+    return rehost(to);
+  }
+
+  function toggleVideo(): Promise<void> {
+    if (awaitingSnapshot !== undefined && spot !== undefined) {
+      // Pressed again while the page is asked what it shows: it undoes what is under way.
+      requestedSpot = requestedSpot === 'collapse' ? spot : 'collapse';
+      return Promise.resolve();
+    }
+    return rehost(collapsed ? spot : 'collapse');
+  }
+
+  /**
+   * Takes the Lesson from the page it is in to the new page in `to`, or collapses it (`'collapse'`).
+   * The page it leaves says what it shows, and the new page carries on from it.
+   */
+  async function rehost(to: VideoSpot | 'collapse' | undefined): Promise<void> {
     // `moveVideo` has told the learner already: it asks `spot()` before it asks for a spot.
-    if (current === undefined || spot === undefined) {
+    if (current === undefined || spot === undefined || to === undefined) {
       return;
     }
     requestedSpot = to;
@@ -980,7 +1022,7 @@ export function createLoadedLesson(
       to !== spot && playerReady && currentLoad !== undefined ? await takeSnapshot() : undefined;
     const target = requestedSpot;
     requestedSpot = undefined;
-    if (target === spot) {
+    if (target === spot && !collapsed) {
       return;
     }
     if (!stillLoaded(shown)) {
@@ -1019,9 +1061,16 @@ export function createLoadedLesson(
     // The page that held this load is gone: nothing (a prepared sound) is sent for it, and nothing
     // it still posts is about the Lesson. The page in the new spot gets its own `load`.
     currentLoad = undefined;
-    logger.log({ level: 'info', message: `Moving the video from ${spot} to ${target}` });
-    spot = target;
-    showPlayer(current.lesson, shownRoots);
+    if (target === 'collapse') {
+      logger.log({ level: 'info', message: `Collapsing the video in ${spot}` });
+      newPage(false);
+      collapsed = true;
+      player.collapse();
+    } else {
+      logger.log({ level: 'info', message: `Moving the video from ${spot} to ${target}` });
+      spot = target;
+      showPlayer(current.lesson, shownRoots);
+    }
     refreshStatusBar();
   }
 
@@ -1052,6 +1101,10 @@ export function createLoadedLesson(
   function hasPlayableLesson(command: string): boolean {
     if (current === undefined) {
       ui.showMessage({ severity: 'info', text: noLessonText });
+      return false;
+    }
+    if (collapsed) {
+      ui.showMessage({ severity: 'info', text: collapsedText });
       return false;
     }
     if (!playerReady) {
@@ -1120,6 +1173,7 @@ export function createLoadedLesson(
     load,
     spot: () => (current === undefined ? undefined : spot),
     move,
+    toggleVideo,
     reveal(resourceRoots) {
       if (current !== undefined) {
         showPlayer(current.lesson, resourceRoots);

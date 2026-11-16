@@ -132,6 +132,7 @@ export async function run(): Promise<void> {
     'followalong.goToLesson',
     'followalong.attachToLoadedLesson',
     'followalong.moveVideo',
+    'followalong.toggleVideo',
     'followalong.toggleLessonDone',
     'followalong.markLessonDone',
     'followalong.markLessonNotDone',
@@ -183,6 +184,9 @@ export async function run(): Promise<void> {
     ['attachToLoadedLesson', 'Attach Resource', "ctrl+' a"],
   ]);
   say("FollowAlong: Attach Resource is in the Command Palette, bound to Ctrl+' A");
+
+  chordCommandsAreBound(extension.packageJSON, [['toggleVideo', 'Toggle video', "ctrl+' v"]]);
+  say("FollowAlong: Toggle video is in the Command Palette, bound to Ctrl+' V");
 
   chordCommandsAreBound(extension.packageJSON, [
     ['toggleLessonDone', 'Mark done / not done', "ctrl+' d"],
@@ -298,11 +302,57 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
       );
     }
 
+    // Collapse and restore in each spot (#52, ADR 0092): the page goes, a new page loads the
+    // Lesson in the same spot, and no terminal starts.
+    for (const spot of ['bottomPanel', 'secondarySidebar', 'editorSplit'] as const) {
+      await vscode.commands.executeCommand('followalong.moveVideo', spot);
+      from = hooks.playerEvents.length;
+      await waitFor(`the player in ${spot}`, () =>
+        hooks.playerSpot()?.spot === spot && hooks.playerSpot()?.visible === true
+          ? true
+          : undefined,
+      );
+      await vscode.commands.executeCommand('followalong.toggleVideo');
+      await waitFor(`the video collapsed in ${spot}`, () =>
+        hooks.playerSpot() === undefined ? true : undefined,
+      );
+      assert.deepEqual(
+        vscode.window.terminals.map((terminal) => terminal.name),
+        [],
+        `collapsing the video in ${spot} started a terminal`,
+      );
+      from = hooks.playerEvents.length;
+      await vscode.commands.executeCommand('followalong.toggleVideo');
+      say(
+        `the video collapses and comes back in the ${spot}: ${await theLessonLoadsIn(hooks, spot, from, code)}`,
+      );
+    }
+
     say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
   } finally {
     await settings.update('videoLocation', undefined, vscode.ConfigurationTarget.Global);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  }
+}
+
+/** Whether the bottom panel is open, read from the workbench page over the DevTools protocol. */
+async function bottomPanelIsOpen(): Promise<boolean> {
+  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
+  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  try {
+    const workbench = browser
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((page) => page.url().includes('workbench'));
+    assert.ok(workbench, 'the DevTools connection lists no VS Code workbench page');
+    return await workbench.evaluate((): boolean => {
+      const panel = document.querySelector('.part.panel');
+      return panel instanceof HTMLElement && panel.offsetHeight > 0 && panel.offsetWidth > 0;
+    });
+  } finally {
+    await browser.close();
   }
 }
 
@@ -376,7 +426,22 @@ async function aTerminalKeepsItsFocusOverTheBottomPanel(hooks: TestHooks): Promi
       false,
       'the video was brought in front of the terminal the learner was typing in',
     );
-    return 'after a move to the bottom panel, the terminal the learner typed in keeps the focus and stays in front';
+    // The video in front of the terminal, then moved out: the panel stays, with the terminal
+    // (#52, routed finding 1: leaving the panel must not close a panel that holds a terminal).
+    await vscode.commands.executeCommand('followalong.videoPanel.focus');
+    await waitFor('the video in front in the bottom panel', () =>
+      hooks.playerSpot()?.spot === 'bottomPanel' && hooks.playerSpot()?.visible === true
+        ? true
+        : undefined,
+    );
+    await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+    await waitFor('the player in the editor group', () =>
+      hooks.playerSpot()?.spot === 'editorSplit' ? true : undefined,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(await bottomPanelIsOpen(), true, 'moving the video out closed the panel');
+    assert.equal(vscode.window.terminals.length, 1, 'the learner lost their terminal');
+    return 'after a move to the bottom panel, the terminal the learner typed in keeps the focus and stays in front, and stays when the video leaves';
   } finally {
     terminal.dispose();
   }
