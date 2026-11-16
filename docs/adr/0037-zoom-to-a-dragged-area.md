@@ -29,7 +29,12 @@ Q1–Q4 on it, which accepted each default below.
 - **One label rule** (`zoomLabel` in the protocol module, used by the toolbar and the status bar
   item): one decimal, without a trailing `.0`: `1×`, `1.3×`, `2.4×`, `8×`. ＋ and − step by
   1.25× around the middle of what is shown. The level stops at 1 and at 8× (the prototype's
-  maximum, beyond which the picture is only blur).
+  maximum, beyond which the picture is only blur). **A level that reads `1×` is the whole
+  picture** (gate round 1): a box over nearly all of it (a level of 1.008, say) zooms nothing,
+  instead of hiding the control bar and delaying clicks at a zoom the learner cannot see. The
+  protocol holds the maximum (`maxZoomLevel`) and the rounding (`shownZoomLevel`). `zoomChanged`
+  is dropped unless its level is from 1 to 8×, and a stored view is ignored unless the player
+  could have made it.
 - **The zoom controls are one module** (`src/player/zoom-controls.ts`): the box drag, the toolbar
   and the webview state. What a click on the picture does stays with playback in `main.ts`.
 - **A drag is not a click** (#23). A press on the picture becomes a drag once the pointer moves
@@ -39,14 +44,18 @@ Q1–Q4 on it, which accepted each default below.
   `beginGesture` when it becomes a drag, `endGesture` on release, so focus is handed back once,
   when it ends.
 - **A click waits for a double-click only while zoomed** (Q2). At 1× a click plays or pauses at
-  once, as #23 made it, and a double-click has nothing to reset. While zoomed, a double-click
+  once, as #23 made it. A double-click there has nothing to reset, so it does nothing more: it does
+  not end area mode either (gate round 1). While zoomed, a double-click
   resets, and must not play and pause on the way (with Rewind on, the second toggle would also
   step back). So a click on the zoomed picture plays or pauses 300 ms later, unless a second click
   follows: then nothing toggles and the double-click resets. A `load` cancels a click still
   waiting. The click reports `userInteracted` at once, like any click. Its toggle still runs
   within Chromium's user activation window, so the click that unlocks playback (#12 D3) works
   zoomed too. Seam 2 checks it with `userGestures: false` on a reloaded page that kept its zoom
-  and has had no gesture yet.
+  and has had no gesture yet. **A triple-click** while zoomed resets on the double-click. Its
+  third click lands on the whole picture, so it plays or pauses at once, as any click at 1× does
+  (kept, gate round 1: it is a fresh click after the reset, and to swallow it the player would
+  have to delay clicks at 1× too).
 - **A plain drag draws a box at any zoom, for now** (Q3). While zoomed it zooms further into the
   shown area. #47 changes this: a plain drag while zoomed pans, and Shift+drag draws a new box.
   **Area mode** (the toolbar's area button, `aria-pressed`) means the next drag draws a box,
@@ -59,8 +68,14 @@ Q1–Q4 on it, which accepted each default below.
 - **The native control bar is off while zoomed.** It would be enlarged with the picture. The
   player sets `controls` to false, and the overlay then covers the whole player, so the strip
   along the bottom is picture: a click there plays or pauses. At 1× the bar and the overlay's
-  72 px gap are as ADR 0009 describes. While zoomed the learner controls playback with the keys,
-  the status bar and a click on the picture.
+  72 px gap are as ADR 0009 describes.
+
+  **Out of reach while zoomed** (gate round 1): mute, volume, fullscreen and scrubbing the seek
+  bar, which only the native bar offers. Play and pause (the keys, the status bar item, a click
+  on the picture), the steps (the keys, the status bar's back item) and the speed (the keys and
+  the status bar) still work. Any of three ways brings the bar back: a double-click on the
+  picture, a click on the status bar zoom item, or the toolbar's reset.
+
 - **The toolbar** sits in the top right corner, above the click overlay and the Next overlay. It
   shows while the pointer is over the player (as the native bar does) and in area mode, so it
   does not cover the instructor's code the rest of the time. Its buttons are not the picture:

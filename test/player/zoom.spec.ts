@@ -455,3 +455,32 @@ test.describe('a box drag that does not end normally', () => {
     expect((await player.video()).paused).toBe(true);
   });
 });
+
+test.describe('a box that covers almost the whole picture', () => {
+  test('does not zoom: a level that reads 1× is the whole picture', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await drag(page, { x: 5, y: 5 }, { x: 1275, y: 640 });
+    await expect.poll(() => interactions(player)).toBe(1);
+
+    expect((await player.events()).some((event) => event.type === 'zoomChanged')).toBe(false);
+    expect((await player.video()).controls).toBe(true);
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+  });
+});
+
+test.describe('a double-click at 1×', () => {
+  test('leaves area mode on: there is no zoom to reset', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const area = page
+      .getByRole('toolbar', { name: 'Zoom' })
+      .getByRole('button', { name: 'Zoom to an area' });
+    await area.click();
+
+    await page.mouse.dblclick(600, 300);
+
+    await expect(area).toHaveAttribute('aria-pressed', 'true');
+  });
+});

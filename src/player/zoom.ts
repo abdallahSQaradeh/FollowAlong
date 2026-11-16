@@ -6,6 +6,8 @@
  * when the player is resized or moved to another spot (#49), and can be stored as it is.
  */
 
+import { maxZoomLevel, shownZoomLevel } from '../protocol/player-messages.js';
+
 /** What part of the whole picture is shown. */
 export interface ZoomView {
   /** 1 shows the whole picture; 2 shows half its width and half its height. */
@@ -17,9 +19,6 @@ export interface ZoomView {
 }
 
 export const wholePicture: ZoomView = { level: 1, left: 0, top: 0 };
-
-/** The closest the learner can zoom in (from the prototype: further is only blur). */
-const maxZoomLevel = 8;
 
 /** How much one press of ＋ or − zooms in or out (from the prototype). */
 export const zoomStep = 1.25;
@@ -36,9 +35,16 @@ function clamp(value: number, low: number, high: number): number {
   return Math.min(Math.max(value, low), high);
 }
 
-/** The view at `level`, centred as close to (`centreX`, `centreY`) as the picture's edges allow. */
+/**
+ * The view at `level`, centred as close to (`centreX`, `centreY`) as the picture's edges allow. A
+ * level that would read `1×` is the whole picture: a box over nearly all of it zooms nothing,
+ * rather than hiding the control bar at a zoom the learner cannot see.
+ */
 function centredView(level: number, centreX: number, centreY: number): ZoomView {
-  const clamped = clamp(level, 1, maxZoomLevel);
+  if (shownZoomLevel(level) <= 1) {
+    return wholePicture;
+  }
+  const clamped = Math.min(level, maxZoomLevel);
   const span = 1 / clamped;
   return {
     level: clamped,
@@ -70,7 +76,8 @@ export function isZoomView(value: unknown): value is ZoomView {
     typeof level === 'number' &&
     typeof left === 'number' &&
     typeof top === 'number' &&
-    level >= 1 &&
+    // 1, or a level that reads above 1×: the player never makes a view between them.
+    (level === 1 || shownZoomLevel(level) > 1) &&
     level <= maxZoomLevel &&
     left >= 0 &&
     top >= 0 &&

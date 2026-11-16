@@ -105,8 +105,16 @@ export type PlayerEvent =
  * decimal, without a trailing `.0`: `1×`, `1.3×`, `2.4×` (ADR 0037).
  */
 export function zoomLabel(level: number): string {
-  return `${String(Number(level.toFixed(1)))}×`;
+  return `${String(shownZoomLevel(level))}×`;
 }
+
+/** A zoom level as it is shown: to one decimal. A level that shows as 1 is the whole picture. */
+export function shownZoomLevel(level: number): number {
+  return Number(level.toFixed(1));
+}
+
+/** The closest the player zooms in (from the prototype: further is only blur), ADR 0037. */
+export const maxZoomLevel = 8;
 
 type Fields = Readonly<Record<string, unknown>>;
 
@@ -132,9 +140,9 @@ function isRate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
-/** A zoom level: finite, and 1 (the whole picture) or more. */
+/** A zoom level the player can show: from 1 (the whole picture) to {@link maxZoomLevel}. */
 function isZoomLevel(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 1;
+  return typeof value === 'number' && value >= 1 && value <= maxZoomLevel;
 }
 
 /** Returns the command, or `undefined` when `raw` is not a well-formed player command. */

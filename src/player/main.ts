@@ -448,9 +448,12 @@ function reportInteractions(media: HTMLVideoElement, overlay: HTMLElement): void
       clickOnPicture(event.detail, media);
     }
   });
+  // At 1× there is nothing to reset: a double-click there is two clicks, as before (#23).
   overlay.addEventListener('dblclick', () => {
-    cancelPendingToggle();
-    zoomControls.reset();
+    if (zoomControls.zoomed) {
+      cancelPendingToggle();
+      zoomControls.reset();
+    }
   });
   // The overlay takes the pointer moves that would show the native control bar: pass them on.
   overlay.addEventListener('pointermove', (event) => {
