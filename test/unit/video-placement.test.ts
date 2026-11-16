@@ -91,3 +91,118 @@ describe('Move video to…', () => {
     ]);
   });
 });
+
+describe('Move video to… when the page cannot say what it shows', () => {
+  it('moves after 1 s with what FollowAlong knows, at the whole picture', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+
+    const moving = h.core.moveVideo('secondarySidebar');
+    h.clock.advance(999);
+    expect(lastSpot(h)).toBe('editorSplit');
+    h.clock.advance(1);
+    await moving;
+    h.player.clearSent();
+
+    expect(lastSpot(h)).toBe('secondarySidebar');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 42, autoplay: true }),
+      { type: 'setRate', rate: 1.5 },
+    ]);
+  });
+
+  it('moves at once a page that is still starting, and loads the Lesson where it was to start', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+
+    await h.core.moveVideo('bottomPanel');
+
+    expect(h.player.sent).toEqual([]);
+    expect(lastSpot(h)).toBe('bottomPanel');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 0, autoplay: true }),
+    ]);
+  });
+});
+
+describe('Move video to… does nothing', () => {
+  it('but say so while no Lesson is loaded', async () => {
+    const h = await createHarness();
+
+    await h.core.moveVideo();
+
+    expect(h.ui.pickers).toEqual([]);
+    expect(h.ui.messages).toEqual([
+      { severity: 'info', text: 'FollowAlong: no Lesson is open. Open a Course first.' },
+    ]);
+  });
+
+  it('when the learner picks the spot the video is in, which the picker marks', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const shows = h.player.shown.length;
+
+    const moving = h.core.moveVideo();
+    await h.ui.pickerShown();
+    expect(h.ui.picker?.entries[0]).toMatchObject({
+      label: 'Editor group beside the code',
+      description: 'where it is now',
+    });
+    h.ui.choose('Editor group beside the code');
+    await moving;
+
+    expect(h.player.sent).toEqual([]);
+    expect(h.player.shown).toHaveLength(shows);
+  });
+
+  it('when the learner closes the picker', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const shows = h.player.shown.length;
+
+    const moving = h.core.moveVideo();
+    await h.ui.pickerShown();
+    h.ui.dismissPicker();
+    await moving;
+
+    expect(h.player.sent).toEqual([]);
+    expect(h.player.shown).toHaveLength(shows);
+  });
+});
+
+describe('after a move', () => {
+  it('the next Lesson plays in the spot the video was moved to', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const moving = h.core.moveVideo('bottomPanel');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1,
+        zoom: { level: 1, left: 0, top: 0 },
+        lesson: { lessonId, position: 50, playing: false },
+      },
+    });
+    await moving;
+    h.player.ready();
+
+    h.core.nextLesson();
+
+    expect(lastSpot(h)).toBe('bottomPanel');
+  });
+
+  it('a player the learner closed opens again in the spot the setting names', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const moving = h.core.moveVideo('bottomPanel');
+    h.clock.advance(1000);
+    await moving;
+
+    h.player.close();
+    h.core.playLesson('02 Next.webm');
+
+    expect(lastSpot(h)).toBe('editorSplit');
+  });
+});
