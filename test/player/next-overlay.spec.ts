@@ -48,6 +48,26 @@ test.describe('the Next overlay', () => {
     expect((await player.video()).ended).toBe(true);
   });
 
+  test('also shows over a WebM Lesson that ends, which MediaSource plays', async ({ page }) => {
+    const webmId = 'Section 1/01 Welcome.webm';
+    const player = await openPlayer(page);
+    await player.post({
+      type: 'load',
+      lessonId: webmId,
+      videoUri: media.webm,
+      container: 'webm',
+      startAt: 2.6,
+      autoplay: true,
+    });
+    await player.waitForEvent({ type: 'ended', lessonId: webmId });
+
+    await player.post({ type: 'showNext', title: 'Setup' });
+
+    await expect(page.getByRole('button', { name: 'Next: Setup' })).toBeVisible();
+    await page.getByRole('button', { name: 'Next: Setup' }).click();
+    await player.waitForEvent({ type: 'nextClicked', lessonId: webmId });
+  });
+
   test('shows the title as text, never as markup', async ({ page }) => {
     const player = await endedLesson(page);
 

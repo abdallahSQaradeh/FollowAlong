@@ -19,6 +19,12 @@ const video = document.querySelector('video');
 if (video === null) {
   throw new Error('The player page has no <video> element.');
 }
+const nextButton = document.querySelector<HTMLElement>('.next');
+if (nextButton === null) {
+  throw new Error('The player page has no Next overlay.');
+}
+/** The "Next: <title>" overlay over the picture of a Lesson that has ended (ADR 0019). */
+const nextOverlay: HTMLElement = nextButton;
 
 function post(event: PlayerEvent): void {
   host.postMessage(event);
@@ -129,13 +135,6 @@ function setRate(rate: number, media: HTMLVideoElement): void {
   media.playbackRate = rate;
 }
 
-/** The "Next: <title>" overlay over the picture of a Lesson that has ended. */
-const nextOverlayElement = document.querySelector<HTMLElement>('.next');
-if (nextOverlayElement === null) {
-  throw new Error('The player page has no Next overlay.');
-}
-const nextOverlay = nextOverlayElement;
-
 function hideNext(): void {
   nextOverlay.setAttribute('hidden', '');
 }
@@ -214,8 +213,9 @@ function reportMediaEvents(media: HTMLVideoElement): void {
     pauseRequested = false;
   });
   // The learner plays the Lesson again, or steps back into it: it is not at its end any more.
-  on('playing', hideNext);
-  on('seeking', hideNext);
+  // Not through `on`: a Lesson that failed must lose the overlay too.
+  media.addEventListener('playing', hideNext);
+  media.addEventListener('seeking', hideNext);
   on('seeked', ({ lessonId }) => {
     post({ type: 'seeked', lessonId });
   });

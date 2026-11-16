@@ -17,21 +17,26 @@ are the choices the spec leaves open.
   about a Lesson carries its id, and the core ignores one for a Lesson that is no longer the loaded
   one, so a click that arrives after the learner moved on cannot skip a second Lesson.
 - **The overlay is one button over the picture.** It covers the picture and stops above Chromium's
-  native control bar, as the click overlay of ADR 0009 does, and is stacked above it, so a click on
-  it is never a click on the picture (which would play the ended Lesson again). It is a `<button>`,
+  native control bar, which stays usable, as the click overlay of #23 (its ADR 0009, not merged when
+  this was written) will. It is stacked above that overlay (`z-index: 2`, after it in the page), so
+  a click on it is never a click on the picture (which would play the ended Lesson again). It is a `<button>`,
   so it can also be reached and pressed from the keyboard. The title is set as text, never as
   markup: a Lesson title comes from a file name or a `.txt` file.
 - **When it goes away.** The player hides it when a Lesson loads, when the Lesson plays again and
   when the playhead is moved back into it (a step, a seek bar drag). It shows `showNext` only while
   the media element is still at its end: the extension answers `ended` asynchronously, and a
   learner who pressed play in between must not find the overlay over a playing picture.
-- **Focus return.** A click on the button is a player interaction. The mechanism of ADR 0009
-  (#23) reports the end of an interaction from a `pointerup` on the page, which the button's click
+- **Focus return.** A click on the button is a player interaction. The mechanism of #23 (ADR 0009) reports the end of an interaction from a `pointerup` on the page, which the button's click
   does not stop, so it hands focus back without a line of its own here. This was checked on a
   throwaway merge with #23's branch: a click on the button posts `userInteracted`, then
   `nextClicked`, and no `played`. On this branch alone nothing returns focus, as nothing else in
   the player does.
+- **It never takes focus by itself.** Showing it does not move keyboard focus: the learner may be
+  typing in the Practice area, and a focus grab at the end of a Lesson is the Focus change the
+  extension exists to remove. `Ctrl+'` `N` is the keyboard way on.
 - **Autoplay.** The click is a user gesture, so the Lesson it loads is not refused autoplay (ADR 0008).
+
+![The Next overlay over the last frame of a Lesson](assets/0019-next-overlay.png)
 
 ## Considered options
 

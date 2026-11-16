@@ -7,6 +7,7 @@ body {
 }
 
 .stage {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -23,17 +24,18 @@ video {
 
 /*
  * "Next: <title>" at the end of a Lesson. It covers the picture, stopping above Chromium's native
- * control bar like the click overlay does, and sits above it, so a click on it is not a click on
- * the picture (ADR 0019).
+ * control bar (which stays usable), and is stacked above the picture's own click overlay, so a click
+ * on it is not a click on the picture (ADR 0019).
  */
 .next {
   position: absolute;
   inset: 0 0 72px;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0 24px;
+  overflow-wrap: anywhere;
   border: 0;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;

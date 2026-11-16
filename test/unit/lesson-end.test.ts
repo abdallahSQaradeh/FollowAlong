@@ -136,3 +136,48 @@ describe('Late events about a Lesson that is no longer the current one', () => {
     expect(h.ui.selectedLesson).toBe(welcome);
   });
 });
+
+describe('The title in the overlay', () => {
+  it('is the Lesson title from the Title list, when the Course has one', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Titled', {
+      '01 a.mp4': 'v',
+      '02 b.mp4': 'v',
+      'titles.txt': 'Welcome to the Course\nSetting up your machine\n',
+    });
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.player.clearSent();
+
+    h.player.emit({ type: 'ended', lessonId: '01 a.mp4' });
+
+    expect(h.player.sent).toEqual([{ type: 'showNext', title: 'Setting up your machine' }]);
+  });
+});
+
+describe('After the overlay is shown', () => {
+  it('the next-Lesson key loads the same Lesson the click would', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.emit({ type: 'ended', lessonId: overview });
+    h.player.clearSent();
+
+    h.core.nextLesson();
+
+    expect(loadedLessons(h)).toEqual([welcome]);
+  });
+
+  it('a click that arrives after another Course without Lessons was opened loads nothing and says nothing', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.emit({ type: 'ended', lessonId: overview });
+    await h.core.openCourse(await h.folder('Empty', { 'notes.pdf': 'x' }));
+    h.ui.messages.length = 0;
+    h.player.clearSent();
+
+    h.player.emit({ type: 'nextClicked', lessonId: overview });
+
+    expect(h.player.sent).toEqual([]);
+    expect(h.ui.messages).toEqual([]);
+  });
+});
