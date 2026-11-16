@@ -75,12 +75,34 @@ interface Playback {
   readonly toldToPressPlay: boolean;
 }
 
-function startedPlayback(autoplay: boolean): Playback {
+function freshPlayback(autoplay: boolean): Playback {
   return {
     playing: false,
     awaitingAutoplay: autoplay,
     awaitingPlayAnswer: false,
     toldToPressPlay: false,
+  };
+}
+
+/**
+ * What a `paused` event does to the record, and whether the learner is to be told to press play.
+ * - A refused autoplay is told on its own: the `load` that asked for it started the run.
+ * - A refused `play` from the command is told once per run of refusals, so repeated keypresses
+ *   do not stack messages. A `played` or `ended` (see `onPlayerEvent`) or a `load` ends the run.
+ */
+function afterPause(
+  playback: Playback,
+  byUser: boolean,
+): { readonly playback: Playback; readonly tellToPressPlay: boolean } {
+  const refused = !byUser;
+  const autoplayRefused = playback.awaitingAutoplay && refused;
+  const commandRefused = playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
+  return {
+    tellToPressPlay: autoplayRefused || commandRefused,
+    playback: {
+      ...freshPlayback(false),
+      toldToPressPlay: playback.toldToPressPlay || commandRefused,
+    },
   };
 }
 
@@ -96,7 +118,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
   /** What the player last said about the current Lesson; starts again with every `load`. */
-  let playback = startedPlayback(false);
+  let playback = freshPlayback(false);
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -111,7 +133,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay: true,
     };
     player.send(command);
-    playback = startedPlayback(command.autoplay);
+    playback = freshPlayback(command.autoplay);
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -140,27 +162,18 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         // A pause the learner did not ask for after a `load` with autoplay, or after the command's
         // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         if (event.lessonId === current?.id) {
-          const refused = !event.byUser;
-          const refusedAutoplay = playback.awaitingAutoplay && refused;
-          // The command's `play` is refused too: VS Code lets only a click in the player start a
-          // Lesson. Told once per run of refusals, so repeated keypresses do not stack messages.
-          const refusedCommand =
-            playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
-          if (refusedAutoplay || refusedCommand) {
+          const after = afterPause(playback, event.byUser);
+          playback = after.playback;
+          if (after.tellToPressPlay) {
             ui.showMessage({ severity: 'info', text: pressPlayText(current) });
           }
-          playback = {
-            playing: false,
-            awaitingAutoplay: false,
-            awaitingPlayAnswer: false,
-            toldToPressPlay: playback.toldToPressPlay || refusedCommand,
-          };
         }
         break;
       case 'played':
       case 'ended':
         if (event.lessonId === current?.id) {
-          playback = { ...startedPlayback(false), playing: event.type === 'played' };
+          // Also ends a run of refusals: the player did what it was asked.
+          playback = { ...freshPlayback(false), playing: event.type === 'played' };
         }
         break;
       case 'timeUpdate':

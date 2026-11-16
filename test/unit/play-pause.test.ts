@@ -110,47 +110,68 @@ describe('play/pause command', () => {
       text: 'VS Code did not let “01 Intro” start by itself. Press play in the player to start it.',
     } as const;
 
-    /** A Lesson whose autoplay was refused, with the learner's first keypress already answered. */
+    /** A Lesson whose autoplay VS Code refused; the learner has been told once. */
     async function refusedAutoplay(h: Harness): Promise<void> {
       await openLesson(h);
       h.player.emit({ type: 'paused', lessonId, byUser: false });
-      h.ui.messages.length = 0;
+      expect(h.ui.messages).toEqual([pressPlayMessage]);
     }
 
-    it('says to press play in the player', async () => {
+    /** The learner presses the key and the player refuses the play. */
+    function refusedKeypress(h: Harness): void {
+      h.core.playPause();
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+    }
+
+    it('says to press play in the player, also after the refused autoplay it already said it for', async () => {
       const h = await createHarness();
       await refusedAutoplay(h);
 
-      h.core.playPause();
-      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      refusedKeypress(h);
 
-      expect(h.ui.messages).toEqual([pressPlayMessage]);
+      expect(h.ui.messages).toEqual([pressPlayMessage, pressPlayMessage]);
     });
 
     it('says it once, not on every keypress, while the player keeps refusing', async () => {
       const h = await createHarness();
       await refusedAutoplay(h);
 
-      for (let press = 0; press < 3; press += 1) {
-        h.core.playPause();
-        h.player.emit({ type: 'paused', lessonId, byUser: false });
+      for (let press = 0; press < 4; press += 1) {
+        refusedKeypress(h);
       }
 
-      expect(h.ui.messages).toEqual([pressPlayMessage]);
+      expect(h.ui.messages).toEqual([pressPlayMessage, pressPlayMessage]);
     });
 
     it('says it again when the Lesson has played in between', async () => {
       const h = await createHarness();
       await refusedAutoplay(h);
-      h.core.playPause();
-      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      refusedKeypress(h);
 
       h.player.emit({ type: 'played', lessonId });
       h.player.emit({ type: 'paused', lessonId, byUser: true });
-      h.core.playPause();
-      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      refusedKeypress(h);
 
-      expect(h.ui.messages).toEqual([pressPlayMessage, pressPlayMessage]);
+      expect(h.ui.messages).toEqual([pressPlayMessage, pressPlayMessage, pressPlayMessage]);
+    });
+
+    it('says it again for a Lesson loaded after the refusals', async () => {
+      const h = await createHarness();
+      await refusedAutoplay(h);
+      refusedKeypress(h);
+      const second = await h.folder('second', { 'other.webm': 'video' });
+      await h.core.openCourse(second);
+      h.player.ready();
+      h.ui.messages.length = 0;
+
+      h.player.emit({ type: 'paused', lessonId: 'other.webm', byUser: false });
+      h.core.playPause();
+      h.player.emit({ type: 'paused', lessonId: 'other.webm', byUser: false });
+
+      expect(h.ui.messages.map((message) => message.text)).toEqual([
+        'VS Code did not let “other” start by itself. Press play in the player to start it.',
+        'VS Code did not let “other” start by itself. Press play in the player to start it.',
+      ]);
     });
 
     it('says nothing when the play worked', async () => {
@@ -160,7 +181,7 @@ describe('play/pause command', () => {
       h.core.playPause();
       h.player.emit({ type: 'played', lessonId });
 
-      expect(h.ui.messages).toEqual([]);
+      expect(h.ui.messages).toEqual([pressPlayMessage]);
     });
 
     it('says nothing about a pause the command itself asked for', async () => {

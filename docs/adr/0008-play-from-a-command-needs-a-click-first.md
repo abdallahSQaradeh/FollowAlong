@@ -9,8 +9,10 @@ player once. Stories that say a Lesson plays right away (33, 70) hold only after
 
 The core does not hide this. When the player answers a `play` the core sent with
 `paused {byUser: false}`, it shows the same "Press play in the player" message as for a refused
-autoplay, once per run of refusals so repeated keypresses do not stack messages. A `played` ends
-the run. The protocol does not change. Whether one real click lets later commands start playback
+autoplay. The first refused keypress is told even after a refused autoplay was (the learner looks
+for feedback at the keypress, and the toast from the load may be gone); further refused keypresses
+say nothing, so repeated keypresses do not stack messages. A `played` or a new `load`
+ends that run. The protocol does not change. Whether one real click lets later commands start playback
 (sticky user activation) cannot be produced in CI; it is a Manual QA item.
 
 ## Considered options
