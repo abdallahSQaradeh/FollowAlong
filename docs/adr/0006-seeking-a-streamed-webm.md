@@ -54,6 +54,13 @@ seen again after a re-stream is not added twice. Media payloads are skipped, not
   the download point, for example resuming deep into a long Lesson. **Cues are deferred to #25**
   (resume deep into a long Lesson). Without Cues, a forward jump past the download point waits
   for the local stream to catch up. Source: orchestrator answer during #13 gate review.
+  **Measured for #25, still deferred.** A 340 MB, 25-minute WebM (720p VP8 at 1.8 Mbit/s + Vorbis),
+  served from local disk over HTTP with Range, in Playwright's Chromium with the default tuning:
+  `load {startAt, autoplay: false}` reached the target with `readyState` 4 in 65–100 ms at 0:00,
+  1.0–1.5 s at 12:00, and 1.5–1.8 s at 24:00 and 24:55 (two runs each; the same with and without
+  a Duration element). That is about 5 ms per MB streamed past, so Cues pay off only for much
+  larger Lessons or a much slower file loader than measured here; VS Code's own loader was not
+  measured.
 - **Restart from byte 0 on every unbuffered seek.** Correct, but slow for a seek back near the end
   of a long Lesson, and needless when the offset is known.
 - **Keep everything already played.** Impossible past the MediaSource quota.

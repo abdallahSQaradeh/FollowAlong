@@ -1,4 +1,4 @@
-import type { PlayerCommand } from '../../src/protocol/player-messages.js';
+import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
 import { media, mp4Duration, openPlayer, webmDuration } from './player-page.js';
 
@@ -15,6 +15,24 @@ function load(overrides: Partial<Extract<PlayerCommand, { type: 'load' }>> = {})
     autoplay: true,
     ...overrides,
   };
+}
+
+/**
+ * Whether the player posted `seeked` for `lessonId`, after a `timeUpdate` at `position` (the core
+ * reads the new position from that `timeUpdate` when `seeked` arrives).
+ */
+function seekedAt(events: readonly PlayerEvent[], position: number): boolean {
+  const seeked = events.findIndex(
+    (event) => event.type === 'seeked' && event.lessonId === lessonId,
+  );
+  return events
+    .slice(0, seeked === -1 ? 0 : seeked)
+    .some(
+      (event) =>
+        event.type === 'timeUpdate' &&
+        event.lessonId === lessonId &&
+        Math.abs(event.position - position) < 0.1,
+    );
 }
 
 test.describe('the player', () => {
@@ -130,6 +148,30 @@ test.describe('the player', () => {
 
     await player.waitForEvent({ type: 'paused', lessonId, byUser: true });
   });
+
+  for (const [container, videoUri, duration] of [
+    ['webm', media.webm, webmDuration],
+    ['mp4', media.mp4, mp4Duration],
+  ] as const) {
+    test(`reports a seek the learner made, after the time it moved to (${container})`, async ({
+      page,
+    }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri, container, autoplay: false }));
+      await expect.poll(async () => (await player.video()).duration).toBeCloseTo(duration, 1);
+
+      // The native seek bar sets the playhead directly, as this does.
+      await page.locator('video').evaluate((video: HTMLVideoElement) => {
+        video.currentTime = 2;
+      });
+
+      await expect
+        .poll(async () => seekedAt(await player.events(), 2), {
+          message: 'the player sends a timeUpdate at 0:02, then seeked',
+        })
+        .toBe(true);
+    });
+  }
 
   test('reports the Lesson’s length as soon as it is known, before it plays', async ({ page }) => {
     const player = await openPlayer(page);
@@ -257,6 +299,27 @@ test.describe('the player', () => {
       )
       .toBe(true);
   });
+
+  for (const [what, tuning] of [
+    ['', { appendBytes: 4096 }],
+    [', past a full buffer', { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 }],
+  ] as const) {
+    test(`reaches a start position in a WebM without a Duration${what}`, async ({ page }) => {
+      // Until the stream ends, MediaSource lets a WebM without a Duration seek only as far as it
+      // has streamed. Small appends keep the end of the stream after the start seek.
+      const player = await openPlayer(page, { tuning });
+
+      await player.post(load({ videoUri: media.noDuration, startAt: 6, autoplay: false }));
+
+      await expect
+        .poll(async () => seekedAt(await player.events(), 6), {
+          message: 'the player sends a timeUpdate at 0:06, then seeked',
+        })
+        .toBe(true);
+      expect((await player.video()).currentTime).toBeCloseTo(6, 1);
+      expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+  }
 
   test('re-streams again after a second seek back into media evicted after a re-stream', async ({
     page,

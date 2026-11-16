@@ -38,4 +38,9 @@ Two deliberate additions to the spec's shapes:
 - **`timeUpdate`** is posted on the media element's `timeupdate`, and also once the Lesson's
   length becomes known (`durationchange`). The extension therefore has the length before the
   Lesson plays, even when autoplay is refused. `timeUpdate.duration` is 0 while a MediaSource
-  stream's length is not yet known, so both numbers are always finite.
+  stream's length is not yet known, so both numbers are always finite. For a WebM without a
+  Duration element (a screen recording) that lasts until the whole file has streamed.
+- **`seeked`** is posted on every `seeked` of the media element: a seek command, a seek bar drag,
+  and also the seek that applies a `load`'s `startAt` (the core tells that one apart itself). It
+  carries no position: the media element fires `timeupdate` before `seeked`, so a `timeUpdate` at
+  the new position always arrives first (Seam 2 checks the order), and the core reads it there.
