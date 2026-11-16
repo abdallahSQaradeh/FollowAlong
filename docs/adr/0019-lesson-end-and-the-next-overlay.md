@@ -30,10 +30,10 @@ are the choices the spec leaves open.
   the media element is still at its end: the extension answers `ended` asynchronously, and a
   learner who pressed play in between must not find the overlay over a playing picture.
 - **Focus return.** A click on the button is a player interaction. The mechanism of #23 (ADR 0009) reports the end of an interaction from a `pointerup` on the page, which the button's click
-  does not stop, so it hands focus back without a line of its own here. This was checked on a
-  throwaway merge with #23's branch: a click on the button posts `userInteracted`, then
-  `nextClicked`, and no `played`. On this branch alone nothing returns focus, as nothing else in
-  the player does.
+  does not stop, so it hands focus back without a line of its own here. Since #23 merged, a click
+  on the button posts `nextClicked`, then `userInteracted` (#23 reports an interaction one task
+  later, so that signals arriving together make one report), and no `played`. The Seam 2 test
+  `the Next overlay › sits above the click overlay` checks this order.
 - **It never takes focus by itself.** Showing it does not move keyboard focus: the learner may be
   typing in the Practice area, and a focus grab at the end of a Lesson is the Focus change the
   extension exists to remove. `Ctrl+'` `N` is the keyboard way on.

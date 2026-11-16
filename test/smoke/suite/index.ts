@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { type Browser, chromium } from '@playwright/test';
 import * as vscode from 'vscode';
 
 /**
@@ -11,7 +12,9 @@ import * as vscode from 'vscode';
  * registers its commands, shows the player in an editor group beside the code, and that the real
  * page plays the Lesson there (asWebviewUri through the CSP, localResourceRoots, Electron's
  * autoplay policy). It also checks the default keybindings, and what a command sent to the player
- * does in the real page: the play/pause command is what the keybindings run.
+ * does in the real page: the play/pause command is what the keybindings run. Then it clicks the
+ * picture with real input over the DevTools protocol, to see that VS Code counts the click as a
+ * user gesture (#12 D3) and that focus comes back to the code (ADR 0009).
  */
 
 /** The part of a player event this test reads (src/protocol/player-messages.ts). */
@@ -116,11 +119,13 @@ export async function run(): Promise<void> {
   everyKeyWorksInTheTerminal(extension.packageJSON);
   say("every FollowAlong key, the Ctrl+' chords included, is bound while the terminal has focus");
 
-  await opensACourseBesideTheCode(extension.extensionPath);
+  const code = await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
 
   say(await theLessonStarts(hooks.playerEvents, 'lesson.webm'));
   say(await playFromTheEditor(hooks.playerEvents));
+  await aClickOnThePicture(hooks.playerEvents, code);
+  say(await playFromTheEditorAfterAClick(hooks.playerEvents));
 
   say(await theStatusBarRunsTheCommands(hooks));
 
@@ -266,7 +271,10 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
     assert.equal(secondGroup.viewColumn, resourceGroup.viewColumn);
     assert.ok(!hooks.playerEvents.some((event) => event.type === 'error'));
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    // Close the Resource tabs and the player, which hold the scratch files open: Windows refuses
+    // to delete an open file (EPERM). The retries cover a handle VS Code lets go of a moment later.
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   }
 }
 
@@ -458,7 +466,8 @@ async function theLessonStarts(events: readonly SeenEvent[], lessonId: string): 
   return `the Lesson plays in VS Code (played, then timeUpdate at ${String(progress.position)} s)`;
 }
 
-async function opensACourseBesideTheCode(extensionPath: string): Promise<void> {
+/** Opens the fixture Course beside a code editor, and returns that editor's document. */
+async function opensACourseBesideTheCode(extensionPath: string): Promise<vscode.TextDocument> {
   const workspace = vscode.workspace.workspaceFolders?.[0];
   assert.ok(workspace, 'the smoke test runs with a workspace folder');
   const filesBefore = readdirSync(workspace.uri.fsPath);
@@ -494,12 +503,146 @@ async function opensACourseBesideTheCode(extensionPath: string): Promise<void> {
     [workspace.uri.fsPath],
   );
   assert.deepEqual(readdirSync(workspace.uri.fsPath), filesBefore);
+  return code;
 }
 
-async function waitFor<T>(what: string, find: () => T | undefined, timeoutMs = 10_000): Promise<T> {
+/** The fixture Course's first Lesson, which the click and the commands after it act on. */
+const lessonId = 'lesson.webm';
+
+/**
+ * Clicks the middle of the picture in the real player page, as the learner's mouse would, then
+ * checks that the click played (or paused) the Lesson and that keyboard focus came back to the
+ * code editor. A Lesson VS Code would not start by itself shows whether the click is a user
+ * gesture (#12 D3).
+ */
+async function aClickOnThePicture(
+  events: readonly SeenEvent[],
+  code: vscode.TextDocument,
+): Promise<void> {
+  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
+  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
+  const wasPlaying = lastPlayState(events, lessonId) === 'played';
+  // Keyboard focus in the player, where a learner's click leaves it. The click below comes from
+  // the DevTools protocol, not from the OS, so it cannot be relied on to move VS Code's focus.
+  await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+  await waitFor('the player to have the focus', () =>
+    vscode.window.activeTextEditor === undefined ? true : undefined,
+  );
+  const from = events.length;
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  try {
+    await clickThePlayer(browser);
+  } finally {
+    // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
+    await browser.close();
+  }
+  const expected = wasPlaying ? 'paused' : 'played';
+  await waitFor(`the player to report ${expected} after the click`, () =>
+    events
+      .slice(from)
+      .find(
+        (event) =>
+          event.lessonId === lessonId &&
+          event.type === expected &&
+          (expected === 'played' || event.byUser === true),
+      ),
+  );
+  say(
+    wasPlaying
+      ? 'a click on the picture pauses the Lesson, as the learner’s pause'
+      : 'a click on the picture starts the Lesson VS Code would not start by itself: it is a user gesture (D3)',
+  );
+  await waitFor('the player to post userInteracted', () =>
+    events.slice(from).find((event) => event.type === 'userInteracted'),
+  );
+  await waitFor('focus to come back to the code', () =>
+    vscode.window.activeTextEditor?.document === code ? true : undefined,
+  ).catch((error: unknown) => {
+    const active = vscode.window.activeTextEditor?.document.uri.toString() ?? 'none';
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab?.label ?? 'none';
+    throw new Error(`${String(error)}; active text editor: ${active}; active tab: ${tab}`);
+  });
+  say('with focus in the player, the click handed it back to the code editor in the Practice area');
+}
+
+/**
+ * After the click, runs the play/pause command from the editor until it has to play, and checks
+ * that the page then plays: one real click lets later commands start playback (sticky user
+ * activation, ADR 0008), which #12 D3 relies on.
+ */
+async function playFromTheEditorAfterAClick(events: readonly SeenEvent[]): Promise<string> {
+  if (lastPlayState(events, lessonId) === 'played') {
+    const from = events.length;
+    await vscode.commands.executeCommand('followalong.playPause');
+    await waitFor('the player to pause on the command', () =>
+      events.slice(from).find((event) => event.lessonId === lessonId && event.type === 'paused'),
+    );
+  }
+  const from = events.length;
+  await vscode.commands.executeCommand('followalong.playPause');
+  const answer = await waitFor('the player to answer the play command', () =>
+    events
+      .slice(from)
+      .find(
+        (event) =>
+          event.lessonId === lessonId && (event.type === 'played' || event.type === 'paused'),
+      ),
+  );
+  // #12 D3 rests on this: one real click lets later commands start playback (sticky activation).
+  assert.equal(
+    answer.type,
+    'played',
+    'after one click in the player, play sent from the command was still refused',
+  );
+  return 'after one click in the player, play sent from the command starts playback (sticky activation)';
+}
+
+/**
+ * Clicks the middle of the player's <iframe> in the VS Code window, with real input over the
+ * DevTools protocol: the middle of the picture.
+ */
+async function clickThePlayer(browser: Browser): Promise<void> {
+  const pages = () => browser.contexts().flatMap((context) => context.pages());
+  // The player page lives in an out-of-process frame that the DevTools connection does not
+  // list, so the click goes to the workbench page at the middle of the player's <iframe>: the
+  // middle of the picture. Chromium routes it into the player as real input.
+  const player = await waitForAsync('the player <iframe> in the VS Code window', async () => {
+    for (const page of pages()) {
+      const frames = page.locator('iframe[src^="vscode-webview:"]');
+      if ((await frames.count().catch(() => 0)) === 1) {
+        const box = await frames.boundingBox();
+        if (box !== null && box.width > 0 && box.height > 0) {
+          return { page, box };
+        }
+      }
+    }
+    return undefined;
+  }).catch((error: unknown) => {
+    // Say which pages there were, so a failure in CI can be read without a rerun.
+    const seen = pages().map((page) => page.url() || '(no URL)');
+    throw new Error(`${String(error)}; pages seen: ${seen.join(', ') || 'none'}`);
+  });
+  await player.page.mouse.click(
+    player.box.x + player.box.width / 2,
+    player.box.y + player.box.height / 2,
+  );
+}
+
+/** Whether the Lesson last reported `played` or `paused`. */
+function lastPlayState(events: readonly SeenEvent[], lessonId: string): string | undefined {
+  return events.findLast(
+    (event) => event.lessonId === lessonId && (event.type === 'played' || event.type === 'paused'),
+  )?.type;
+}
+
+async function waitForAsync<T>(
+  what: string,
+  find: () => Promise<T | undefined>,
+  timeoutMs = 10_000,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const found = find();
+    const found = await find();
     if (found !== undefined) {
       return found;
     }
@@ -508,6 +651,10 @@ async function waitFor<T>(what: string, find: () => T | undefined, timeoutMs = 1
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+function waitFor<T>(what: string, find: () => T | undefined, timeoutMs = 10_000): Promise<T> {
+  return waitForAsync(what, () => Promise.resolve(find()), timeoutMs);
 }
 
 function say(line: string): void {

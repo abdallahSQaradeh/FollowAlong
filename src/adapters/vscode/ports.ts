@@ -9,6 +9,7 @@ import type { LessonTreeView } from './lesson-tree-view.js';
 import type { ResourcePlacement } from './resource-placement.js';
 import type { StatusBarView } from './status-bar-view.js';
 import { showQuickPick } from './quick-pick.js';
+import type { FocusReturn } from './focus-return.js';
 
 function store(memento: vscode.Memento): KeyValueStore {
   return {
@@ -41,6 +42,8 @@ export function createUiSink(
   tree: LessonTreeView,
   statusBar: StatusBarView,
   placement: ResourcePlacement,
+  focus: FocusReturn,
+  logger: Logger,
 ): UiSink {
   return {
     showMessage({ severity, text }) {
@@ -76,6 +79,11 @@ export function createUiSink(
         preserveFocus: true,
       });
       placement.opened(target.path);
+    },
+    returnFocus() {
+      focus.returnFocus().catch((error: unknown) => {
+        logger.log({ level: 'warn', message: `Could not return focus: ${String(error)}` });
+      });
     },
   };
 }
