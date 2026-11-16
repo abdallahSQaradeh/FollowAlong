@@ -236,6 +236,29 @@ describe('two windows on the same Course', () => {
     // The windows took turns, and gave the turn back: no lock is left in the Course.
     expect(await h.listFiles(join(course, '.followalong'))).toEqual(['progress.json']);
   });
+
+  it('resets the Lessons the other window saved, when the Course is reset', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    other.core.playLesson(setup);
+    playTo(other.player, setup, 200);
+    pause(other.player, setup);
+    await h.settle();
+    wait(h, other, 1_000);
+
+    const resetting = h.core.resetCourseProgress();
+    await h.settle();
+    h.ui.answerQuestion('accept');
+    await resetting;
+
+    expect(await startsAfterRestart(h, course, [setup], other)).toEqual({ [setup]: 0 });
+    expect(glyphs(h)[setup]).toBe('○');
+    // The Course reopened on its first Lesson (Advanced/ comes first), not on the one the other
+    // window played last.
+    expect(h.player.sent.find((command) => command.type === 'load')).toMatchObject({
+      lessonId: closures,
+      startAt: 0,
+    });
+  });
 });
 
 describe('one window, with the file read again before each write', () => {

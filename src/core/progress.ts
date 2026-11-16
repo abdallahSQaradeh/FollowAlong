@@ -216,9 +216,10 @@ export interface ProgressRecorder {
   reset(lessonIds: readonly string[]): void;
   /**
    * Resets every Lesson, and the Lesson the Course reopens on, as if the Course had never been
-   * played. Written by the next `save`.
+   * played. `lessonIds` are the Course's Lessons: another window may have saved some this one
+   * never read (ADR 0074). Written by the next `save`.
    */
-  resetAll(): void;
+  resetAll(lessonIds: readonly string[]): void;
   /** Writes what was recorded since the last save, after any save already under way. */
   save(): Promise<void>;
 }
@@ -366,14 +367,13 @@ export async function openProgress(
       );
     },
     reset: resetEntries,
-    resetAll() {
-      resetEntries(Object.keys(progress.lessons));
-      if (progress.last !== undefined) {
-        progress = {
-          ...progress,
-          last: { lessonId: noLastLesson, savedAt: savedAfter(progress.last, clock.now()) },
-        };
-      }
+    resetAll(lessonIds) {
+      resetEntries([...new Set([...lessonIds, ...Object.keys(progress.lessons)])]);
+      // Also when this window knows of no last Lesson: another window may have saved one.
+      progress = {
+        ...progress,
+        last: { lessonId: noLastLesson, savedAt: savedAfter(progress.last, clock.now()) },
+      };
     },
     save() {
       saving = saving.then(write);
