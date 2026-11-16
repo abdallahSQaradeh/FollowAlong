@@ -9,12 +9,15 @@
  * - lesson.webm: 3 s, 320x180;
  * - long.webm: 8 s, 160x90, a Cluster every second, so the seek tests have media to evict and
  *   Clusters to re-stream from.
+ * - no-duration.webm: the same 8 s, but muxed to a pipe, so ffmpeg cannot go back and write the
+ *   Duration element, as a recording that was never finalised has none (MSE then limits the
+ *   seekable range to what is buffered; ticket #17).
  * The MP4 is H.264 + AAC, the codecs of every real MP4 Lesson (research 01):
  * - sample.mp4: 3 s, 320x180, with its index at the start (faststart). Its name sorts after the
  *   WebM files, so the first Lesson of this folder (the smoke test's Course) stays lesson.webm.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,7 +29,7 @@ const ffmpeg = process.env.FFMPEG ?? 'ffmpeg';
 
 /**
  * @param {string} name
- * @param {{ seconds: number, size: string, video: string[], audio: string[], extra: string[] }} options
+ * @param {{ seconds: number, size: string, video: string[], audio: string[], extra: string[], stream?: boolean }} options
  */
 function make(name, options) {
   const output = join(media, name);
@@ -49,13 +52,23 @@ function make(name, options) {
       options.video,
       options.audio,
       options.extra,
-      ['-map_metadata', '-1', '-fflags', '+bitexact', '-shortest', output],
+      [
+        '-map_metadata',
+        '-1',
+        '-fflags',
+        '+bitexact',
+        '-shortest',
+        ...(options.stream === true ? ['-f', 'webm', 'pipe:1'] : [output]),
+      ],
     ].flat(),
-    { stdio: 'inherit' },
+    { stdio: ['inherit', options.stream === true ? 'pipe' : 'inherit', 'inherit'] },
   );
   if (result.status !== 0) {
     console.error(`make-media-fixtures: ${ffmpeg} failed (status ${String(result.status)}).`);
     process.exit(1);
+  }
+  if (options.stream === true) {
+    writeFileSync(output, result.stdout);
   }
   console.log(`make-media-fixtures: wrote ${output}`);
 }
@@ -70,6 +83,14 @@ make('long.webm', {
   video: vp8('60k'),
   audio: vorbis,
   extra: ['-cluster_time_limit', '1000'],
+});
+make('no-duration.webm', {
+  seconds: 8,
+  size: '160x90',
+  video: vp8('60k'),
+  audio: vorbis,
+  extra: ['-cluster_time_limit', '1000'],
+  stream: true,
 });
 make('sample.mp4', {
   seconds: 3,
