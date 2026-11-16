@@ -35,12 +35,9 @@ export type PlayerEvent =
     }
   | { readonly type: 'played'; readonly lessonId: string }
   | { readonly type: 'paused'; readonly lessonId: string; readonly byUser: boolean }
-  /**
-   * A seek finished at `position` (seconds). Not posted for the seek that applies a `load`'s
-   * `startAt`: that one is the extension's own, not a move of the playhead by the learner.
-   */
-  | { readonly type: 'seeked'; readonly lessonId: string; readonly position: number }
   | { readonly type: 'ended'; readonly lessonId: string }
+  /** The playhead has arrived at the place a seek asked for (also after a seek bar drag). */
+  | { readonly type: 'seeked'; readonly lessonId: string }
   | { readonly type: 'error'; readonly lessonId: string; readonly message: string };
 
 type Fields = Readonly<Record<string, unknown>>;
@@ -109,9 +106,8 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
     }
     case 'played':
     case 'ended':
-      return { type, lessonId };
     case 'seeked':
-      return isSeconds(raw.position) ? { type, lessonId, position: raw.position } : undefined;
+      return { type, lessonId };
     case 'paused':
       return typeof raw.byUser === 'boolean' ? { type, lessonId, byUser: raw.byUser } : undefined;
     case 'error':

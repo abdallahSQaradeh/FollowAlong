@@ -41,9 +41,16 @@ interface CurrentLesson {
    */
   engaged: boolean;
   playing: boolean;
-  /** The length the player last reported. */
+  /** Where the player last reported the playhead, and the Lesson's length. */
+  position: number;
   duration: number;
 }
+
+/**
+ * How close to the start position a seek lands when it is the one that applies `startAt` (the
+ * player moves a WebM seek onto the first buffered frame, under 0.1 s away; ADR 0006).
+ */
+const startSeekToleranceSeconds = 0.5;
 
 export function createFollowAlong(ports: Ports): FollowAlong {
   const { player, storage, clock, ui, logger } = ports;
@@ -162,6 +169,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'timeUpdate': {
         const shown = isCurrent(event);
         if (shown !== undefined) {
+          shown.position = event.position;
           shown.duration = event.duration;
           if (shown.engaged) {
             progress?.record(shown.lesson.id, event.position, event.duration);
@@ -171,10 +179,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       case 'seeked': {
         // A seek is the learner moving the playhead, playing or not: it counts, and saves now.
+        // The player's timeUpdate at the new position comes before it (HTML seek steps). One seek
+        // is FollowAlong's own: the one that puts a Lesson that has not played yet at its start.
         const shown = isCurrent(event);
-        if (shown !== undefined) {
+        const isStartSeek =
+          shown !== undefined &&
+          !shown.engaged &&
+          Math.abs(shown.position - shown.startAt) < startSeekToleranceSeconds;
+        if (shown !== undefined && !isStartSeek) {
           shown.engaged = true;
-          progress?.record(shown.lesson.id, event.position, shown.duration);
+          progress?.record(shown.lesson.id, shown.position, shown.duration);
           void progress?.save();
         }
         break;
@@ -207,7 +221,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
-    current = { lesson, startAt, autoplay, engaged: false, playing: false, duration: 0 };
+    current = {
+      lesson,
+      startAt,
+      autoplay,
+      engaged: false,
+      playing: false,
+      position: startAt,
+      duration: 0,
+    };
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
     const shown = player.show({
       title: lesson.title,

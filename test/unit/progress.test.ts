@@ -90,7 +90,9 @@ describe('remembering where the learner is in each Lesson', () => {
     const course = await h.folder('course', lessons);
     await h.core.openCourse(course);
     h.player.ready();
-    h.player.emit({ type: 'seeked', lessonId: '01 Intro.webm', position: 200 });
+    // The player reports the new playhead with a timeUpdate before the seeked (HTML seek steps).
+    h.player.emit({ type: 'timeUpdate', lessonId: '01 Intro.webm', position: 200, duration: 600 });
+    h.player.emit({ type: 'seeked', lessonId: '01 Intro.webm' });
 
     expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 195 });
   });
@@ -155,9 +157,9 @@ describe('remembering where the learner is in each Lesson', () => {
     playTo(h, '01 Intro.webm', 100);
     pause(h, '01 Intro.webm');
     await reopen(h, course);
-    // The player reports the playhead where FollowAlong put it, 5 s back; nothing is played.
+    // The player seeks to where FollowAlong starts the Lesson, 5 s back; nothing is played.
     h.player.emit({ type: 'timeUpdate', lessonId: '01 Intro.webm', position: 95, duration: 600 });
-    h.player.emit({ type: 'paused', lessonId: '01 Intro.webm', byUser: false });
+    h.player.emit({ type: 'seeked', lessonId: '01 Intro.webm' });
     await h.core.close();
 
     expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 95 });
