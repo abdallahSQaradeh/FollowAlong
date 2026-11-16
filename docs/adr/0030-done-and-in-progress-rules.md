@@ -40,10 +40,9 @@ acceptance criteria (scripted `timeUpdate` events); the 3 s limit is ours.
 
 An older v1 file has no `status`, so its Lessons read as not started, with their positions kept.
 An entry with any other `status` makes the file unreadable like any damaged entry (ADR 0005). It
-stays mergeable: `mergeProgress` takes the whole entry that was saved later, status included, and
-the recorder carries a Lesson's status forward when it records a new position. Done in one window
-and a later save from another window that never saw it is #27's to settle, by re-reading the file
-before each write. The version was not raised: the field is optional, and no released FollowAlong
+stays mergeable, and the recorder carries a Lesson's status forward when it records a new
+position. Done in one window and a later save from another window that never saw it is settled by
+ADR 0074: the place and the status of an entry merge separately, each by its own stamp. The version was not raised: the field is optional, and no released FollowAlong
 could write over it.
 
 ## A seek while the start seek is pending
@@ -89,8 +88,8 @@ covers a large WebM on Windows.
   Rejected: a start seek that lands off its target would then be saved as the learner's position,
   wiping the Progress it was meant to keep (gate review of #25, H1).
 - **Keep a done mark across two windows in `mergeProgress` (the higher status wins).** Rejected
-  here: the learner's un-mark (#29/#30) would then be undone by an older copy. #27 settles it with
-  the re-read before each write.
+  here: the learner's un-mark (#29/#30) would then be undone by an older copy. ADR 0074 settles it
+  with a stamp for the status (`statusAt`).
 - **Raise the file version to 2.** Rejected: see _The file_.
 - **Count 10 s of wall-clock play.** Rejected: at 2× it is 20 s of picture, and the rules are
   tested with scripted `timeUpdate`s.

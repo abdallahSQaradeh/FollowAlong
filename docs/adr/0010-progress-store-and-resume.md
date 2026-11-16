@@ -48,8 +48,8 @@ both locations and merged, and `progressFile.merge` takes the newer entry per Le
 `last`. Files without `merge` keep the order of ADR 0005. Writes still go to one location (ADR
 0005), with everything known, so the copy written last holds every Lesson.
 
-#27 (two windows on one Course) reuses the same merge: re-read the file before each write and merge
-it with what this window recorded.
+#27 (two windows on one Course) reuses the same merge: every write re-reads the file under a lock
+and merges it with what this window recorded. Status and place merge separately (ADR 0074).
 
 ## When Progress is saved
 
@@ -100,8 +100,8 @@ it with what this window recorded.
   antivirus scan holding it) is read again before each write, so a passing lock does not divert
   saves. What it holds then is merged into that write and into this session's Progress, so the
   Lessons the Course opened without are not lost (review of the gate round 1 fixes). The check
-  uses what was read; a file another window rewrites during the session is #27's re-read before
-  each write. Source: orchestrator, D5 and its amendment; code review and
+  uses what was read; a file another window rewrites during the session is read again before
+  each write (ADR 0074). Source: orchestrator, D5 and its amendment; code review and
   gate review of #25.
 - **A failed save is saved again** at the next save (the 5 s timer, a pause, a switch,
   `close()`): it is logged once per run of failures and shown to the learner once per open

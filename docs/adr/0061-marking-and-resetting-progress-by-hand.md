@@ -10,7 +10,7 @@ reuses the marking path below.
 
 - **A reset writes a reset entry; it never removes one.** Two copies of `progress.json` (the
   Course's and the fallback, ADR 0005, ADR 0010) and, from #27, two windows are merged per Lesson,
-  newest `savedAt` wins. A removed entry would come back from the copy that still has it, so a reset
+  newest wins (the place by `savedAt`, the status by `statusAt`, ADR 0074). A removed entry would come back from the copy that still has it, so a reset
   would only last until the next merge. A reset entry is `{ position: 0, duration: 0, savedAt }`
   with no `status`: it reads as not started and resumes at 0:00, like a Lesson never played. The
   file keeps one entry per Lesson ever played, as before.

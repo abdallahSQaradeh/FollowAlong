@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';
 
 import { isInsideFolder, keyOf } from './courses-roots.js';
-import { FileSystemError, type Ports } from './ports.js';
+import { FileSystemError, type Ports, type ReleaseLock } from './ports.js';
 
 export const courseDataFolderName = '.followalong';
 
@@ -25,11 +25,13 @@ export interface CourseDataFile<T> {
   /** Turns stored data of `version` (at most the current one) into `T`, or `undefined`. */
   parse(data: unknown, version: number): T | undefined;
   /**
-   * Combines the copies in `.followalong` and in the fallback storage, when both hold the file
-   * (a Course that turned read-only after FollowAlong wrote to it). Without it, `read` returns the
-   * copy of the location written last in this session, else the one in `.followalong`.
+   * Combines two copies of the file; `first` wins a tie. `read` merges the copies in `.followalong` and
+   * in the fallback storage (a Course that turned read-only after FollowAlong wrote to it), and
+   * `write` merges what it was given with the copy it replaces, read again under the file's lock
+   * (another window may have written it, ADR 0074). Without it, `read` returns the copy of the
+   * location written last in this session, else the one in `.followalong`.
    */
-  merge?(inCourse: T, inFallback: T): T;
+  merge?(first: T, second: T): T;
 }
 
 /**
@@ -44,6 +46,19 @@ export class UnreadableCourseDataError extends Error {
   }
 }
 
+/**
+ * A write not made because the file it would replace, which read fine until now, could not be read
+ * for a moment (an antivirus scan holding it, say). Nothing was written anywhere: the caller keeps
+ * its data and writes it again later (ADR 0074).
+ */
+export class CourseDataBusyError extends Error {
+  override readonly name = 'CourseDataBusyError';
+
+  constructor(readonly path: string) {
+    super(`${path} could not be read just now.`);
+  }
+}
+
 /** Where a write went, when it was not where it would usually go. */
 export interface CourseDataWritten<T> {
   /**
@@ -52,8 +67,8 @@ export interface CourseDataWritten<T> {
    */
   readonly keptElsewhere?: string;
   /**
-   * What was written, when it is more than the value given: a copy whose earlier read had failed
-   * could be read now, and its data was merged in (`CourseDataFile.merge`) rather than replaced.
+   * What was written, for a file with `merge`: the value given merged with the copy it replaced
+   * (another window's changes, or a copy whose earlier read had failed), so the caller can catch up.
    */
   readonly merged?: T;
 }
@@ -108,6 +123,13 @@ export function isCourseDataFile(path: string, storageFolder: string): boolean {
   );
 }
 
+/** How many times a write reads a file again that read fine before and fails to read now. */
+const rereadAttempts = 3;
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** `<storage>/courses/<folder name>-<hash of the absolute path>`: readable, and unique per path. */
 function fallbackFolder(course: string, storageFolder: string): string {
   const hash = createHash('sha256').update(course).digest('hex').slice(0, 16);
@@ -156,14 +178,14 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
         return undefined;
       }
       failedToRead.add(path);
-      ignore(`it cannot be read (${error instanceof Error ? error.message : String(error)}).`);
+      ignore(`it cannot be read (${messageOf(error)}).`);
       return undefined;
     }
     let stored: unknown;
     try {
       stored = JSON.parse(text);
     } catch (error) {
-      ignore(`not valid JSON (${error instanceof Error ? error.message : String(error)}).`);
+      ignore(`not valid JSON (${messageOf(error)}).`);
       return undefined;
     }
     if (
@@ -201,37 +223,96 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     }
   }
 
-  /** Writes `value` to `location`, and returns what was written when it had to merge a copy in. */
+  /**
+   * Takes the lock of the file at `path` (ADR 0074), so that two windows on the Course never read
+   * and rewrite it at the same time. A lock that cannot be made because the location is read-only
+   * or gone fails like the write would; any other failure (held too long, say) is logged, and the
+   * write goes ahead without it.
+   */
+  async function lockFile(path: string): Promise<ReleaseLock> {
+    let release: ReleaseLock;
+    try {
+      release = await fileSystem.lock(path);
+    } catch (error) {
+      if (FileSystemError.is(error, 'readOnly') || FileSystemError.is(error, 'notFound')) {
+        // The write itself would fail the same way: the caller falls back, or reports it.
+        throw error;
+      }
+      logger.log({
+        level: 'warn',
+        message: `Writing ${path} without its lock: ${messageOf(error)}`,
+      });
+      return () => Promise.resolve();
+    }
+    return async () => {
+      try {
+        await release();
+      } catch (error) {
+        // Left on disk, it is taken over once it is old enough.
+        logger.log({
+          level: 'warn',
+          message: `Could not give back the lock of ${path}: ${messageOf(error)}`,
+        });
+      }
+    };
+  }
+
+  /**
+   * Writes `value` to `location` under the file's lock. For a file with `merge`, resolves with what
+   * was written when a copy was on disk to merge with; otherwise with `undefined`.
+   */
   async function writeTo<T>(
     location: string,
     file: CourseDataFile<T>,
     value: T,
   ): Promise<T | undefined> {
     const path = join(location, file.name);
-    let merged: T | undefined;
-    if (!seen.has(path) || failedToRead.has(path)) {
-      // Never replace a file unseen: a read can stop at the other location's copy. A read that
-      // failed (an antivirus scan holding the file, say) is tried again first.
-      const hadFailed = failedToRead.has(path);
-      const onDisk = await readFrom(location, file);
-      if (hadFailed && onDisk !== undefined) {
-        // Its data never reached the caller, so `value` lacks it: merge it in, never replace it.
-        if (file.merge === undefined) {
+    await makeFolderOnce(location);
+    const release = await lockFile(path);
+    try {
+      let merged: T | undefined;
+      if (file.merge !== undefined) {
+        // Another window on the same Course may have written the file since this store read it
+        // (#27): read it again and merge, so what it added is kept. `value` comes first, where the
+        // file's merge breaks a tie by order (Progress does not: D14).
+        const failedBefore = failedToRead.has(path);
+        let onDisk = await readFrom(location, file);
+        for (let attempt = 1; attempt < rereadAttempts; attempt += 1) {
+          if (failedBefore || !failedToRead.has(path)) {
+            break;
+          }
+          onDisk = await readFrom(location, file);
+        }
+        if (!failedBefore && failedToRead.has(path)) {
+          // It read fine until now: something holds it for a moment (an antivirus scan). Neither
+          // written over nor sent elsewhere: this write is not made, and the next one reads again.
+          throw new CourseDataBusyError(path);
+        }
+        if (onDisk !== undefined) {
+          merged = file.merge(value, onDisk);
+        }
+      } else if (!seen.has(path) || failedToRead.has(path)) {
+        // Never replace a file unseen: a read can stop at the other location's copy. A read that
+        // failed (an antivirus scan holding the file, say) is tried again first.
+        const hadFailed = failedToRead.has(path);
+        const onDisk = await readFrom(location, file);
+        if (hadFailed && onDisk !== undefined) {
+          // Its data never reached the caller, so `value` lacks it, and it cannot be merged in.
           throw new UnreadableCourseDataError(path);
         }
-        merged = file.merge(onDisk, value);
       }
+      if (unreadable.has(path)) {
+        throw new UnreadableCourseDataError(path);
+      }
+      const data = merged ?? value;
+      await fileSystem.writeText(
+        path,
+        `${JSON.stringify({ version: file.version, data }, null, 2)}\n`,
+      );
+      return merged;
+    } finally {
+      await release();
     }
-    if (unreadable.has(path)) {
-      throw new UnreadableCourseDataError(path);
-    }
-    await makeFolderOnce(location);
-    const data = merged ?? value;
-    await fileSystem.writeText(
-      path,
-      `${JSON.stringify({ version: file.version, data }, null, 2)}\n`,
-    );
-    return merged;
   }
 
   /**

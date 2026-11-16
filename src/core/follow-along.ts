@@ -987,8 +987,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      recorder.resetAll();
-      loaded.progressReset(lessonsInOrder(course).map((lesson) => lesson.id));
+      const lessonIds = lessonsInOrder(course).map((lesson) => lesson.id);
+      recorder.resetAll(lessonIds);
+      loaded.progressReset(lessonIds);
       await showAndSave(recorder);
     },
     async attachResource(lessonId, absolutePath) {

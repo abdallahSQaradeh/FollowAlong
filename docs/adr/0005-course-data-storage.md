@@ -50,7 +50,8 @@ readable.
   anything but `notFound`) is remembered by the store and never replaced (spec #12, D5, as
   amended). If it is the copy in `.followalong`, `write` puts the data in the fallback storage and
   resolves with `{ keptElsewhere: <its path> }`; if the copy the data must go to is unusable too,
-  `write` rejects with `UnreadableCourseDataError`. A write first reads the file it would replace
+  `write` rejects with `UnreadableCourseDataError`. A file with `merge` is read again, under a lock,
+  before every write, and merged (ADR 0074). A write of any other file first reads the file it would replace
   when this store has not read it yet (a read can stop at the other location's copy) or its last
   read failed outright, and a later read that finds the file usable or gone makes it writable
   again. When a copy whose read had failed reads fine at write time, its data never reached the

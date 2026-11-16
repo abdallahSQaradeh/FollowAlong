@@ -3,6 +3,7 @@
  * Seam 1 tests. Failures become a FileSystemError whose `reason` is the read-only check.
  */
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -13,16 +14,21 @@ import {
   type DirectoryEntry,
   type FileSystem,
   type FileSystemErrorReason,
+  type ReleaseLock,
 } from '../../core/ports.js';
 
 const run = promisify(execFile);
+
+/** The Node error code of `error` (`ENOENT`, …), if it has one. */
+function codeOf(error: unknown): unknown {
+  return error instanceof Error && 'code' in error ? error.code : undefined;
+}
 
 /** How long a Windows drive gets to answer before the Folder browser leaves it out. */
 const driveTimeoutMs = 1500;
 
 function reasonOf(error: unknown): FileSystemErrorReason {
-  const code = error instanceof Error && 'code' in error ? error.code : undefined;
-  switch (code) {
+  switch (codeOf(error)) {
     case 'ENOENT':
     case 'ENOTDIR':
       return 'notFound';
@@ -60,12 +66,124 @@ async function renameOver(from: string, to: string): Promise<void> {
       await rename(from, to);
       return;
     } catch (error) {
-      const code = error instanceof Error && 'code' in error ? error.code : undefined;
+      const code = codeOf(error);
       const delay = delaysMs[attempt];
       if (delay === undefined || !(code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')) {
         throw error;
       }
       await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/** How long a window waits for another window's lock on a file, in steps of `lockStepMs`. */
+const lockWaitMs = 2_000;
+const lockStepMs = 20;
+/** A lock this old was left behind by a window that stopped before giving it back. */
+const leftBehindLockMs = 10_000;
+
+/** What the lock file at `lockPath` holds: the token of the window that made it, if any. */
+async function lockToken(lockPath: string): Promise<string | undefined> {
+  return readFile(lockPath, 'utf8').then(
+    (token) => token,
+    () => undefined,
+  );
+}
+
+/** Whether anything is at `path`. */
+async function present(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** Makes `lockPath` holding `token` if nothing is there; `false` while another window holds it. */
+async function makeLock(lockPath: string, token: string): Promise<boolean> {
+  let made = false;
+  try {
+    const file = await open(lockPath, 'wx');
+    made = true;
+    try {
+      await file.writeFile(token, 'utf8');
+    } finally {
+      await file.close();
+    }
+    return true;
+  } catch (error) {
+    if (made) {
+      // Made, but its token could not be written (a full disk): leave no lock without an owner.
+      await rm(lockPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    const code = codeOf(error);
+    if (code === 'EEXIST') {
+      return false;
+    }
+    // On Windows, a lock file another window is just removing refuses to be made again (EPERM):
+    // held for a moment more. A folder that may not be written to refuses it too, with no file.
+    if ((code === 'EPERM' || code === 'EACCES') && (await present(lockPath))) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Removes the lock at `lockPath` when it still holds `token`. Another window may have taken it over
+ * in between (it looked left behind): that lock is its, and stays. Only the moment between this
+ * look and the removal is left open.
+ */
+async function removeLockOf(lockPath: string, token: string): Promise<void> {
+  if ((await lockToken(lockPath)) === token) {
+    await rm(lockPath, { force: true, maxRetries: 5, retryDelay: 20 });
+  }
+}
+
+/**
+ * Takes over the lock at `lockPath` when it was left behind (by its age, from `stat`). Failing to remove it (on Windows,
+ * another process may hold it for a moment) is not a reason to call the folder read-only: the
+ * caller waits on, and gives up in time.
+ */
+async function takeOverLeftBehind(lockPath: string): Promise<void> {
+  const token = await lockToken(lockPath);
+  const modifiedMs = await stat(lockPath).then(
+    (found) => found.mtimeMs,
+    () => undefined,
+  );
+  if (modifiedMs === undefined || Date.now() - modifiedMs < leftBehindLockMs) {
+    return;
+  }
+  if (token !== undefined) {
+    await removeLockOf(lockPath, token).catch(() => undefined);
+    return;
+  }
+  // A lock whose token cannot be read is judged by its age alone: removed only if it is still the
+  // same file, untouched since it was found old (another window may have taken it over since).
+  const stillSame = await stat(lockPath).then(
+    (found) => found.mtimeMs === modifiedMs,
+    () => false,
+  );
+  if (stillSame) {
+    await rm(lockPath, { force: true }).catch(() => undefined);
+  }
+}
+
+/** See {@link FileSystem.lock}. */
+async function lock(path: string): Promise<ReleaseLock> {
+  const lockPath = `${path}.lock`;
+  const token = `${String(process.pid)}-${randomUUID()}`;
+  const giveUpAt = Date.now() + lockWaitMs;
+  for (;;) {
+    if (await makeLock(lockPath, token)) {
+      return () => wrap(lockPath, () => removeLockOf(lockPath, token));
+    }
+    await takeOverLeftBehind(lockPath);
+    if (Date.now() >= giveUpAt) {
+      throw new FileSystemError('other', path, `${lockPath} is still held by another window.`);
+    }
+    if (await present(lockPath)) {
+      await new Promise((resolve) => setTimeout(resolve, lockStepMs));
     }
   }
 }
@@ -157,12 +275,14 @@ export function createNodeFileSystem(): FileSystem {
         }
       }),
 
+    lock: (path) => wrap(path, () => lock(path)),
+
     makeDirectory: (path, options) =>
       wrap(path, async () => {
         try {
           await mkdir(path, { recursive: options.parents });
         } catch (error) {
-          const code = error instanceof Error && 'code' in error ? error.code : undefined;
+          const code = codeOf(error);
           const isFolder =
             code === 'EEXIST' &&
             (await stat(path).then(
