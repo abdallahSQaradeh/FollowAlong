@@ -76,9 +76,11 @@ export function isInsideFolder(folder: string, path: string): boolean {
 
 /**
  * The names a Lesson file name may end in as ` _ <name>`: the Course folder's own, then the name of
- * each folder between it and the first Courses root that holds it, inside out. A Course's outermost
- * wrapper, whose name the Course picker shows (ADR 0032), is always among them. A Course under no
- * root, or that is a root, has only its own name. The root's own name is never one (ADR 0085).
+ * each folder between it and the first Courses root that is it or holds it, inside out, as the scan
+ * files the Course (ADR 0022). A Course's outermost wrapper, whose name the Course picker shows
+ * (ADR 0032), is always among them. A Course under no root, or whose first such root is the Course
+ * folder itself, has only its own name; with an outer root named first, the wrappers' names count.
+ * The root's own name is never one (ADR 0085).
  */
 export function courseNames(folder: string, roots: readonly string[]): string[] {
   const own = basename(folder);

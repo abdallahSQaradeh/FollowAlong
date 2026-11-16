@@ -15,7 +15,9 @@ binding._
     That is the order the scan files a Course in (ADR 0022). The outermost wrapper is always one of
     them.
   - Never the Courses root's own name.
-  - A Course under no root, or one that is a root, has only its own name.
+  - A Course under no root has only its own name. So does one whose first root (in the setting's
+    order) that is it or holds it is the Course folder itself. When an outer root comes first, the
+    wrappers' names count, as the scan then names the Course after them.
   - `courseNames(folder, roots)` in `courses-roots.ts` is the one place this is worked out, from the
     path alone, with no reads of the parent folders.
 - **How a name is matched.** Exactly as before: ` _ <name>` at the end of the name without its

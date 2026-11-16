@@ -264,7 +264,9 @@ describe('Courses under category and wrapper folders', () => {
       'Web/Vue Basics/01 Hello.webm': 'v',
     });
     // On Windows `learning` is the same folder as `Learning`, so the second root lies inside the
-    // first. Elsewhere it is another folder, which is not there.
+    // first. On Linux it is another folder, which is not there. On a case-insensitive macOS volume
+    // it is the same folder, but keys keep letter case there, so this test would fail; CI runs
+    // Ubuntu and Windows only.
     const otherCase = join(dirname(learning), 'learning', 'Web');
 
     expect(await listed(h, learning, otherCase)).toEqual([

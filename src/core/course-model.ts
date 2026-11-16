@@ -155,12 +155,10 @@ function withTitles({ lessons, sections }: Outline, titles: ReadonlyMap<string, 
 
 /**
  * The Course in `listing`. `courseNames` are the names a Lesson file name may end in as
- * ` _ <name>` ({@link courseNames} in `courses-roots.ts`); by default the folder's own.
+ * ` _ <name>`: always {@link courseNames} in `courses-roots.ts`, through `readCourse`, so every
+ * place that shows titles drops the same names (ADR 0085).
  */
-export function buildCourse(
-  listing: FolderListing,
-  courseNames: readonly string[] = [listing.name],
-): Course {
+export function buildCourse(listing: FolderListing, courseNames: readonly string[]): Course {
   const outline = withoutWrappers(outlineOf(listing, '', courseNames));
   const lessons = lessonsInOrder(outline);
   const listed = titlesFromLists(titleListTexts(listing), lessons.length);

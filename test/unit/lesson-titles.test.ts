@@ -261,7 +261,18 @@ describe('the Course name a cleaned title drops, for a Course under wrapper fold
     expect(treeTitles(h)).toEqual(['Intro _ Learning', 'Setup _ Docker Mastery']);
   });
 
-  it('drops only its own name for a Course that is a Courses root, whatever root holds it', async () => {
+  it('drops the longer of two names that both end the file name', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'X _ Y/Y/Intro _ X _ Y.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+
+    // Both ` _ Y` (the Course folder's) and ` _ X _ Y` (its wrapper's) end the name.
+    await h.core.openCourse(join(learning, 'X _ Y', 'Y'));
+
+    expect(treeTitles(h)).toEqual(['Intro']);
+  });
+
+  it('drops only its own name for a Course whose first holding root is itself', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
       'Docker Mastery/docker-mastery-2024/01 Intro _ Docker Mastery.mp4': 'v',
