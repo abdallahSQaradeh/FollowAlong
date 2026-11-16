@@ -267,7 +267,7 @@
       "view/item/context": [
         {
           "command": "followalong.attachResource",
-          "when": "view == followalong.lessons && viewItem == lesson",
+          "when": "view == followalong.lessons && viewItem =~ /^(lesson|course)$/",
           "group": "inline"
         },
         {
