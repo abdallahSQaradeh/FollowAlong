@@ -129,6 +129,14 @@ export interface UserMessage {
   readonly text: string;
 }
 
+/** What a Resource opens as. Later tickets add targets (a URL, a preview, a PDF) beside `file`. */
+export interface FileResourceTarget {
+  readonly kind: 'file';
+  readonly path: string;
+}
+
+export type ResourceTarget = FileResourceTarget;
+
 export interface UiSink {
   showMessage(message: UserMessage): void;
   /**
@@ -140,6 +148,8 @@ export interface UiSink {
   showLessonTree(model: LessonTreeModel): void;
   /** Selects the Lesson in the Lesson tree, and scrolls it into view without taking focus. */
   selectLesson(lessonId: string): void;
+  /** Opens a Resource in a tab beside the code, without touching the player or taking focus. */
+  openResource(target: ResourceTarget): Promise<void>;
 }
 
 // --- All of them --------------------------------------------------------------------------------

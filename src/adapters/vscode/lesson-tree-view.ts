@@ -9,6 +9,19 @@ import type { LessonTreeModel, LessonTreeNode } from '../../core/lesson-tree.js'
 
 export const lessonTreeViewId = 'followalong.lessons';
 export const playLessonCommand = 'followalong.playLesson';
+export const openResourceCommand = 'followalong.openResource';
+
+/** What VS Code shows under a node: a Section's Lessons and Sections, a Lesson's Resources. */
+function childrenOf(node: LessonTreeNode): readonly LessonTreeNode[] {
+  switch (node.kind) {
+    case 'section':
+      return node.children;
+    case 'lesson':
+      return node.resources;
+    case 'resource':
+      return [];
+  }
+}
 
 /** The nodes from the top of the tree down to the node with this id, or none if it is not there. */
 function pathTo(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode[] {
@@ -16,7 +29,7 @@ function pathTo(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode[] 
     if (node.id === id) {
       return [node];
     }
-    const inside = node.kind === 'section' ? pathTo(node.children, id) : [];
+    const inside = pathTo(childrenOf(node), id);
     if (inside.length > 0) {
       return [node, ...inside];
     }
@@ -26,6 +39,11 @@ function pathTo(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode[] 
 
 export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, vscode.Disposable {
   private model: LessonTreeModel = { nodes: [] };
+  /** The tree as the learner sees it now (the smoke test reads it). */
+  get current(): LessonTreeModel {
+    return this.model;
+  }
+
   private readonly changed = new vscode.EventEmitter<undefined>();
   private readonly view: vscode.TreeView<LessonTreeNode>;
   private readonly subscription: vscode.Disposable;
@@ -85,7 +103,7 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
     if (node === undefined) {
       return [...this.model.nodes];
     }
-    return node.kind === 'section' ? [...node.children] : [];
+    return [...childrenOf(node)];
   }
 
   getTreeItem(node: LessonTreeNode): vscode.TreeItem {
@@ -95,7 +113,22 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
       item.contextValue = 'section';
       return item;
     }
-    const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+    if (node.kind === 'resource') {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.id = node.id;
+      item.contextValue = 'resource';
+      item.tooltip = node.path;
+      item.resourceUri = vscode.Uri.file(node.path);
+      item.command = { command: openResourceCommand, title: 'Open Resource', arguments: [node.id] };
+      return item;
+    }
+    // A Lesson with Resources opens expanded, so a file the learner just attached is in sight.
+    const item = new vscode.TreeItem(
+      node.label,
+      node.resources.length > 0
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.None,
+    );
     item.id = node.id;
     item.contextValue = 'lesson';
     item.iconPath = new vscode.ThemeIcon('play-circle');

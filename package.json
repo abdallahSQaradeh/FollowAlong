@@ -91,6 +91,17 @@
         "command": "followalong.goToLesson",
         "title": "Go to Lesson…",
         "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.attachResource",
+        "title": "Attach Resource",
+        "category": "FollowAlong",
+        "icon": "$(add)"
+      },
+      {
+        "command": "followalong.openResource",
+        "title": "Open Resource",
+        "category": "FollowAlong"
       }
     ],
     "keybindings": [
@@ -201,6 +212,21 @@
         {
           "command": "followalong.playLesson",
           "when": "false"
+        },
+        {
+          "command": "followalong.attachResource",
+          "when": "false"
+        },
+        {
+          "command": "followalong.openResource",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "followalong.attachResource",
+          "when": "view == followalong.lessons && viewItem == lesson",
+          "group": "inline"
         }
       ]
     },

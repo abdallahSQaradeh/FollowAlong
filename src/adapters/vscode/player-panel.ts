@@ -35,6 +35,11 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     private readonly logger: Logger,
   ) {}
 
+  /** The editor group the player is in, if it is open in one. */
+  get viewColumn(): vscode.ViewColumn | undefined {
+    return this.panel?.viewColumn;
+  }
+
   show(options: PlayerShowOptions): PlayerShowResult {
     const { title, resourceRoots } = options;
     const sameRoots =

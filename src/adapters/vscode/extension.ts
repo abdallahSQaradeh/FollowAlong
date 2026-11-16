@@ -9,8 +9,10 @@ import type { PlayerEvent } from '../../protocol/player-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
-import { LessonTreeView, playLessonCommand } from './lesson-tree-view.js';
+import type { LessonTreeModel } from '../../core/lesson-tree.js';
+import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { PlayerPanel } from './player-panel.js';
+import { createResourcePlacement } from './resource-placement.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
 
 export const commands = {
@@ -18,6 +20,10 @@ export const commands = {
   openCourse: 'followalong.openCourse',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */
   playLesson: playLessonCommand,
+  /** The "+" on a Lesson in the tree; it is run with the Lesson's tree node. */
+  attachResource: 'followalong.attachResource',
+  /** Run by a click on a Resource in the tree, with the Resource's id. */
+  openResource: openResourceCommand,
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
   playPause: 'followalong.playPause',
   /** The step commands; their sizes are the `followalong.shortStep` and `longStep` settings. */
@@ -43,6 +49,8 @@ export const commands = {
  */
 export interface TestHooks {
   readonly playerEvents: readonly PlayerEvent[];
+  /** The Lesson tree the learner sees now. */
+  lessonTree(): LessonTreeModel;
   /** The id of the Lesson the Lesson tree shows as selected. */
   selectedLesson(): string | undefined;
 }
@@ -59,7 +67,10 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     clock: createSystemClock(),
     converter: createUnavailableConverter(),
     config: createConfig(),
-    ui: createUiSink(lessonTree),
+    ui: createUiSink(
+      lessonTree,
+      createResourcePlacement(() => player.viewColumn),
+    ),
     logger,
   });
 
@@ -81,7 +92,11 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     const playerEvents: PlayerEvent[] = [];
     context.subscriptions.push(player.onEvent((event) => playerEvents.push(event)));
-    testHooks = { playerEvents, selectedLesson: () => lessonTree.selectedLesson() };
+    testHooks = {
+      playerEvents,
+      lessonTree: () => lessonTree.current,
+      selectedLesson: () => lessonTree.selectedLesson(),
+    };
   }
 
   context.subscriptions.push(
@@ -108,6 +123,33 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
             )?.[0];
       if (target !== undefined) {
         await core.openCourse(target.fsPath);
+      }
+    }),
+    register(commands.attachResource, async (node, file) => {
+      const lessonId =
+        typeof node === 'object' && node !== null && 'id' in node ? node.id : undefined;
+      if (typeof lessonId !== 'string') {
+        return;
+      }
+      const target =
+        file instanceof vscode.Uri
+          ? file
+          : (
+              await vscode.window.showOpenDialog({
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                openLabel: 'Attach',
+                title: 'Attach a file to this Lesson',
+              })
+            )?.[0];
+      if (target !== undefined) {
+        await core.attachResource(lessonId, target.fsPath);
+      }
+    }),
+    register(commands.openResource, async (resourceId) => {
+      if (typeof resourceId === 'string') {
+        await core.openResource(resourceId);
       }
     }),
     register(commands.playLesson, (lessonId) => {

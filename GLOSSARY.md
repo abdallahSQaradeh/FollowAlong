@@ -41,7 +41,7 @@ How far the learner has got through a Course: each Lesson is not started, in pro
 _Avoid_: History, completion
 
 **Resource**:
-A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along.
+A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along. It is a reference to the file, never a copy.
 _Avoid_: Material, attachment
 
 **Course data**:
