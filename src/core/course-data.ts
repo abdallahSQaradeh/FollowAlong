@@ -25,11 +25,13 @@ export interface CourseDataFile<T> {
   /** Turns stored data of `version` (at most the current one) into `T`, or `undefined`. */
   parse(data: unknown, version: number): T | undefined;
   /**
-   * Combines the copies in `.followalong` and in the fallback storage, when both hold the file
-   * (a Course that turned read-only after FollowAlong wrote to it). Without it, `read` returns the
-   * copy of the location written last in this session, else the one in `.followalong`.
+   * Combines two copies of the file; `a` wins a tie. `read` merges the copies in `.followalong` and
+   * in the fallback storage (a Course that turned read-only after FollowAlong wrote to it), and
+   * `write` merges what it was given with the copy it replaces, read again under the file's lock
+   * (another window may have written it, ADR 0074). Without it, `read` returns the copy of the
+   * location written last in this session, else the one in `.followalong`.
    */
-  merge?(inCourse: T, inFallback: T): T;
+  merge?(a: T, b: T): T;
 }
 
 /**
@@ -52,8 +54,8 @@ export interface CourseDataWritten<T> {
    */
   readonly keptElsewhere?: string;
   /**
-   * What was written, when it is more than the value given: a copy whose earlier read had failed
-   * could be read now, and its data was merged in (`CourseDataFile.merge`) rather than replaced.
+   * What was written, for a file with `merge`: the value given merged with the copy it replaced
+   * (another window's changes, or a copy whose earlier read had failed), so the caller can catch up.
    */
   readonly merged?: T;
 }
