@@ -70,6 +70,11 @@ export const commands = {
   previousLesson: 'followalong.previousLesson',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
+  /** The tree's context menu on a Section: Mark all done, Reset Section; run with its tree node. */
+  markSectionDone: 'followalong.markSectionDone',
+  resetSection: 'followalong.resetSection',
+  /** `FollowAlong: Reset Course progress`, from the Command Palette. */
+  resetCourseProgress: 'followalong.resetCourseProgress',
 } as const;
 
 /**
@@ -251,6 +256,19 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       core.previousLesson();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
+    register(commands.markSectionDone, async (node) => {
+      const sectionId = nodeId(node);
+      if (sectionId !== undefined) {
+        await core.markSectionDone(sectionId);
+      }
+    }),
+    register(commands.resetSection, async (node) => {
+      const sectionId = nodeId(node);
+      if (sectionId !== undefined) {
+        await core.resetSection(sectionId);
+      }
+    }),
+    register(commands.resetCourseProgress, () => core.resetCourseProgress()),
   );
   // Reopening the workspace brings back the Course that was open in it (story 21).
   core.restoreCourse().catch((error: unknown) => {
