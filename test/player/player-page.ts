@@ -42,6 +42,12 @@ export interface PlayerOptions {
   readonly tuning?: PlayerTuning;
   /** Answer Range requests with bytes that are not WebM, as a file changed on disk would. */
   readonly brokenRanges?: boolean;
+  /**
+   * `false`: the harness posts commands and reads state without a user gesture, as VS Code does.
+   * Chromium then refuses autoplay until the learner acts in the page (#12 D3). By default the
+   * harness runs as Playwright's `page.evaluate` does, as a user gesture, so autoplay is allowed.
+   */
+  readonly userGestures?: boolean;
 }
 
 export interface PlayerHarness {
@@ -132,15 +138,16 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
   );
   await page.goto(`${origin}/`);
 
-  const events = () => page.evaluate(() => (window.followalongSent ?? []) as PlayerEvent[]);
+  const evaluate = await evaluator(page, options.userGestures ?? true);
+  const events = () => evaluate(() => (window.followalongSent ?? []) as PlayerEvent[], undefined);
   return {
     async post(command) {
-      await page.evaluate((message) => {
+      await evaluate((message) => {
         window.postMessage(message, '*');
       }, command);
     },
     async postAll(commands) {
-      await page.evaluate((messages) => {
+      await evaluate((messages) => {
         for (const message of messages) {
           window.postMessage(message, '*');
         }
@@ -156,7 +163,11 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         .toBe(true);
     },
     video: () =>
-      page.locator('video').evaluate((element: HTMLVideoElement): VideoState => {
+      evaluate((): VideoState => {
+        const element = document.querySelector('video');
+        if (element === null) {
+          throw new Error('The player page has no <video> element.');
+        }
         const decoded = element as HTMLVideoElement & {
           webkitAudioDecodedByteCount: number;
           webkitVideoDecodedByteCount: number;
@@ -176,7 +187,30 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
             (_, index) => [element.buffered.start(index), element.buffered.end(index)] as const,
           ),
         };
-      }),
+      }, undefined),
+  };
+}
+
+type Evaluate = <Result, Arg>(run: (arg: Arg) => Result, arg: Arg) => Promise<Awaited<Result>>;
+
+/** Runs `run(arg)` in the page, as a user gesture (Playwright's way) or not (VS Code's). */
+async function evaluator(page: Page, userGestures: boolean): Promise<Evaluate> {
+  if (userGestures) {
+    return async (run, arg) =>
+      (await page.evaluate(run as (value: unknown) => unknown, arg as unknown)) as never;
+  }
+  const session = await page.context().newCDPSession(page);
+  return async (run, arg) => {
+    const { result, exceptionDetails } = (await session.send('Runtime.evaluate', {
+      expression: `(${run.toString()})(${arg === undefined ? '' : JSON.stringify(arg)})`,
+      awaitPromise: true,
+      returnByValue: true,
+      userGesture: false,
+    })) as { result: { value?: unknown }; exceptionDetails?: { text: string } };
+    if (exceptionDetails !== undefined) {
+      throw new Error(`evaluate in the player page failed: ${exceptionDetails.text}`);
+    }
+    return result.value as never;
   };
 }
 
@@ -184,4 +218,25 @@ function matches(event: PlayerEvent, expected: Partial<PlayerEvent>): boolean {
   return Object.entries(expected).every(
     ([key, value]) => (event as unknown as Record<string, unknown>)[key] === value,
   );
+}
+
+/**
+ * Where things are on the player page. Chromium's native control bar sits along the bottom of
+ * the video: its timeline about 22 px above the bottom edge, its buttons about 48 px above it.
+ */
+export async function spots(page: Page) {
+  const box = await page.locator('video').boundingBox();
+  if (box === null) {
+    throw new Error('the video is not on screen');
+  }
+  const bottom = box.y + box.height;
+  return {
+    picture: { x: box.x + box.width / 2, y: box.y + box.height / 3 },
+    playButton: { x: box.x + 24, y: bottom - 48 },
+    muteButton: { x: box.x + box.width - 120, y: bottom - 48 },
+    timeline: (fraction: number) => ({
+      x: box.x + 16 + (box.width - 32) * fraction,
+      y: bottom - 22,
+    }),
+  };
 }

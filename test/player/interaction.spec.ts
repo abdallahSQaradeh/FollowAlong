@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 
 import type { PlayerCommand } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
-import { media, openPlayer, type PlayerHarness } from './player-page.js';
+import { media, openPlayer, spots, type PlayerHarness } from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
 
@@ -15,27 +15,6 @@ function load(overrides: Partial<Extract<PlayerCommand, { type: 'load' }>> = {})
     startAt: 0,
     autoplay: true,
     ...overrides,
-  };
-}
-
-/**
- * Where things are on the player page. Chromium's native control bar sits along the bottom of
- * the video: its timeline about 22 px above the bottom edge, its buttons about 48 px above it.
- */
-async function spots(page: Page) {
-  const box = await page.locator('video').boundingBox();
-  if (box === null) {
-    throw new Error('the video is not on screen');
-  }
-  const bottom = box.y + box.height;
-  return {
-    picture: { x: box.x + box.width / 2, y: box.y + box.height / 3 },
-    playButton: { x: box.x + 24, y: bottom - 48 },
-    muteButton: { x: box.x + box.width - 120, y: bottom - 48 },
-    timeline: (fraction: number) => ({
-      x: box.x + 16 + (box.width - 32) * fraction,
-      y: bottom - 22,
-    }),
   };
 }
 
