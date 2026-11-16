@@ -98,7 +98,10 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
 
   async function writeTo(location: string, name: string, content: string) {
     if (!prepared.has(location)) {
-      await fileSystem.makeDirectory(location, { hidden: location === inCourse });
+      // Only `.followalong` itself is made in the Course: were the Course folder gone (moved while
+      // open), making its parents would bring back an empty Course at the old path.
+      const inTheCourse = location === inCourse;
+      await fileSystem.makeDirectory(location, { hidden: inTheCourse, parents: !inTheCourse });
       prepared.add(location);
     }
     await fileSystem.writeText(join(location, name), content);

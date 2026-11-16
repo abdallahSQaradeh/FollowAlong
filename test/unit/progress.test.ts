@@ -1,4 +1,4 @@
-import { rename } from 'node:fs/promises';
+import { mkdir, readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -223,6 +223,69 @@ describe('reopening the workspace', () => {
     expect(h.player.shown).toEqual([]);
     expect(h.ui.messages).toEqual([
       { severity: 'error', text: 'FollowAlong cannot open “course”: the folder is missing.' },
+    ]);
+  });
+});
+
+describe('Progress kept with the Course', () => {
+  it('writes each Lesson’s position into the Course’s .followalong folder, by its path in the Course', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { 'Section 1/01 Intro.webm': 'video' });
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, 'Section 1/01 Intro.webm', 42);
+    pause(h, 'Section 1/01 Intro.webm');
+    await h.settle();
+
+    expect(
+      JSON.parse(await readFile(join(course, '.followalong', 'progress.json'), 'utf8')),
+    ).toEqual({
+      version: 1,
+      data: {
+        lessons: {
+          'Section 1/01 Intro.webm': { position: 42, duration: 600, savedAt: h.clock.now() },
+        },
+        last: { lessonId: 'Section 1/01 Intro.webm', savedAt: h.clock.now() },
+      },
+    });
+  });
+
+  it('keeps Progress when the learner moves or renames the Course folder', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Downloads/JavaScript', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    playTo(h, '02 Setup.webm', 125);
+    pause(h, '02 Setup.webm');
+    await h.settle();
+    await mkdir(join(h.root, 'Courses'));
+    const moved = join(h.root, 'Courses', 'JavaScript The Advanced Concepts');
+    await rename(course, moved);
+
+    expect(await reopen(h, moved)).toMatchObject({ lessonId: '02 Setup.webm', startAt: 120 });
+  });
+
+  it('never makes the Course folder again when it moves away while open, and says Progress was not saved', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Downloads/course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 30);
+    await rename(course, join(h.root, 'moved'));
+    pause(h, '01 Intro.webm');
+    await h.settle();
+    playTo(h, '01 Intro.webm', 31);
+    pause(h, '01 Intro.webm');
+    await h.settle();
+
+    expect(await h.listFiles(join(h.root, 'Downloads'))).toEqual([]);
+    expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'error',
+        text: 'FollowAlong could not save your Progress in “course”: the Course folder is missing.',
+      },
     ]);
   });
 });
