@@ -66,6 +66,70 @@ async function renameOver(from: string, to: string): Promise<void> {
   }
 }
 
+/** How long a window waits for another window's lock on a file, in steps of `lockStepMs`. */
+const lockWaitMs = 2_000;
+const lockStepMs = 20;
+/** A lock this old was left behind by a window that stopped before giving it back. */
+const leftBehindLockMs = 10_000;
+
+/** Whether the lock file at `lockPath` is older than {@link leftBehindLockMs}; false if gone. */
+async function leftBehind(lockPath: string): Promise<boolean> {
+  return stat(lockPath).then(
+    (found) => Date.now() - found.mtimeMs >= leftBehindLockMs,
+    () => false,
+  );
+}
+
+/** Makes `lockPath` if nothing is there; resolves `false` while another window holds it. */
+async function makeLock(lockPath: string): Promise<boolean> {
+  try {
+    const file = await open(lockPath, 'wx');
+    try {
+      await file.writeFile(String(process.pid), 'utf8');
+    } finally {
+      await file.close();
+    }
+    return true;
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? error.code : undefined;
+    if (code === 'EEXIST') {
+      return false;
+    }
+    // On Windows, a lock file another window is just removing refuses to be made again (EPERM):
+    // held for a moment more. A folder that may not be written to refuses it too, with no file.
+    if (
+      (code === 'EPERM' || code === 'EACCES') &&
+      (await stat(lockPath).then(
+        () => true,
+        () => false,
+      ))
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** See {@link FileSystem.lock}. */
+async function lock(path: string): Promise<() => Promise<void>> {
+  const lockPath = `${path}.lock`;
+  const giveUpAt = Date.now() + lockWaitMs;
+  for (;;) {
+    if (await makeLock(lockPath)) {
+      return () =>
+        wrap(lockPath, () => rm(lockPath, { force: true, maxRetries: 5, retryDelay: 20 }));
+    }
+    if (await leftBehind(lockPath)) {
+      await rm(lockPath, { force: true });
+      continue;
+    }
+    if (Date.now() >= giveUpAt) {
+      throw new FileSystemError('other', path, `${lockPath} is still held by another window.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, lockStepMs));
+  }
+}
+
 export function createNodeFileSystem(): FileSystem {
   return {
     readDirectory: (path) =>
@@ -122,6 +186,8 @@ export function createNodeFileSystem(): FileSystem {
           throw error;
         }
       }),
+
+    lock: (path) => wrap(path, () => lock(path)),
 
     makeDirectory: (path, options) =>
       wrap(path, async () => {

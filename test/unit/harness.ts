@@ -826,6 +826,8 @@ export async function createHarness(): Promise<Harness> {
     stat: (path) => track(nodeFileSystem.stat(path)),
     exists: (path) => track(nodeFileSystem.exists(path)),
     writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
+    lock: (path) =>
+      track(nodeFileSystem.lock(path).then((release) => (): Promise<void> => track(release()))),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
   };
   const portsFor = (windowPlayer: FakePlayer): Ports => ({

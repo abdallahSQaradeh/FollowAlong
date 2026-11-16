@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
@@ -54,12 +56,17 @@ async function openInTwoWindows(
   return { h, other, course };
 }
 
-/** Where each Lesson starts when the learner plays it after VS Code starts again. */
+/**
+ * Where each Lesson starts when the learner plays it after VS Code starts again. `other`, the
+ * second window, is closed first: it saves what it has, as a window closing does.
+ */
 async function startsAfterRestart(
   h: Harness,
   course: string,
   lessonIds: readonly string[],
+  other?: OtherWindow,
 ): Promise<Record<string, unknown>> {
+  await other?.core.close();
   await h.settle();
   h.restart();
   h.clock.advance(60_000);
@@ -90,7 +97,7 @@ describe('two windows on the same Course', () => {
     playTo(h.player, intro, 150);
     pause(h.player, intro);
 
-    expect(await startsAfterRestart(h, course, [intro, setup])).toEqual({
+    expect(await startsAfterRestart(h, course, [intro, setup], other)).toEqual({
       [intro]: 145,
       [setup]: 195,
     });
@@ -108,7 +115,7 @@ describe('two windows on the same Course', () => {
     playTo(h.player, intro, 100);
     pause(h.player, intro);
 
-    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 295 });
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 295 });
   });
 
   it('keeps the save written later when it is also the newer one', async () => {
@@ -123,7 +130,7 @@ describe('two windows on the same Course', () => {
     playTo(other.player, intro, 300);
     pause(other.player, intro);
 
-    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 295 });
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 295 });
   });
 
   it('keeps a done mark from one window when the other, still playing the Lesson, saves its place', async () => {
@@ -139,7 +146,7 @@ describe('two windows on the same Course', () => {
     playTo(other.player, intro, 120);
     pause(other.player, intro);
 
-    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 115 });
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 115 });
     expect(glyphs(h)[intro]).toBe('✓');
   });
 
@@ -153,7 +160,7 @@ describe('two windows on the same Course', () => {
 
     await h.core.markLessonDone(intro);
 
-    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 95 });
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 95 });
     expect(glyphs(h)[intro]).toBe('✓');
   });
 
@@ -176,12 +183,13 @@ describe('two windows on the same Course', () => {
     pause(other.player, intro);
 
     // The other window's place is newer than the reset, so it counts again; its done mark does not.
-    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 295 });
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 295 });
     expect(glyphs(h)[intro]).not.toBe('✓');
   });
 
-  it('resets a Lesson over an older place the other window saves after the reset', async () => {
-    const { h, other, course } = await openInTwoWindows(0);
+  it('resets a Lesson over an older place the other window writes after the reset', async () => {
+    // The other window's clock is 5 s behind (another machine on a share): its save is older.
+    const { h, other, course } = await openInTwoWindows(-5_000);
     other.core.playLesson(intro);
     playTo(other.player, intro, 200);
     wait(h, other, 1_000);
@@ -190,7 +198,7 @@ describe('two windows on the same Course', () => {
     wait(h, other, 1_000);
     pause(other.player, intro);
 
-    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 0 });
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 0 });
     expect(glyphs(h)[intro]).toBe('○');
   });
 
@@ -207,7 +215,25 @@ describe('two windows on the same Course', () => {
     playTo(other.player, intro, 250);
     pause(other.player, intro);
 
-    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 245 });
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 245 });
+  });
+
+  it('keeps both Lessons when the two windows save at the same moment', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    h.core.playLesson(intro);
+    playTo(h.player, intro, 100);
+    other.core.playLesson(setup);
+    playTo(other.player, setup, 200);
+
+    pause(h.player, intro);
+    pause(other.player, setup);
+
+    expect(await startsAfterRestart(h, course, [intro, setup], other)).toEqual({
+      [intro]: 95,
+      [setup]: 195,
+    });
+    // The windows took turns, and gave the turn back: no lock is left in the Course.
+    expect(await h.listFiles(join(course, '.followalong'))).toEqual(['progress.json']);
   });
 });
 

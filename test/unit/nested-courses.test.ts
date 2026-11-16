@@ -55,6 +55,7 @@ describe('a Course at the root of a drive', () => {
       readText: () => Promise.reject(new Error('not read')),
       exists: () => Promise.resolve(true),
       writeText: () => Promise.reject(new Error('not written')),
+      lock: () => Promise.reject(new Error('not locked')),
       makeDirectory: () => Promise.reject(new Error('not made')),
     };
     const logger: Logger = { log: () => undefined };

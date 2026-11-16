@@ -93,6 +93,14 @@ export interface FileSystem {
   /** Writes the whole file at once: readers see the old or the new content, never a mix. */
   writeText(path: string, content: string): Promise<void>;
   /**
+   * Takes the lock of the file at `path`, so that two VS Code windows reading and rewriting it take
+   * turns (ADR 0074): makes `<path>.lock` beside it, waiting a moment while another window holds
+   * it, and taking over a lock left behind by a window that stopped. Resolves with the function
+   * that gives it back. Rejects when the lock is still held after the wait, or cannot be made
+   * there (`readOnly`, `notFound`).
+   */
+  lock(path: string): Promise<() => Promise<void>>;
+  /**
    * Creates the folder, and its missing parents too when `parents` is set; without it, a missing
    * parent fails with `notFound`. A folder that already exists is fine. `hidden` also sets the
    * Windows hidden attribute.
