@@ -376,6 +376,10 @@ export function createLoadedLesson(
         feedAutoPause({ type: 'quiet' });
       });
     },
+    cancelQuiet: () => {
+      quietTimer?.dispose();
+      quietTimer = undefined;
+    },
     resume: () => {
       resume(0);
     },
@@ -1198,6 +1202,7 @@ export function createLoadedLesson(
     },
     dispose() {
       saveTimer?.dispose();
+      quietTimer?.dispose();
       stopSound();
       for (const subscription of subscriptions) {
         subscription.dispose();

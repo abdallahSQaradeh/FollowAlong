@@ -71,17 +71,38 @@ export type AutoPauseInput =
  * - `pause`: sends the player `pause`;
  * - `startQuiet`: starts the quiet period of `pauseAndResume` (the `resumeAfter` setting) again
  *   from now; when it passes, the Loaded Lesson feeds `quiet`;
+ * - `cancelQuiet`: stops the quiet period under way, if any;
  * - `resume`: resumes the Lesson with no rewind (story 103).
  */
-export type AutoPauseEffect = 'pause' | 'startQuiet' | 'resume';
+export type AutoPauseEffect = 'pause' | 'startQuiet' | 'cancelQuiet' | 'resume';
 
 export interface AutoPauseStep {
   readonly state: AutoPauseState;
   readonly effects: readonly AutoPauseEffect[];
 }
 
+/**
+ * Whether the quiet period runs in `state`: while auto-pause holds a pause it caused, in
+ * `pauseAndResume`. It starts when such a state begins, and stops when it ends.
+ */
+function quietRuns(state: AutoPauseState): boolean {
+  return state.kind === 'autoPaused' && state.mode === 'pauseAndResume';
+}
+
 /** The next state, and what to do, after `input`. Pure: the clock and the player are the caller's. */
 export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): AutoPauseStep {
+  const step = transition(state, input);
+  if (quietRuns(state) === quietRuns(step.state)) {
+    return step;
+  }
+  return {
+    state: step.state,
+    effects: [...step.effects, quietRuns(step.state) ? 'startQuiet' : 'cancelQuiet'],
+  };
+}
+
+/** The next state, and what to do besides starting or stopping the quiet period. */
+function transition(state: AutoPauseState, input: AutoPauseInput): AutoPauseStep {
   switch (input.type) {
     case 'modeChanged':
       if (input.mode === 'off') {
@@ -96,20 +117,21 @@ export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): Aut
         effects: [],
       };
     case 'typed':
+      if (quietRuns(state)) {
+        // Still typing: the quiet period starts again from this edit.
+        return { state, effects: ['startQuiet'] };
+      }
       return state.kind === 'armed' && input.playing
-        ? {
-            state: { ...state, kind: 'autoPaused' },
-            effects: state.mode === 'pauseAndResume' ? ['pause', 'startQuiet'] : ['pause'],
-          }
+        ? { state: { ...state, kind: 'autoPaused' }, effects: ['pause'] }
         : { state, effects: [] };
     case 'quiet':
-      return { state, effects: state.kind === 'autoPaused' ? ['resume'] : [] };
+      return { state, effects: quietRuns(state) ? ['resume'] : [] };
     case 'played':
     case 'learnerPaused':
     case 'lessonOver':
       // Playing again, whoever started it; paused by the learner, so the pause is theirs; or no
       // longer the Lesson it paused: what it paused is over, and the next edit while a Lesson
-      // plays pauses it. #60 tells these apart (`overridden`, the quiet timer).
+      // plays pauses it.
       return {
         state: state.kind === 'autoPaused' ? { ...state, kind: 'armed' } : state,
         effects: [],

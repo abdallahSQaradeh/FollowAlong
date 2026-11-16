@@ -407,4 +407,59 @@ describe('pause and resume after a quiet period', () => {
     expect(after(h, 1999)).toEqual([]);
     expect(after(h, 1)).toEqual([{ type: 'play' }]);
   });
+
+  describe('a pause of the learner’s own is never resumed (story 101)', () => {
+    it('when they press pause before the player reported the auto-pause', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pauseAndResume');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.core.playPause();
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+
+      expect(after(h, 10_000)).toEqual([]);
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+
+    it('when their click in the player paused it while they typed', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pauseAndResume');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: true });
+
+      expect(after(h, 10_000)).toEqual([]);
+    });
+
+    it('when they type on after their own pause', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pauseAndResume');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: true });
+      edit(h);
+
+      expect(after(h, 10_000)).toEqual([]);
+    });
+  });
+
+  it('leaves the Lesson paused when the learner switches to `pause` during the quiet period', async () => {
+    const h = await createHarness();
+    await pausedByTyping(h);
+    h.clock.advance(500);
+    h.config.set('autoPause', 'pause');
+
+    expect(after(h, 10_000)).toEqual([]);
+    expect(playPauseItem(h)).toMatchObject({ text: 'Paused (typing)' });
+  });
+
+  it('starts the quiet period again with every edit', async () => {
+    const h = await createHarness();
+    await pausedByTyping(h);
+    h.clock.advance(1500);
+
+    expect(edit(h)).toEqual([]);
+    expect(after(h, 1999)).toEqual([]);
+    expect(after(h, 1)).toEqual([{ type: 'play' }]);
+  });
 });
