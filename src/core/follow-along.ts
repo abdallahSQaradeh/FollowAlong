@@ -21,7 +21,7 @@ import {
 } from './loaded-lesson.js';
 import type { StatusBarCommand } from './status-bar.js';
 import { openResources, type ResourceStore } from './resource-store.js';
-import { resourcePath, resourceTarget } from './resources.js';
+import { resourcePath, resourceTarget, type ResourceRecord } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
@@ -153,20 +153,55 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /**
-   * Shows a change made to a Course's Resources. It writes into that Course's data even if the
-   * learner has opened another Course since, and shows it in the tree only if that Course is
-   * still the one open; otherwise it says so, because the tree shows another Course and the
-   * learner might do it again.
+   * Draws the Resources of `store` in the tree, if its Course is the one open now. A change is
+   * made in the data of the Course it was asked in, even if the learner has opened another Course
+   * since; the tree then keeps showing that other Course.
    */
-  function showResourceChange(course: Course, store: ResourceStore, done: string): void {
-    if (openedCourse?.folder === course.folder) {
-      ui.showLessonTree(buildLessonTree(openedCourse, store.current(), store.missing()));
-    } else {
+  function showResources(course: Course, store: ResourceStore): boolean {
+    if (openedCourse?.folder !== course.folder) {
+      return false;
+    }
+    ui.showLessonTree(buildLessonTree(openedCourse, store.current(), store.missing()));
+    return true;
+  }
+
+  /**
+   * After a Resources change was tried: the tree shows what is there now (also when the change no
+   * longer applied, because another window got there first). A change made in a Course that is no
+   * longer open is said, because the tree shows another Course and the learner might do it again.
+   */
+  function showResourceChange(
+    course: Course,
+    store: ResourceStore,
+    change: { readonly made: boolean; readonly said: string },
+  ): void {
+    if (!showResources(course, store) && change.made) {
       ui.showMessage({
         severity: 'info',
-        text: `FollowAlong ${done} in “${basename(course.folder)}”, which is no longer open.`,
+        text: `FollowAlong ${change.said} in “${basename(course.folder)}”, which is no longer open.`,
       });
     }
+  }
+
+  /**
+   * The open Course, its Resources and one of them, as a Resource command finds them when it runs.
+   * That fixes the Course before any dialog is awaited (ADR 0024).
+   */
+  function resourceOfOpenCourse(
+    resourceId: string,
+    action: string,
+  ): { course: Course; store: ResourceStore; record: ResourceRecord } | undefined {
+    const course = openedCourse;
+    const store = resourceStore;
+    const record = store?.find(resourceId);
+    if (course === undefined || store === undefined || record === undefined) {
+      logger.log({
+        level: 'warn',
+        message: `Cannot ${action} ${resourceId}: it is not a Resource of the open Course.`,
+      });
+      return undefined;
+    }
+    return { course, store, record };
   }
 
   /**
@@ -182,13 +217,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     const path =
       absolutePath ??
       (await ui.pickFile({ title: 'Attach a file to this Lesson', openLabel: 'Attach' }));
-    if (path !== undefined && (await store.attach(lessonId, path))) {
+    if (path !== undefined) {
+      const made = await store.attach(lessonId, path);
       const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
-      showResourceChange(
-        course,
-        store,
-        `attached “${basename(path)}” to “${lesson?.title ?? lessonId}”`,
-      );
+      showResourceChange(course, store, {
+        made,
+        said: `attached “${basename(path)}” to “${lesson?.title ?? lessonId}”`,
+      });
     }
   }
 
@@ -474,63 +509,56 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
     },
     async detachResource(resourceId) {
-      // The Course is fixed when the command runs: the change is made in its data even if
-      // another Course is opened before it is written.
-      const course = openedCourse;
-      const store = resourceStore;
-      const record = store?.find(resourceId);
-      if (course === undefined || store === undefined || record === undefined) {
-        logger.log({
-          level: 'warn',
-          message: `Cannot detach ${resourceId}: it is not a Resource of the open Course.`,
-        });
+      const found = resourceOfOpenCourse(resourceId, 'detach');
+      if (found === undefined) {
         return;
       }
-      if (await store.detach(resourceId)) {
-        showResourceChange(
-          course,
-          store,
-          `detached “${basename(resourcePath(course.folder, record))}”`,
-        );
-      }
+      const { course, store, record } = found;
+      const made = await store.detach(resourceId);
+      showResourceChange(course, store, {
+        made,
+        said: `detached “${basename(resourcePath(course.folder, record))}”`,
+      });
     },
     async relinkResource(resourceId, absolutePath) {
-      // Fixed when the command runs, before any dialog: another Course opened meanwhile never
-      // has this Resource relinked (ADR 0024).
-      const course = openedCourse;
-      const store = resourceStore;
-      const record = store?.find(resourceId);
-      if (course === undefined || store === undefined || record === undefined) {
-        logger.log({
-          level: 'warn',
-          message: `Cannot relink ${resourceId}: it is not a Resource of the open Course.`,
-        });
+      const found = resourceOfOpenCourse(resourceId, 'relink');
+      if (found === undefined) {
         return;
       }
-      const was = basename(resourcePath(course.folder, record));
+      const { course, store, record } = found;
+      const previousName = basename(resourcePath(course.folder, record));
       const path =
         absolutePath ??
-        (await ui.pickFile({ title: `Relink “${was}” to another file`, openLabel: 'Relink' }));
-      if (path !== undefined && (await store.relink(resourceId, path))) {
-        showResourceChange(course, store, `relinked “${was}” to “${basename(path)}”`);
+        (await ui.pickFile({
+          title: `Relink “${previousName}” to another file`,
+          openLabel: 'Relink',
+        }));
+      if (path === undefined) {
+        return;
+      }
+      const made = await store.relink(resourceId, path);
+      showResourceChange(course, store, {
+        made,
+        said: `relinked “${previousName}” to “${basename(path)}”`,
+      });
+      if (!made && store.find(resourceId) === undefined) {
+        // Another window detached it while the dialog was open: nothing is left to point anywhere.
+        ui.showMessage({
+          severity: 'info',
+          text: `FollowAlong could not relink “${previousName}”: it is no longer one of the Resources of “${basename(course.folder)}”.`,
+        });
       }
     },
     async openResource(resourceId) {
-      const course = openedCourse;
-      const store = resourceStore;
-      const record = store?.find(resourceId);
-      if (course === undefined || store === undefined || record === undefined) {
-        logger.log({
-          level: 'warn',
-          message: `Cannot open ${resourceId}: it is not a Resource of the open Course.`,
-        });
+      const found = resourceOfOpenCourse(resourceId, 'open');
+      if (found === undefined) {
         return;
       }
+      const { course, store, record } = found;
       const path = resourcePath(course.folder, record);
       // Looked at now, not when the Course opened: the file may have gone, or come back, since.
-      const changed = await store.checkFiles();
-      if (changed && openedCourse === course) {
-        ui.showLessonTree(buildLessonTree(course, store.current(), store.missing()));
+      if (await store.checkFiles()) {
+        showResources(course, store);
       }
       if (store.missing().has(record.id)) {
         ui.showMessage({

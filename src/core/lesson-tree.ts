@@ -85,7 +85,7 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
 export function buildLessonTree(
   course: Course,
   resources: ResourcesData,
-  missing: ReadonlySet<string> = new Set(),
+  missing: ReadonlySet<string>,
 ): LessonTreeModel {
   return { nodes: nodesOf(course, { folder: course.folder, resources, missing }) };
 }

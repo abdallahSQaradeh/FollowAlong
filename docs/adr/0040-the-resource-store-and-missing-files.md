@@ -9,7 +9,9 @@ the middle, and CP1 (ADR 0024) asked for an `openProgress`-like module for Resou
   `relink`, each resolving with whether the change was made. The Course side keeps what only it can
   know: which Course is open now, the file dialogs, and the tree.
 - **One change at a time, per open Course.** Each change re-reads the file first (another window
-  may have changed it) and is queued behind the one before. A change is made in the store of the
+  may have changed it) and is queued behind the one before; looking at the files (`checkFiles`) waits in the same queue, so an
+  older look never overwrites a newer result. A change that no longer applies (another window
+  detached the Resource first) still redraws the tree, so it shows what is there now. A change is made in the store of the
   Course the learner asked it in; the tree shows it only if that Course is still open, otherwise the
   learner is told which Course it went to (ADR 0024). Relink fixes its Course before the dialog
   opens, as both attach routes do. Opening a Course again makes a new store, so the queue is no

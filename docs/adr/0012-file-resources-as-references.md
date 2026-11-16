@@ -1,7 +1,7 @@
 # File Resources are references in `resources.json`, relative inside the Course and absolute outside
 
 A Resource is a reference to a file, never a copy (spec #12, story 95). The Resource store
-(`src/core/resources.ts`) keeps them in `resources.json` in the Course data, through
+(`src/core/resource-store.ts`, with the rules in `src/core/resources.ts`: ADR 0040) keeps them in `resources.json` in the Course data, through
 `openCourseData` (ADR 0005), so it gets the `.followalong` folder, the hidden attribute and the
 read-only fallback without any code of its own. The file is version 1:
 
@@ -28,8 +28,8 @@ read-only fallback without any code of its own. The file is version 1:
 - **Keyed by Lesson id.** The key is the Lesson's path in the Course (ADR 0007), not an absolute
   path, so the data moves with the Course. The file belongs to one Course, so ids need no Course
   prefix.
-- **A generated `id` per Resource**, not the path. Detach and Relink (later tickets) change
-  or remove a Resource without the tree losing track of which one it is.
+- **A generated `id` per Resource**, not the path. Detach and Relink (ADR 0039) change
+  or take away a Resource without the tree losing track of which one it is.
 - **The Course-level key is reserved now.** `course` (story 91) is written as `[]` and kept as it
   is when a Lesson gets a Resource. Nothing attaches to the Course yet, but the file then needs no
   migration when that ticket, or `kind: 'url'` for URLs, arrives. A file without `course` (the
@@ -54,8 +54,9 @@ read-only fallback without any code of its own. The file is version 1:
   read-only Course is not protected, because its location is a private rule of `course-data.ts`;
   exporting it would remove the limit.
 - **Opening a Course reads the Resources, and a read failure is only logged**: the Lessons still
-  play without them. Attaching reads again and lets such a failure through as a command error,
-  because writing after a failed read could drop what was there.
+  play without them. A change reads again first. (Revised by ADR 0039: a copy that cannot be read
+  is skipped and logged by the Course data store, never replaced, so a failed read no longer fails
+  the command.)
 - **Opening a Resource is a UI sink method** (`UiSink.openResource(target)`), not a new port: the
   list of ports in spec #12 stays as it is. The target is `{kind: 'file', path}` today; the tickets
   for opener types, URLs and PDFs add kinds and route them inside the adapter, without changing the

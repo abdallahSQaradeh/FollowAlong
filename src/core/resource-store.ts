@@ -32,8 +32,8 @@ export interface ResourceStore {
   missing(): ReadonlySet<string>;
   find(resourceId: string): ResourceRecord | undefined;
   /**
-   * Looks again at where every Resource points. Resolves with whether the files found missing are
-   * not the same as before.
+   * Looks again at where every Resource points, after any change under way. Resolves with whether
+   * the files found missing are not the same as before.
    */
   checkFiles(): Promise<boolean>;
   /**
@@ -67,14 +67,14 @@ export async function openResources(
   let missing: ReadonlySet<string> = await missingResources(fileSystem, folder, resources);
   /** The learner is told once per open Course that its Resources went to the extension storage. */
   let keptElsewhereShown = false;
-  /** Changes run one at a time, so two quick ones never overwrite each other. */
-  let changing: Promise<unknown> = Promise.resolve();
+  /** Changes and looks at the files run one at a time, so none overwrites what another found. */
+  let turn: Promise<unknown> = Promise.resolve();
 
   /** Neither copy of the Resources file can be used: writing would replace what it holds. */
-  function refuse(what: string): void {
+  function refuse(action: string): void {
     logger.log({
       level: 'warn',
-      message: `Not ${what}: the Resources file of ${folder} is damaged or from a newer version, and was left as it is.`,
+      message: `Not ${action}: the Resources file of ${folder} is damaged or from a newer version, and was left as it is.`,
     });
     // The Course is named: after a switch, "this Course" would read as the one open now.
     ui.showMessage({
@@ -83,7 +83,15 @@ export async function openResources(
     });
   }
 
-  async function checkFiles(): Promise<boolean> {
+  /** Runs `work` after the one before it, so changes and looks at the files never overlap. */
+  function inTurn<T>(work: () => Promise<T>): Promise<T> {
+    const done = turn.then(work, work);
+    turn = done.catch(() => undefined);
+    return done;
+  }
+
+  /** Looks at every file now; the caller is the one in turn. */
+  async function lookAtFiles(): Promise<boolean> {
     const found = await missingResources(fileSystem, folder, resources);
     const changed = found.size !== missing.size || [...found].some((id) => !missing.has(id));
     missing = found;
@@ -93,18 +101,20 @@ export async function openResources(
   /**
    * Reads the file again (another window may have changed it since this Course opened), applies
    * `update` to what is there, and writes the result. `update` answers `undefined` when there is
-   * nothing to change.
+   * nothing to change. Resolves with whether the change was made; `done` is logged when it was.
    */
   function change(
-    what: string,
+    action: string,
+    done: string,
     update: (stored: ResourcesData) => ResourcesData | undefined,
   ): Promise<boolean> {
-    const run = async (): Promise<boolean> => {
+    return inTurn(async () => {
       const stored = (await data.read(resourcesFile)) ?? noResources;
       const next = update(stored);
       if (next === undefined) {
+        // What is stored is what is there now, whatever this session showed until now.
         resources = stored;
-        await checkFiles();
+        await lookAtFiles();
         return false;
       }
       let written: CourseDataWritten<ResourcesData>;
@@ -113,7 +123,7 @@ export async function openResources(
       } catch (error) {
         // Both copies are unusable: neither is replaced (spec #12, D5), and nothing is changed.
         if (error instanceof UnreadableCourseDataError) {
-          refuse(what);
+          refuse(action);
           return false;
         }
         throw error;
@@ -131,45 +141,31 @@ export async function openResources(
           text: `FollowAlong can't update the Resources file of “${basename(folder)}” (it is damaged, unreadable or from a newer FollowAlong), so FollowAlong keeps its Resources in its own storage for now.`,
         });
       }
-      await checkFiles();
+      await lookAtFiles();
+      logger.log({ level: 'info', message: done });
       return true;
-    };
-    const done = changing.then(run, run);
-    changing = done.catch(() => undefined);
-    return done;
+    });
   }
 
   return {
     current: () => resources,
     missing: () => missing,
     find: (resourceId) => findResource(resources, resourceId),
-    checkFiles,
-    async attach(lessonId, absolutePath) {
-      const done = await change(`attaching ${absolutePath}`, (stored) =>
+    checkFiles: () => inTurn(lookAtFiles),
+    attach: (lessonId, absolutePath) =>
+      change(`attaching ${absolutePath}`, `Attached ${absolutePath} to ${lessonId}`, (stored) =>
         withResource(stored, lessonId, newResource(folder, absolutePath)),
-      );
-      if (done) {
-        logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });
-      }
-      return done;
-    },
-    async detach(resourceId) {
-      const done = await change(`detaching ${resourceId}`, (stored) =>
+      ),
+    detach: (resourceId) =>
+      change(`detaching ${resourceId}`, `Detached ${resourceId}`, (stored) =>
         withoutResource(stored, resourceId, clock.now()),
-      );
-      if (done) {
-        logger.log({ level: 'info', message: `Detached ${resourceId}` });
-      }
-      return done;
-    },
-    async relink(resourceId, absolutePath) {
-      const done = await change(`relinking ${resourceId} to ${absolutePath}`, (stored) =>
-        withRelinkedResource(stored, resourceId, newResource(folder, absolutePath), clock.now()),
-      );
-      if (done) {
-        logger.log({ level: 'info', message: `Relinked ${resourceId} to ${absolutePath}` });
-      }
-      return done;
-    },
+      ),
+    relink: (resourceId, absolutePath) =>
+      change(
+        `relinking ${resourceId} to ${absolutePath}`,
+        `Relinked ${resourceId} to ${absolutePath}`,
+        (stored) =>
+          withRelinkedResource(stored, resourceId, newResource(folder, absolutePath), clock.now()),
+      ),
   };
 }

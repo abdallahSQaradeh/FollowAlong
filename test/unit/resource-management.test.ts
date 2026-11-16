@@ -104,7 +104,7 @@ async function storedResources(course: string): Promise<unknown> {
 }
 
 describe('detaching a Resource', () => {
-  it('removes it from the tree and the Resources file, and leaves the file on disk', async () => {
+  it('takes it off the tree and out of the Resources file, and leaves the file on disk', async () => {
     const h = await createHarness();
     const course = await h.folder('Course', {
       'intro.webm': 'video',
@@ -338,7 +338,7 @@ describe('when the Course’s own Resources file cannot be read', () => {
     expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual(['b.md']);
   });
 
-  it('shows what was kept in the extension storage, and the repaired file, once the file is fixed', async () => {
+  it('shows what was kept in the extension storage, and the fixed file, once the file is fixed', async () => {
     const h = await createHarness();
     const course = await h.folder('Course', {
       'intro.webm': 'video',
@@ -450,5 +450,49 @@ describe('with a copy of the Resources file in the Course and one in the extensi
     h.restart();
     await h.core.openCourse(course);
     expect(labels(h)).toEqual([]);
+  });
+});
+
+describe('a Resource that another window already detached', () => {
+  /** Another window detached the Resource: the Resources file no longer lists it. */
+  async function detachedElsewhere(h: Harness): Promise<{ course: string; id: string }> {
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'notes.md': '#',
+      'new.md': '#',
+    });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'notes.md'));
+    const id = resourceNamed(h, 'intro.webm', 'notes.md').id;
+    await writeFile(
+      join(course, '.followalong', 'resources.json'),
+      JSON.stringify({ version: 1, data: { course: [], lessons: {} } }),
+    );
+    return { course, id };
+  }
+
+  it('is gone from the tree after Detach, which finds nothing to do', async () => {
+    const h = await createHarness();
+    const { id } = await detachedElsewhere(h);
+
+    await h.core.detachResource(id);
+
+    expect(resourceNodes(h, 'intro.webm')).toEqual([]);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('is gone from the tree after Relink, and the learner is told', async () => {
+    const h = await createHarness();
+    const { course, id } = await detachedElsewhere(h);
+
+    await h.core.relinkResource(id, join(course, 'new.md'));
+
+    expect(resourceNodes(h, 'intro.webm')).toEqual([]);
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'info',
+        text: 'FollowAlong could not relink “notes.md”: it is no longer one of the Resources of “Course”.',
+      },
+    ]);
   });
 });

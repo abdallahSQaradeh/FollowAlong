@@ -53,7 +53,7 @@ A file or link the learner attaches to a Lesson or a Course, to keep beside it w
 _Avoid_: Material, attachment
 
 **Detach**:
-To remove a Resource from a Lesson or a Course. Only the reference goes; the file stays where it is.
+To take a Resource off a Lesson or a Course. Only the reference goes; the file stays where it is.
 _Avoid_: Delete, remove
 
 **Missing Resource**:

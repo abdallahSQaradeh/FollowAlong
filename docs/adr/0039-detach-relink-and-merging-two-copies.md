@@ -3,7 +3,7 @@
 Spec #12 (stories 96 and 97) lets the learner _Detach_ a Resource and _Relink…_ one whose file is
 missing. Decision D5 (amended) says a Course data file FollowAlong cannot read is never overwritten,
 and new data goes to the other location. Together they make `resources.json` a file with up to two
-copies that must merge, where a removal has to survive a stale copy.
+copies that must merge, where a detach has to survive a stale copy.
 
 - **Detach removes the reference only.** The file on disk is never touched. There is no
   confirmation: a Resource is a reference, and the learner can attach the file again.
@@ -31,7 +31,7 @@ copies that must merge, where a removal has to survive a stale copy.
   two relinks is newer.
 - **The newer whole file wins** (as for files without `merge`). Rejected: after a copy that could
   not be read is fixed, the newer fallback copy holds only what was attached meanwhile, and the
-  repaired copy's Resources would be hidden.
+  fixed copy's Resources would be hidden.
 - **Write every change to both copies.** Rejected: one of them is, by definition, not writable or
   not trusted, and the store (ADR 0005) decides where a write goes.
 - **Delete the detach record when it is old.** Not done: an entry is an id and a number. A
