@@ -1,6 +1,7 @@
 /**
  * The Player port in VS Code: the player page in the spot the core names (ADR 0049). In
- * `editorSplit` it is a webview panel in an editor group beside the code; in `bottomPanel` and
+ * `editorSplit` it is a webview panel in an editor group beside the code; in `floatingWindow` it is
+ * a webview panel moved into its own compact, always-on-top window (ADR 0102); in `bottomPanel` and
  * `secondarySidebar` it is a webview view in a FollowAlong view container there. It only
  * translates: protocol messages go to and from the page, file paths become webview URIs.
  */
@@ -10,7 +11,7 @@ import { join } from 'node:path';
 
 import * as vscode from 'vscode';
 
-import type { Logger } from '../../core/logger.js';
+import { messageOf, type Logger } from '../../core/logger.js';
 import type { FocusedPart } from './focus-return.js';
 import type {
   Disposable,
@@ -29,7 +30,10 @@ import {
 export const playerViewType = 'followalong.player';
 
 /** The spots that are a webview view, not an editor tab. */
-type ViewSpot = Exclude<VideoSpot, 'editorSplit'>;
+type ViewSpot = Extract<VideoSpot, 'bottomPanel' | 'secondarySidebar'>;
+
+/** The spots that are a webview panel: an editor tab. */
+type PanelSpot = Exclude<VideoSpot, ViewSpot>;
 
 /** The webview view of each view spot, and the view container that holds it (package.json). */
 export const playerViews: Readonly<
@@ -47,6 +51,23 @@ const closeCommands: Readonly<Record<ViewSpot, string>> = {
 
 /** How long a move waits for VS Code to resolve the view of its spot, in ms. */
 const viewWaitMs = 5000;
+
+/**
+ * How long the floating window is given to take the focus after VS Code opened it, in ms: the
+ * compact and always-on-top commands act on the window that has it (the prototype measured it).
+ */
+const floatSettleMs = 600;
+
+/**
+ * What makes the floating window, in order, once the player's tab is the active editor (spec #12,
+ * from the prototype; ADR 0102). In VS Code 1.146 the last two act only on an auxiliary window, so
+ * they can never pin or shrink the main window.
+ */
+const floatCommands = {
+  move: 'workbench.action.moveEditorToNewWindow',
+  compact: 'workbench.action.enableCompactAuxiliaryWindow',
+  onTop: 'workbench.action.enableWindowAlwaysOnTop',
+} as const;
 
 /** How long after a move a view hidden by the focus return is shown again, in ms. */
 const keepShownMs = 1000;
@@ -159,7 +180,11 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     // The old view's container is closed before its `when` clause hides it.
     const shown = this.after(left, () => this.showSpot(spot));
     if (spot === 'editorSplit') {
-      this.host = this.openPanel(title);
+      this.host = this.openPanel(spot, title).host;
+    } else if (spot === 'floatingWindow') {
+      const { host, panel, startPage } = this.openPanel(spot, title);
+      this.host = host;
+      void this.after(shown, () => this.float(host, panel, startPage));
     } else {
       this.awaitedView = { spot, title };
       // The view shows only once its `when` clause holds: set the key first, then open it.
@@ -197,7 +222,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     this.placing = before.then(step).catch((error: unknown) => {
       this.logger.log({
         level: 'error',
-        message: `Could not change where the video shows: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not change where the video shows: ${messageOf(error)}`,
       });
     });
     return this.placing;
@@ -248,12 +273,23 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     await vscode.commands.executeCommand('setContext', spotContextKey, spot);
   }
 
-  /** The player page in a webview panel beside the code (`editorSplit`). */
-  private openPanel(title: string): Host {
+  /**
+   * The player in a webview panel. Beside the code (`editorSplit`) its page starts at once. For the
+   * floating window (`floatingWindow`) the tab opens as the active editor, which the move into a
+   * new window needs, and its page waits for `startPage`, once the tab is in that window: the
+   * learner never gets a page that is dropped at once.
+   */
+  private openPanel(
+    spot: PanelSpot,
+    title: string,
+  ): { readonly host: Host; readonly panel: vscode.WebviewPanel; readonly startPage: () => void } {
+    const floating = spot === 'floatingWindow';
     const panel = vscode.window.createWebviewPanel(
       playerViewType,
       title,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      floating
+        ? { viewColumn: vscode.ViewColumn.Active, preserveFocus: false }
+        : { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       // The Lesson keeps playing while another tab in its group is in front.
       { ...this.webviewOptions(), retainContextWhenHidden: true },
     );
@@ -261,10 +297,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     /** What the page posts is forwarded until the host is dropped. */
     const forwarding: vscode.Disposable[] = [];
     const host: Host = {
-      spot: 'editorSplit',
+      spot,
       webview: panel.webview,
+      // In the floating window the player is in no editor group of the main window, so Resources
+      // open beside the code there (ADR 0012, D4).
       get viewColumn() {
-        return panel.viewColumn;
+        return floating ? undefined : panel.viewColumn;
       },
       get visible() {
         return panel.visible;
@@ -285,13 +323,108 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       closeContainer: () => Promise.resolve(),
     };
     panel.onDidDispose(() => {
-      // A panel dropped for a move is not a close: the Lesson is still there.
+      // A panel dropped for a move is not a close: the Lesson is still there. The learner closing
+      // the floating window is a close: VS Code 1.146 closes the editors in it that ask nothing
+      // before it merges the rest into the main window (ADR 0102).
       if (!dropped && this.host === host) {
         this.playerGone();
       }
     });
-    forwarding.push(this.startPage(host));
-    return host;
+    const startPage = (): void => {
+      if (!dropped) {
+        forwarding.push(this.startPage(host));
+      }
+    };
+    if (!floating) {
+      startPage();
+    }
+    return { host, panel, startPage };
+  }
+
+  /**
+   * Moves the player's tab into a new window, makes that window compact and always on top, then
+   * starts the page there and hands focus back to the code (ADR 0102). Stops as soon as the player
+   * has moved on. A tab that does not become the active editor within 5 s, or a move VS Code
+   * refuses, leaves no player: the learner is told once, and the core is told the player closed,
+   * as for a view that does not open (ADR 0049).
+   */
+  private async float(
+    host: Host,
+    panel: vscode.WebviewPanel,
+    startPage: () => void,
+  ): Promise<void> {
+    const stillPlayer = (): boolean => this.host === host;
+    if (!stillPlayer()) {
+      return;
+    }
+    if (!(await this.becomesActive(panel)) || !stillPlayer()) {
+      this.cannotFloat(
+        host,
+        `the player tab did not become active within ${String(viewWaitMs)} ms`,
+      );
+      return;
+    }
+    try {
+      await vscode.commands.executeCommand(floatCommands.move);
+    } catch (error) {
+      this.cannotFloat(host, messageOf(error));
+      return;
+    }
+    // The new window takes the focus a moment after VS Code opened it.
+    await new Promise((resolve) => setTimeout(resolve, floatSettleMs));
+    if (!stillPlayer()) {
+      return;
+    }
+    for (const command of [floatCommands.compact, floatCommands.onTop]) {
+      try {
+        await vscode.commands.executeCommand(command);
+      } catch (error) {
+        // The video still floats, only larger or not on top.
+        this.logger.log({ level: 'warn', message: `${command} failed: ${messageOf(error)}` });
+      }
+    }
+    if (!stillPlayer()) {
+      return;
+    }
+    startPage();
+    await this.returnFocus();
+  }
+
+  /** Whether `panel` is, or becomes within the safety wait, the active editor. */
+  private becomesActive(panel: vscode.WebviewPanel): Promise<boolean> {
+    if (panel.active) {
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      const finish = (active: boolean): void => {
+        clearTimeout(giveUp);
+        watching.dispose();
+        resolve(active);
+      };
+      const giveUp = setTimeout(() => {
+        finish(false);
+      }, viewWaitMs);
+      const watching = panel.onDidChangeViewState(() => {
+        if (panel.active) {
+          finish(true);
+        }
+      });
+    });
+  }
+
+  /** The floating window could not be made: no player is left, and the learner is told once. */
+  private cannotFloat(host: Host, why: string): void {
+    if (this.host !== host) {
+      // Moved on meanwhile: the move after it dropped the tab.
+      return;
+    }
+    this.logger.log({ level: 'warn', message: `Could not float the video: ${why}` });
+    void vscode.window.showWarningMessage(
+      'FollowAlong could not show the video in a floating window. Open the Lesson again, or move the video to another spot.',
+    );
+    this.host = undefined;
+    host.drop();
+    this.playerGone();
   }
 
   /**
