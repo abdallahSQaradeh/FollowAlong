@@ -36,12 +36,13 @@ read-only fallback without any code of its own. The file is version 1:
   first writes) reads as `[]`. `kind` is the discriminator of a Resource.
 - **A malformed entry is dropped when read; a malformed file is ignored** (ADR 0005), and the next
   attach writes a fresh file. A file from a newer FollowAlong is ignored the same way.
-- **Attaching re-reads the file before writing** and attaches in one window run one at a time, so
+- **Attaching re-reads the file before writing** (now the Resource store, ADR 0040) and attaches in one window run one at a time, so
   two quick attaches never overwrite each other, and what another window attached since this one
   opened the Course is kept. There is no lock between windows: two attaches in the same instant can
   still lose one, and the other window's tree shows the change only when its Course is opened
   again. Progress (story 85) has the same limit and the tickets for it may add a lock for both.
-- **An ignored Resources file is never overwritten.** `openCourseData.read` answers `undefined`
+- **An ignored Resources file is never overwritten.** (Revised by ADR 0039: the change now goes to
+  the other location, through the Course data store, and the limit below is gone.) `openCourseData.read` answers `undefined`
   both for "no file" and for a file it ignored (damaged, or from a newer FollowAlong; ADR 0005). An
   attach that read `undefined` therefore asks the File system port whether `.followalong/resources.json`
   exists. If it does, the attach is refused: nothing is written, the path is logged, and the learner
@@ -90,9 +91,8 @@ read-only fallback without any code of its own. The file is version 1:
 - The Resources of a read-only Course live in the extension storage, keyed by the Course's absolute
   path (ADR 0005), so they do not follow it when it is moved. Paths are not resolved through
   symbolic links: a Course reached through a link is "inside" by the path it was opened with.
-- Nothing checks that a file still exists when it is attached or listed. Dimming a missing file and
-  Relink (story 97) are a later ticket. Until then, clicking a Resource whose file is gone shows
-  one error message from the core (“could not open … Is the file still there?”) instead of a
-  failed command.
+- Nothing checks that a file still exists when it is attached. (Revised by ADR 0040: the tree dims
+  a missing file and Relink… points it at another one, story 97. A file that exists but fails to
+  open still shows “could not open … Is the file still there?”.)
 - A learner who attaches a file that is not text (an image, a PDF) gets whatever editor VS Code has
   for it, until the preview and PDF tickets add their targets.

@@ -45,7 +45,7 @@ readable.
 - A Course that becomes read-only after FollowAlong wrote to it keeps its old `.followalong` files.
   In a later session, reads prefer them over the newer fallback files until a write falls back
   again, unless the file defines a `merge`: then both copies are read and merged. Progress does
-  (ADR 0010).
+  (ADR 0010), and so do the Resources (ADR 0039).
 - A copy that exists but cannot be used (damaged, from a newer FollowAlong, or failing to read with
   anything but `notFound`) is remembered by the store and never replaced (spec #12, D5, as
   amended). If it is the copy in `.followalong`, `write` puts the data in the fallback storage and
