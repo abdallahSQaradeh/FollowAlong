@@ -445,10 +445,16 @@
           "enumDescriptions": [
             "Typing never pauses the Lesson.",
             "Typing in the active editor pauses a playing Lesson. Press play to go on.",
-            "Works like `pause`: typing in the active editor pauses a playing Lesson. Press play to go on."
+            "Typing in the active editor pauses a playing Lesson, and it goes on by itself once you stop typing for the quiet period (Auto Pause: Resume After)."
           ],
           "default": "off",
-          "markdownDescription": "Auto-pause while typing: an edit in the active editor (a file, or an untitled one) pauses the Lesson that plays, so you don't miss what the instructor says while you type. Cursor moves, other editors and panels, and FollowAlong's own changes don't count. The play/pause item in the status bar shows a keyboard while it is on."
+          "markdownDescription": "Auto-pause while typing: an edit in the active editor (a file, or an untitled one) pauses the Lesson that plays, so you don't miss what the instructor says while you type. Cursor moves, other editors and panels, and FollowAlong's own changes don't count. If you press play while it holds the Lesson paused, the Lesson plays through your typing until it pauses again. The play/pause item in the status bar shows a keyboard while it is on."
+        },
+        "followalong.autoPause.resumeAfter": {
+          "type": "number",
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "markdownDescription": "Seconds with no edit before a Lesson that typing paused goes on by itself, when `#followalong.autoPause#` is `pauseAndResume`. Each edit starts the wait again. It never jumps back, whatever `#followalong.resumeRewind#` says."
         },
         "followalong.ffmpegPath": {
           "type": "string",
