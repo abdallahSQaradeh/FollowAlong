@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { DocumentEdit } from '../../src/core/auto-pause.js';
@@ -65,5 +67,27 @@ describe('auto-pause while typing', () => {
         expect(edit(h, documentEdit)).toEqual([]);
       });
     }
+  });
+
+  describe('FollowAlong’s own edits', () => {
+    // FollowAlong never types into an editor. It writes its Course data to disk, and VS Code then
+    // reloads a copy the learner has open, which VS Code reports as an edit of that document.
+    it('does not pause when FollowAlong rewrites Course data the learner has open', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      const progressFile = join(h.root, 'course', '.followalong', 'progress.json');
+
+      expect(edit(h, { scheme: 'file', path: progressFile, inActiveEditor: true })).toEqual([]);
+    });
+
+    it('does not pause when FollowAlong rewrites a file in its own storage', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      const fallbackFile = join(h.storage.folder, 'courses', 'abc', 'progress.json');
+
+      expect(edit(h, { scheme: 'file', path: fallbackFile, inActiveEditor: true })).toEqual([]);
+    });
   });
 });

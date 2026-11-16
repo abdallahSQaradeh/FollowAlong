@@ -868,7 +868,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       loaded.statusBarClick(command);
     },
     documentEdited(edit) {
-      if (isTyping(edit)) {
+      if (isTyping(edit, storage.folder)) {
         loaded.typed();
       }
     },
