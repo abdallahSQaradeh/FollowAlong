@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 
 import type { PlayerCommand } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
-import { media, openPlayer, spots, type PlayerHarness } from './player-page.js';
+import { controlBarShown, media, openPlayer, spots, type PlayerHarness } from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
 
@@ -130,6 +130,63 @@ test.describe('the native control bar', () => {
   });
 });
 
+// Gate round 1 of #23: below the overlay, Chromium's control panel keeps every pointer event, so
+// a click there must still be reported, at any panel shape.
+for (const viewport of [
+  { width: 1280, height: 720, shape: '16:9' },
+  { width: 1280, height: 500, shape: 'wider than the video' },
+  { width: 480, height: 480, shape: 'narrower than the video' },
+]) {
+  test.describe(`the strip along the bottom, ${viewport.shape}`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    for (const playing of [false, true]) {
+      test(`hands focus back after a click at any height there, ${playing ? 'playing' : 'paused'}`, async ({
+        page,
+      }) => {
+        const player = await openPlayer(page);
+        if (playing) {
+          await player.post(load());
+          await player.waitForEvent({ type: 'played', lessonId });
+        } else {
+          await loadPaused(player);
+        }
+        const box = await page.locator('video').boundingBox();
+        if (box === null) {
+          throw new Error('the video is not on screen');
+        }
+
+        for (const [index, above] of [70, 62, 56, 48, 35].entries()) {
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height - above);
+          await expect
+            .poll(() => interactions(player), {
+              message: `a click ${String(above)} px above the bottom`,
+            })
+            .toBe(index + 1);
+        }
+      });
+    }
+  });
+}
+
+test.describe('hovering the picture', () => {
+  test.use({ viewport: { width: 480, height: 270 } });
+
+  test('shows the native control bar again after it hid', async ({ page }) => {
+    const player = await openPlayer(page);
+    await player.post(load());
+    await player.waitForEvent({ type: 'played', lessonId });
+    const { picture } = await spots(page);
+    await page.mouse.move(picture.x, picture.y);
+    // Chromium hides the bar after about 3 s without a pointer move while the Lesson plays.
+    await expect.poll(() => controlBarShown(page), { timeout: 8_000 }).toBe(false);
+
+    await page.mouse.move(picture.x + 20, picture.y + 10, { steps: 3 });
+
+    await expect.poll(() => controlBarShown(page)).toBe(true);
+  });
+});
+
 test.describe('a seek-bar drag while the Lesson plays', () => {
   test('keeps focus until the learner lets go, then hands it back', async ({ page }) => {
     const player = await openPlayer(page);
@@ -149,6 +206,9 @@ test.describe('a seek-bar drag while the Lesson plays', () => {
 
     await player.waitForEvent({ type: 'userInteracted' });
     await expect.poll(async () => (await player.video()).paused).toBe(false);
+    // One release, one report, although Chromium also plays on by itself.
+    await page.waitForTimeout(500);
+    expect(await interactions(player)).toBe(1);
   });
 });
 

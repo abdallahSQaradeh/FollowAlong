@@ -27,6 +27,11 @@ function post(event: PlayerEvent): void {
 
 const interactions = new Interactions(() => {
   post({ type: 'userInteracted' });
+  // Let go of the focus, so the next click on the native control bar focuses the video again:
+  // that `focus` is all the page sees of a click on an empty part of the bar.
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
 });
 
 interface Lesson {
@@ -261,15 +266,26 @@ function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
   overlay.addEventListener('click', () => {
     togglePlayback(media);
   });
+  // The overlay takes the pointer moves that would show the native control bar: pass them on.
+  overlay.addEventListener('pointermove', (event) => {
+    const { clientX, clientY, pointerId, pointerType } = event as PointerEvent;
+    media.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX, clientY, pointerId, pointerType }),
+    );
+  });
   // A click on the picture, or on the video under a hidden control bar.
   window.addEventListener('pointerup', ended);
   // A key on the native controls, after the learner tabbed to them.
   window.addEventListener('keyup', ended);
-  media.addEventListener('gotpointercapture', () => {
-    interactions.beginGesture();
+  media.addEventListener('gotpointercapture', (event) => {
+    interactions.beginGesture(event.pointerId);
   });
-  media.addEventListener('lostpointercapture', () => {
-    interactions.endGesture();
+  media.addEventListener('lostpointercapture', (event) => {
+    interactions.endGesture(event.pointerId);
+  });
+  // A click on the native control bar, including an empty part of it, focuses the video.
+  media.addEventListener('focus', () => {
+    interactions.focused();
   });
   // The mute button; the volume slider reports on release, as above.
   media.addEventListener('volumechange', ended);

@@ -254,3 +254,48 @@ export async function spots(page: Page) {
     }),
   };
 }
+
+/**
+ * Whether Chromium's native control bar is on screen: its play/pause icon is drawn in white at
+ * the left end of the button row, where the fixture video has no white. Reads the pixels of a
+ * screenshot in a scratch page, so no image library is needed.
+ */
+export async function controlBarShown(page: Page): Promise<boolean> {
+  const box = await page.locator('video').boundingBox();
+  if (box === null) {
+    throw new Error('the video is not on screen');
+  }
+  const png = await page.screenshot({
+    clip: { x: box.x + 12, y: box.y + box.height - 60, width: 24, height: 24 },
+  });
+  const scratch = await page.context().newPage();
+  try {
+    return await scratch.evaluate(async (data) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${data}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d');
+      if (context === null) {
+        throw new Error('no 2d canvas');
+      }
+      context.drawImage(image, 0, 0);
+      const { data: pixels } = context.getImageData(0, 0, image.width, image.height);
+      let white = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (
+          (pixels[index] ?? 0) > 220 &&
+          (pixels[index + 1] ?? 0) > 220 &&
+          (pixels[index + 2] ?? 0) > 220
+        ) {
+          white += 1;
+        }
+      }
+      return white >= 10;
+    }, png.toString('base64'));
+  } finally {
+    await scratch.close();
+  }
+}
