@@ -343,6 +343,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** The open Course's Course data, and the Resources read from it. */
   let courseData: CourseData | undefined;
   let resources: ResourcesData = noResources;
+  /** How many Course opens have started: the number of the latest, which is the one that wins. */
+  let opens = 0;
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
   let attaching: Promise<unknown> = Promise.resolve();
 
@@ -472,8 +474,23 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
-  /** Opens a Course folder in place of the open Course. */
+  /**
+   * Opens a Course folder in place of the open Course. Opens can overlap (two quick picks): the
+   * latest one wins, and an earlier one that finishes reading after it changes nothing.
+   */
   async function openCourse(folder: string): Promise<void> {
+    opens += 1;
+    const thisOpen = opens;
+    const superseded = (): boolean => {
+      if (thisOpen === opens) {
+        return false;
+      }
+      logger.log({
+        level: 'info',
+        message: `Not opening ${folder}: another Course was opened since.`,
+      });
+      return true;
+    };
     let course: Course;
     try {
       course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
@@ -490,6 +507,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     // Read first, then switch, so no click sees one Course's Resources next to another's folder.
     const data = openCourseData(folder, ports);
     const stored = await readResources(data, folder);
+    if (superseded()) {
+      return;
+    }
     openedCourse = course;
     courseData = data;
     resources = stored;

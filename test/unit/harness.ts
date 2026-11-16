@@ -306,6 +306,11 @@ export interface Harness {
    * EACCES.
    */
   makeUnreadable(folder: string): void;
+  /**
+   * Holds every read of `folder`'s listing until the returned function is called, as a slow disk
+   * or network drive would, so a test can make reads finish in another order than they started.
+   */
+  holdReads(folder: string): () => void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
   folder(name: string, tree: Tree): Promise<string>;
   /** Every file under `folder`, as sorted relative paths with `/`. */
@@ -327,9 +332,11 @@ export async function createHarness(): Promise<Harness> {
   };
   const nodeFileSystem = createNodeFileSystem();
   const unreadable = new Set<string>();
+  const held = new Map<string, Promise<void>>();
   const fileSystem: FileSystem = {
     ...nodeFileSystem,
-    readDirectory(path) {
+    async readDirectory(path) {
+      await held.get(path);
       if (unreadable.has(path)) {
         return Promise.reject(
           new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
@@ -375,6 +382,21 @@ export async function createHarness(): Promise<Harness> {
     root,
     makeUnreadable(folder) {
       unreadable.add(folder);
+    },
+    holdReads(folder) {
+      let release = (): void => undefined;
+      held.set(
+        folder,
+        new Promise((resolve) => {
+          release = () => {
+            held.delete(folder);
+            resolve();
+          };
+        }),
+      );
+      return () => {
+        release();
+      };
     },
     async folder(name, tree) {
       const folder = join(root, name);

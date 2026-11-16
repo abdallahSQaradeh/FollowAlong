@@ -100,6 +100,24 @@ describe('opening a Course', () => {
     ]);
   });
 
+  it('keeps the Course opened last when two opens finish in reverse order', async () => {
+    const h = await createHarness();
+    const slow = await h.folder('Slow drive course', { 'a.webm': 'video' });
+    const fast = await h.folder('Fast course', { 'b.webm': 'video', 'Part 2/c.webm': 'video' });
+    const release = h.holdReads(slow);
+
+    const first = h.core.openCourse(slow);
+    const second = h.core.openCourse(fast);
+    await second;
+    release();
+    await first;
+    h.player.ready();
+
+    expect(h.player.shown.map((shown) => shown.resourceRoots[0])).toEqual([fast]);
+    expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: 'b.webm' }]);
+    expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['b', 'Part 2']);
+  });
+
   it('replaces the open Course in the player that is already open', async () => {
     const h = await createHarness();
     const first = await h.folder('first', { 'a.webm': 'video' });
