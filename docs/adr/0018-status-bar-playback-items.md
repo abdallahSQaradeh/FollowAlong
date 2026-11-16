@@ -14,7 +14,7 @@ open. These are the choices.
 - **What the items show.**
   - Play/pause: a pause symbol while the Lesson plays, a play symbol otherwise (paused, refused
     autoplay, ended).
-  - Time: `mm:ss / mm:ss`, as the Lesson tree writes times. Minutes keep counting past 59
+  - Time: `mm:ss / mm:ss`, as the spec writes it (`12:30 / 40:05`, story 86). Minutes keep counting past 59
     (`65:30 / 90:05`), because Lessons run past an hour. The length reads `--:--` until the player
     knows it (a WebM streamed through MediaSource reports 0 at first, ADR 0003). The time starts
     at `00:00` for every loaded Lesson.
@@ -36,7 +36,9 @@ open. These are the choices.
   `onDidClose(listener)`, which the panel adapter fires from `onDidDispose` only for the panel that
   is current (not for one that `show` replaced for another Course). On close the core forgets the
   loaded Lesson, the page's readiness and the rate (a new page plays at 1×), and the commands say
-  "no Lesson is open" again. Progress (#25) uses the same event to save when the tab closes.
+  "no Lesson is open" again. Opening a Course that has no Lessons forgets the loaded Lesson the
+  same way (found by #20: the commands kept acting on the previous Lesson, and the items would
+  have stayed), because the items follow the Course the learner opened. Progress (#25) uses the same event to save when the tab closes.
 - **Focus.** A status bar entry takes keyboard focus on a mouse click (VS Code makes its label
   focusable), which would be a Focus change for a control meant to avoid one. After the click
   command the adapter runs `workbench.action.focusActiveEditorGroup`. A status bar click does not

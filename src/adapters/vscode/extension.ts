@@ -5,7 +5,7 @@
 import * as vscode from 'vscode';
 
 import { createFollowAlong } from '../../core/follow-along.js';
-import type { StatusBarCommand } from '../../core/status-bar.js';
+import { isStatusBarCommand } from '../../core/status-bar.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
@@ -16,10 +16,6 @@ import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
-
-function isStatusBarCommand(value: unknown): value is StatusBarCommand {
-  return value === 'playPause' || value === 'speedCycle' || value === 'seekBackShort';
-}
 
 export const commands = {
   /** Temporary: opens a folder as the Course. The Course picker replaces the folder dialog. */

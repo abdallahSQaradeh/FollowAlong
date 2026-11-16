@@ -8,8 +8,8 @@ adapters implement them: `src/adapters/node/` for what is plain Node
 panel, mementos, settings, messages, output channel). Seam 1 tests build the same core from fakes
 plus the real Node file system adapter, so every decision is tested without VS Code.
 
-The Player port is `show`, `resourceUri`, `send`, `onEvent` and `onDidClose` (ADR 0018). The core cannot create a webview or
-call `asWebviewUri`, so `show({title, resourceRoots})` asks the adapter for a player and answers
+The Player port is `show`, `resourceUri`, `send`, `onEvent` and `onDidClose` (ADR 0018). The core
+cannot create a webview or call `asWebviewUri`, so `show({title, resourceRoots})` asks the adapter for a player and answers
 `created` (a new page is starting; it will post `ready`) or `revealed` (the open player, same
 roots, brought to the front; it posts nothing). The core sends `load` only to a player that has
 posted `ready`, and sends it again on every `ready`, so a reloaded or reopened page always gets the

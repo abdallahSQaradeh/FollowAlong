@@ -139,14 +139,12 @@ async function theStatusBarRunsTheCommands(hooks: TestHooks): Promise<string> {
     `${click} is not registered`,
   );
 
-  // What a click on the speed item runs: the item shows the new rate, then the key puts it back.
+  // A click runs its command through VS Code. What the click does to the items is covered at
+  // Seam 1; that the click really leaves the keyboard in the code needs a mouse (Manual QA).
   const code = vscode.window.activeTextEditor?.document;
   assert.ok(code, 'the code editor is not active');
-  const speed = () => hooks.statusBar().find((item) => item.id === 'speed')?.text;
   await vscode.commands.executeCommand(click, 'speedCycle');
-  assert.equal(speed(), '1.25×', 'the speed item after one click');
   await vscode.commands.executeCommand('followalong.speedDown');
-  assert.equal(speed(), '1×', 'the speed item after one step down');
   assert.equal(vscode.window.activeTextEditor?.document, code, 'a click moved the focus');
   return 'the status bar shows play/pause, time, speed and back, each wired to the click command';
 }
@@ -170,6 +168,9 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
     });
     await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+    // Another Course gets a new player panel; letting go of the old one is not a close, so the
+    // status bar items stay (what the panel adapter must not fire `onDidClose` for).
+    assert.equal(hooks.statusBar().length, 4, 'the status bar items went when the Course changed');
 
     // The "+" on the Lesson runs this command with the Lesson's tree node.
     const lesson = hooks.lessonTree().nodes.find((node) => node.id === 'lesson.webm');

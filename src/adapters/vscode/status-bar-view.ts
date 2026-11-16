@@ -26,9 +26,6 @@ const codicons: Readonly<Record<StatusBarIcon, string>> = {
   back: 'debug-step-back',
 };
 
-/** Left to right; the first has the highest priority. */
-const order: readonly StatusBarItemId[] = ['playPause', 'time', 'speed', 'back'];
-
 export class StatusBarView implements vscode.Disposable {
   private readonly items = new Map<StatusBarItemId, vscode.StatusBarItem>();
   /** The items as VS Code has them now: what the learner sees, and what a click runs. */
@@ -55,18 +52,19 @@ export class StatusBarView implements vscode.Disposable {
         this.items.delete(id);
       }
     }
-    for (const item of model.items) {
-      this.draw(item);
-    }
+    // Left to right as the model lists them: the first has the highest priority.
+    model.items.forEach((item, index) => {
+      this.draw(item, model.items.length - index);
+    });
   }
 
-  private draw(model: StatusBarItemModel): void {
+  private draw(model: StatusBarItemModel, priority: number): void {
     let item = this.items.get(model.id);
     if (item === undefined) {
       item = vscode.window.createStatusBarItem(
         `followalong.${model.id}`,
         vscode.StatusBarAlignment.Left,
-        order.length - order.indexOf(model.id),
+        priority,
       );
       item.name = `FollowAlong: ${model.id}`;
       this.items.set(model.id, item);

@@ -220,4 +220,21 @@ describe('status bar items', () => {
     expect(h.player.sent).toEqual([]);
     expect(h.ui.messages.at(-1)?.text).toContain('no Lesson is open');
   });
+
+  it('go away, and the commands find no Lesson, when a Course with no Lessons is opened', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    h.player.clearSent();
+
+    await h.core.openCourse(await h.folder('empty', { 'notes.pdf': 'pdf' }));
+    h.core.playPause();
+    h.core.statusBarClick('seekBackShort');
+    h.core.speedStep('up');
+
+    expect(h.ui.statusBar.items).toEqual([]);
+    expect(h.player.sent).toEqual([]);
+    expect(
+      h.ui.messages.filter((message) => message.text.includes('no Lesson is open')),
+    ).toHaveLength(3);
+  });
 });

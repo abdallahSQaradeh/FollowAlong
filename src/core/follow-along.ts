@@ -74,6 +74,11 @@ function nextRate(rate: number, direction: SpeedDirection): number {
     : (speedLadder.findLast((rung) => rung < rate) ?? slowest);
 }
 
+/** The rung a click on the status bar speed item goes to: one up, and round to the slowest. */
+function cycledRate(rate: number): number {
+  return rate >= fastest ? slowest : nextRate(rate, 'up');
+}
+
 /** The settings' defaults, in seconds (spec #12, Settings). */
 const defaultStepSeconds = { short: 5, long: 30 } as const;
 const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
@@ -163,6 +168,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     ui.showStatusBar(next);
   }
 
+  /** Starts what the player reported about a Lesson again: nothing yet. */
+  function resetPlayhead(autoplay: boolean): void {
+    playback = freshPlayback(autoplay);
+    position = 0;
+    duration = 0;
+  }
+
   function loadCurrent(): void {
     if (current === undefined) {
       return;
@@ -176,9 +188,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay: true,
     };
     player.send(command);
-    playback = freshPlayback(command.autoplay);
-    position = 0;
-    duration = 0;
+    resetPlayhead(command.autoplay);
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -246,16 +256,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     refreshStatusBar();
   }
 
-  /** The learner closed the player: nothing is loaded now, and a new page starts from scratch. */
-  function onPlayerClosed(): void {
+  /** Forgets the loaded Lesson: nothing is loaded now, so the commands find no Lesson. */
+  function unloadLesson(): void {
     current = undefined;
+    resetPlayhead(false);
+    refreshStatusBar();
+  }
+
+  /** The learner closed the player: a new page starts from scratch, at normal speed. */
+  function onPlayerClosed(): void {
     playerReady = false;
-    playback = freshPlayback(false);
-    position = 0;
-    duration = 0;
     rate = normalRate;
     askedRates = [];
-    refreshStatusBar();
+    unloadLesson();
   }
 
   const subscriptions: Disposable[] = [
@@ -281,9 +294,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   function play(course: Course, lesson: Lesson): void {
     current = lesson;
     // Nothing is known about this Lesson until the player loads it and reports.
-    playback = freshPlayback(false);
-    position = 0;
-    duration = 0;
+    resetPlayhead(false);
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
     const shown = player.show({
       title: lesson.title,
@@ -408,6 +419,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         ui.showLessonTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
+        // The player still shows the Lesson it had, but this Course has none to offer: the
+        // commands and the status bar items follow the Course the learner opened.
+        unloadLesson();
         return;
       }
       ui.showLessonTree(buildLessonTree(course, resources));
@@ -521,7 +535,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           break;
         case 'speedCycle':
           if (hasPlayableLesson('Speed cycle')) {
-            setRate(rate >= fastest ? slowest : nextRate(rate, 'up'));
+            setRate(cycledRate(rate));
           }
           break;
       }

@@ -52,7 +52,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       return 'revealed';
     }
     // localResourceRoots are fixed when a webview is created, so a new Course gets a new panel.
-    this.panel?.dispose();
+    // The old one is let go first: its `onDidDispose` fires inside `dispose()` and must not look
+    // like the learner closing the player.
+    const replaced = this.panel;
+    this.panel = undefined;
+    this.roots = [];
+    replaced?.dispose();
     const panel = vscode.window.createWebviewPanel(
       playerViewType,
       title,

@@ -9,6 +9,17 @@ export type StatusBarCommand = 'playPause' | 'speedCycle' | 'seekBackShort';
 
 export type StatusBarIcon = 'play' | 'pause' | 'back';
 
+const statusBarCommands: readonly string[] = [
+  'playPause',
+  'speedCycle',
+  'seekBackShort',
+] satisfies readonly StatusBarCommand[];
+
+/** Whether `value` names a command a status bar item can run; a click comes in as plain data. */
+export function isStatusBarCommand(value: unknown): value is StatusBarCommand {
+  return typeof value === 'string' && statusBarCommands.includes(value);
+}
+
 export type StatusBarItemId = 'playPause' | 'time' | 'speed' | 'back';
 
 export interface StatusBarItemModel {
