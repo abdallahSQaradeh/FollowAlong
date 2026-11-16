@@ -4,6 +4,7 @@
  * and rescans in the background. It lives outside the Course folders, and holds only what a scan
  * can find again, so a damaged or outdated copy is ignored, never repaired.
  */
+import { messageOf } from './logger.js';
 import { scanCourses, type CourseScan, type ScannedCourse } from './course-scanner.js';
 import { keyOf } from './courses-roots.js';
 import type { KeyValueStore, Ports } from './ports.js';
@@ -108,7 +109,7 @@ export function createCourseScans(
               // The cache is a convenience: the picker has the scan either way.
               ports.logger.log({
                 level: 'warn',
-                message: `Could not keep the Course list in the cache: ${error instanceof Error ? error.message : String(error)}`,
+                message: `Could not keep the Course list in the cache: ${messageOf(error)}`,
               });
             }
           }

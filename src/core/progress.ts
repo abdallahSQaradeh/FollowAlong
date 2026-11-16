@@ -6,6 +6,7 @@
  */
 import { basename } from 'node:path';
 
+import { messageOf } from './logger.js';
 import {
   CourseDataBusyError,
   openCourseData,
@@ -347,9 +348,7 @@ export async function openProgress(
       }
       const reason = FileSystemError.is(error, 'notFound')
         ? 'the Course folder is missing'
-        : error instanceof Error
-          ? error.message
-          : String(error);
+        : messageOf(error);
       if (failing !== 'error') {
         failing = 'error';
         logger.log({ level: 'error', message: `Could not save Progress for ${course}: ${reason}` });

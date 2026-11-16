@@ -5,6 +5,7 @@
  */
 import { basename } from 'node:path';
 
+import { messageOf } from './logger.js';
 import { openCourseData } from './course-data.js';
 import { buildCourse, lessonsInOrder } from './course-model.js';
 import { keyOf } from './courses-roots.js';
@@ -75,7 +76,7 @@ export async function readProgressLines(
           lines.set(keyOf(folder), undefined);
           ports.logger.log({
             level: 'error',
-            message: `Could not read the Progress of ${folder}: ${error instanceof Error ? error.message : String(error)}`,
+            message: `Could not read the Progress of ${folder}: ${messageOf(error)}`,
           });
         }
       }),

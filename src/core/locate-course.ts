@@ -6,6 +6,7 @@
  */
 import { basename } from 'node:path';
 
+import { messageOf } from './logger.js';
 import { openCourseData, type CourseData, type CourseDataFile } from './course-data.js';
 import { buildCourse, lessonsInOrder } from './course-model.js';
 import { normalisedRoot } from './courses-roots.js';
@@ -48,7 +49,7 @@ export async function locateCourse(ports: LocatePorts, folder: string): Promise<
   } catch (error) {
     logger.log({
       level: 'error',
-      message: `Could not carry the Course data of ${folder} to ${located}: ${error instanceof Error ? error.message : String(error)}`,
+      message: `Could not carry the Course data of ${folder} to ${located}: ${messageOf(error)}`,
     });
     ui.showMessage({
       severity: 'error',

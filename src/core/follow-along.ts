@@ -4,6 +4,7 @@
  */
 import { basename } from 'node:path';
 
+import { messageOf } from './logger.js';
 import { isTyping, type DocumentEdit } from './auto-pause.js';
 import {
   buildCourse,
@@ -598,7 +599,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } catch (error) {
       logger.log({
         level: 'warn',
-        message: `Could not remember ${folder} as a Recent Course: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not remember ${folder} as a Recent Course: ${messageOf(error)}`,
       });
     }
   }
@@ -847,7 +848,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } catch (error) {
       logger.log({
         level: 'error',
-        message: `Could not open “${folder}” in a new window: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not open “${folder}” in a new window: ${messageOf(error)}`,
       });
       ui.showMessage({
         severity: 'error',
@@ -888,7 +889,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           await withdrawPendingCourse(storage.global).catch((error: unknown) => {
             logger.log({
               level: 'warn',
-              message: `Could not clear the Course hand-off: ${error instanceof Error ? error.message : String(error)}`,
+              message: `Could not clear the Course hand-off: ${messageOf(error)}`,
             });
           });
           if (note.folder !== undefined) {

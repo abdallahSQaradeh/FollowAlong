@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { messageOf } from '../../core/logger.js';
 import {
   FileSystemError,
   type DirectoryEntry,
@@ -48,8 +49,7 @@ async function wrap<T>(path: string, action: () => Promise<T>): Promise<T> {
     if (error instanceof FileSystemError) {
       throw error;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    throw new FileSystemError(reasonOf(error), path, message);
+    throw new FileSystemError(reasonOf(error), path, messageOf(error));
   }
 }
 
