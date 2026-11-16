@@ -13,12 +13,13 @@ the setting, the scanner and the picker model. These are the choices spec #12 le
 - `src/core/courses-roots.ts` reads it through the Config port when the picker opens, keeps only
   non-empty strings, and writes it through a new `Config.update(name, value)`, which the VS Code
   adapter sends to the user settings (`ConfigurationTarget.Global`). A root already in the list is
-  not added again. The folder dialog's answer gets an upper-case Windows drive letter (VS Code's
-  `fsPath` spells it `d:`), the way Windows and a learner write it, so the same root is not added
-  twice under two spellings.
-- Paths are used as written, never normalised: a Course's path is its root's spelling joined with
-  folder names, so the same Course always has the same spelling, as ADR 0005 needs for the
-  fallback-storage key.
+  not added again.
+- Paths are used as written: a Course's path is its root's spelling joined with folder names, so
+  the same Course always has the same spelling, as ADR 0005 needs for the fallback-storage key.
+  The one change is made where a path comes from VS Code (the folder dialog, a folder URI passed
+  to _Open Course…_): VS Code's `fsPath` spells a Windows drive letter in lower case (`d:`), so the
+  adapter upper-cases it, the way Windows and a learner write it. Otherwise the same root could be
+  added twice, and the same Course get two storage keys.
 
 ## The Course scanner (`src/core/course-scanner.ts`)
 

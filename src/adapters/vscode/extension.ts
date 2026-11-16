@@ -16,7 +16,13 @@ import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
-import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
+import {
+  createConfig,
+  createOutputLogger,
+  createStorage,
+  createUiSink,
+  folderPath,
+} from './ports.js';
 
 export const commands = {
   /**
@@ -127,7 +133,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       },
     },
     register(commands.openCourse, (folder) =>
-      folder instanceof vscode.Uri ? core.openCourse(folder.fsPath) : core.pickCourse(),
+      folder instanceof vscode.Uri ? core.openCourse(folderPath(folder)) : core.pickCourse(),
     ),
     register(commands.attachResource, async (node, file) => {
       const lessonId =
