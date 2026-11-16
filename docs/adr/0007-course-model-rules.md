@@ -8,8 +8,8 @@ leaves open, chosen so a Course shows the same on every machine and every re-ope
 
 - **A Lesson is a `.mp4` or `.webm` file, in any letter case.** Its `id` is its path in the Course
   with `/` separators (`Section 1/01 Welcome.webm`), and a Section's `id` is its folder path with a
-  trailing `/`, so the two never collide. Until the title ticket, a title is the raw file name,
-  extension included, as the ticket says; the title ticket cleans it.
+  trailing `/`, so the two never collide. Its title comes from a title list or
+  from the cleaned file name (ADR 0014).
 - **Order.** In a folder, its own Lessons come first and its Sections after, each sorted by natural
   order: an `Intl.Collator('en', { numeric: true, sensitivity: 'base' })`, ties broken by plain
   comparison. The locale is fixed, so the order does not depend on the learner's machine. The first
