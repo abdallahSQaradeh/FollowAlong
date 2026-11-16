@@ -11,11 +11,14 @@ are the choices the spec leaves open.
   learner clicks (spec, Out of Scope: auto-advance).
 - **The last Lesson shows nothing.** No next Lesson, no message, no overlay: the player stays on
   the last frame. The same holds for a Course opened with no Lessons after another one.
-- **A click moves on through the same path as `Ctrl+'` `N`.** `nextClicked {lessonId}` makes the
-  core call the step `nextLesson()` uses (`moveToLesson(1)`), so the next Lesson loads exactly as
-  one picked in the Lesson picker or reached by the key. The `lessonId` follows ADR 0003: an event
-  about a Lesson carries its id, and the core ignores one for a Lesson that is no longer the loaded
-  one, so a click that arrives after the learner moved on cannot skip a second Lesson.
+- **A click moves on through the same lookup and step as `Ctrl+'` `N`.** `nextClicked {lessonId}`
+  makes the core find the Lesson after the current one (`lessonBeside(1)`, the lookup `nextLesson()`
+  uses) and play it with the step a picked Lesson uses, so it loads exactly as one picked in the
+  Lesson picker or reached by the key. The `lessonId` follows ADR 0003: an event about a Lesson
+  carries its id, and the core ignores one for a Lesson that is no longer the loaded one, so a
+  click that arrives after the learner moved on cannot skip a second Lesson. Unlike the key, a
+  click with no place to count from (another Course without Lessons was opened since) does nothing
+  and says nothing: the learner pressed no key, and the message would be about something else.
 - **The overlay is one button over the picture.** It covers the picture and stops above Chromium's
   native control bar, which stays usable, as the click overlay of #23 (its ADR 0009, not merged when
   this was written) will. It is stacked above that overlay (`z-index: 2`, after it in the page), so
