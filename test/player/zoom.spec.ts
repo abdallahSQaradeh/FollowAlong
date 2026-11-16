@@ -862,6 +862,24 @@ test.describe('the zoom key commands', () => {
     await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'false');
   });
 
+  test('wait for a drag under way, as the wheel does: its box is drawn over this view', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await page.mouse.move(320, 180);
+    await page.mouse.down();
+    await page.mouse.move(640, 360, { steps: 8 });
+    await player.post({ type: 'zoom', action: 'in' });
+    await player.post({ type: 'zoom', action: 'areaMode' });
+    await page.mouse.up();
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+    expectArea(await shownArea(page), { left: 0.25, top: 0.25, width: 0.25, height: 0.25 });
+    await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'false');
+  });
+
   test('do not play, pause or take focus: only the picture changes', async ({ page }) => {
     const player = await openPlayer(page);
     await loadPaused(player);

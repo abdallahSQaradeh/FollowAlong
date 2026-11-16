@@ -19,6 +19,10 @@ Source: #48, the routed note on it from #47, ADRs 0037, 0087 and 0088.
 - **`Z` toggles area mode**, as the toolbar's area button does. A second press leaves it, so a
   learner who pressed it by mistake is not stuck without the mouse. Area mode still ends by itself
   after the next drag, and with a reset.
+- **A drag under way is not interrupted.** `in`, `out` and `areaMode` do nothing while a press is
+  down, as the wheel does (ADR 0088): the box is drawn over, and the pan moves from, the view as it
+  was. `reset` still ends the drag, as ADR 0037 says. The player's actions run through one
+  `ZoomControls.run(action)`, which the toolbar's buttons use too.
 - **No Focus return.** A key press never took focus from the editor or terminal, so the zoom
   commands hand nothing back (unlike a status bar click, ADR 0009). With no Lesson loaded a zoom
   key says so, as the other playback keys do, and with a player still starting it is dropped.

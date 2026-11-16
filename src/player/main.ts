@@ -9,7 +9,6 @@ import {
   type PlayerCommand,
   type PlayerEvent,
   type PlayerSnapshot,
-  type ZoomAction,
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
@@ -521,31 +520,13 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       soundSettled(undefined, media);
       break;
     case 'zoom':
-      zoom(command.action);
+      zoomControls.run(command.action);
       break;
     case 'takeSnapshot':
       post({ type: 'snapshot', snapshot: snapshotOf(media) });
       break;
     case 'restore':
       zoomControls.showView(command.zoom);
-      break;
-  }
-}
-
-/** Runs a `zoom` command of the extension (the zoom keys and the status bar item). */
-function zoom(action: ZoomAction): void {
-  switch (action) {
-    case 'in':
-      zoomControls.zoomIn();
-      break;
-    case 'out':
-      zoomControls.zoomOut();
-      break;
-    case 'areaMode':
-      zoomControls.toggleAreaMode();
-      break;
-    case 'reset':
-      zoomControls.reset();
       break;
   }
 }
