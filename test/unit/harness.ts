@@ -194,6 +194,8 @@ export class RecordingUi implements UiSink {
   /** Every quick pick the core opened, in order. */
   readonly pickers: QuickPickModel<unknown>[] = [];
   private answer: ((intent: unknown) => void) | undefined;
+  /** How many times the core asked to hand keyboard focus back to the Practice area. */
+  focusReturns = 0;
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
@@ -251,6 +253,10 @@ export class RecordingUi implements UiSink {
     }
     this.opened.push(target);
     return Promise.resolve();
+  }
+
+  returnFocus(): void {
+    this.focusReturns += 1;
   }
 }
 

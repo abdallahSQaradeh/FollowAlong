@@ -10,6 +10,7 @@ import type { ResourcePlacement } from './resource-placement.js';
 import { openInEditor, type ResourceViewers } from './resource-viewers.js';
 import type { StatusBarView } from './status-bar-view.js';
 import { showQuickPick } from './quick-pick.js';
+import type { FocusReturn } from './focus-return.js';
 
 function store(memento: vscode.Memento): KeyValueStore {
   return {
@@ -43,6 +44,8 @@ export function createUiSink(
   statusBar: StatusBarView,
   placement: ResourcePlacement,
   viewers: ResourceViewers,
+  focus: FocusReturn,
+  logger: Logger,
 ): UiSink {
   return {
     showMessage({ severity, text }) {
@@ -82,6 +85,11 @@ export function createUiSink(
           break;
       }
       placement.opened(target.path);
+    },
+    returnFocus() {
+      focus.returnFocus().catch((error: unknown) => {
+        logger.log({ level: 'warn', message: `Could not return focus: ${String(error)}` });
+      });
     },
   };
 }

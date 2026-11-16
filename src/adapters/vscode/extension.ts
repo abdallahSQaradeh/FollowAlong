@@ -13,6 +13,7 @@ import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
 import type { LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
+import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
@@ -72,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const lessonTree = new LessonTreeView(logger);
   const viewers = new ResourceViewers(context.extensionPath, logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
+  const focus = new FocusReturn();
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -84,6 +86,8 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       statusBar,
       createResourcePlacement(() => player.viewColumn),
       viewers,
+      focus,
+      logger,
     ),
     logger,
   });
@@ -125,6 +129,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     viewers,
     lessonTree,
     statusBar,
+    focus,
     {
       dispose: () => {
         core.dispose();
@@ -201,14 +206,10 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.speedDown, () => {
       core.speedStep('down');
     }),
-    register(commands.statusBarClick, async (command) => {
+    register(commands.statusBarClick, (command) => {
       if (isStatusBarCommand(command)) {
         core.statusBarClick(command);
       }
-      // A click gives the status bar item keyboard focus (VS Code makes the label focusable), so
-      // the learner would have to click back into the code. The click is a mouse action, so the
-      // editor is where the learner was typing.
-      await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
     }),
     register(commands.nextLesson, () => {
       core.nextLesson();

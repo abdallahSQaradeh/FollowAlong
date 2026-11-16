@@ -42,7 +42,8 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 </head>
 <body>
 <main class="stage">
-<video id="video" controls preload="auto"></video>
+<video id="video" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture disableremoteplayback preload="auto"></video>
+<div class="overlay" aria-hidden="true"></div>
 <button class="next" type="button" hidden></button>
 </main>
 <script nonce="${nonce}">${inline(options.script, 'script')}</script>
