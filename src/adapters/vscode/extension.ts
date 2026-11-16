@@ -102,6 +102,8 @@ export interface TestHooks {
   quickPicksShown(): number;
   /** The label of the active (highlighted) item of the quick pick shown last, once it has one. */
   activeQuickPickItem(): string | undefined;
+  /** Whether the quick pick shown last still shows its busy indicator: the core is still scanning. */
+  quickPickBusy(): boolean;
 }
 
 /** Saves Progress when the window closes; set while the extension is active. */
@@ -169,6 +171,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       selectedLesson: () => lessonTree.selectedLesson(),
       quickPicksShown: () => quickPickStats.shown,
       activeQuickPickItem: () => quickPickStats.active,
+      quickPickBusy: () => quickPickStats.busy,
     };
   }
 

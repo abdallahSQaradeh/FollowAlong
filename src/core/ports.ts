@@ -240,6 +240,20 @@ export interface TextPrompt {
   readonly validate: (text: string) => string | undefined;
 }
 
+/** A quick pick that stays open while the core replaces what it lists. */
+export interface LivePicker<Intent> {
+  /**
+   * Resolves with the intent of the item the learner picked, or of an item button they pressed,
+   * or `undefined` when they closed the quick pick without picking.
+   */
+  readonly answer: Promise<Intent | undefined>;
+  /**
+   * Replaces what the quick pick lists and whether it is busy, keeping what the learner typed.
+   * Does nothing once the quick pick is closed.
+   */
+  update(model: QuickPickModel<Intent>): void;
+}
+
 export interface UiSink {
   showMessage(message: UserMessage): void;
   /**
@@ -252,6 +266,15 @@ export interface UiSink {
    * `undefined` when the learner closed it without picking.
    */
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined>;
+  /**
+   * Shows a quick pick whose list the core may replace while it is open (the Course picker, which
+   * opens from a cache and updates when the rescan is done). `onToolbarButton` gets the intent of
+   * a title bar button the learner presses; the quick pick stays open.
+   */
+  openPicker<Intent>(
+    model: QuickPickModel<Intent>,
+    onToolbarButton: (intent: Intent) => void,
+  ): LivePicker<Intent>;
   /** Replaces the Lesson tree in the activity bar. */
   showLessonTree(model: LessonTreeModel): void;
   /** Replaces the status bar items: none while no Lesson is loaded. */

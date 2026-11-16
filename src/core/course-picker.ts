@@ -14,7 +14,9 @@ export type CoursePickerIntent =
   /** Asks for the new folder of a Recent Course that moved, and re-points the entry to it. */
   | { readonly type: 'locateCourse'; readonly folder: string }
   /** Drops a Course from Recent. */
-  | { readonly type: 'removeRecentCourse'; readonly folder: string };
+  | { readonly type: 'removeRecentCourse'; readonly folder: string }
+  /** Rescans the Courses roots at once, so a Course just downloaded shows up (Refresh). */
+  | { readonly type: 'refreshCourses' };
 
 type Entry = QuickPickEntry<CoursePickerIntent>;
 
@@ -36,18 +38,26 @@ export interface CoursePickerInput {
   readonly recent: readonly RecentCourse[];
   /** The folder of the Course open in this window, if any: it is tagged (open). */
   readonly openFolder: string | undefined;
+  /**
+   * Whether a scan of the Courses roots is still running: `courses` is then what the last scan
+   * found (the cache), or nothing yet, and the picker shows it is busy.
+   */
+  readonly scanning: boolean;
 }
 
-function placeholderOf({ hasRoots, courses, recent }: CoursePickerInput): string {
+function placeholderOf({ hasRoots, courses, recent, scanning }: CoursePickerInput): string {
   if (recent.length > 0) {
     return 'Type a Course name to open it';
   }
   if (!hasRoots) {
     return 'Add a Courses root: a folder that holds your Courses';
   }
-  return courses.length === 0
-    ? 'No Courses found under your Courses roots'
-    : 'Type a Course name to open it';
+  if (courses.length === 0) {
+    return scanning
+      ? 'Looking for Courses under your Courses roots…'
+      : 'No Courses found under your Courses roots';
+  }
+  return 'Type a Course name to open it';
 }
 
 export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<CoursePickerIntent> {
@@ -100,6 +110,8 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
     placeholder: placeholderOf(input),
     // The category path is the description, and typing matches it (story 7).
     matchOnDescription: true,
+    ...(input.scanning ? { busy: true } : {}),
+    toolbar: [{ label: 'Refresh', icon: 'refresh', intent: { type: 'refreshCourses' } }],
     entries: [
       ...(recent.length === 0 ? [] : [{ kind: 'separator', label: 'Recent Courses' } as const]),
       ...recent,
