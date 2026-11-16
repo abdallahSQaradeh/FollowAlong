@@ -27,6 +27,7 @@ import {
   PlayerShowOptions,
   PlayerShowResult,
   Ports,
+  ResourceTarget,
   Storage,
   UiSink,
   UserMessage,
@@ -172,6 +173,10 @@ export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
+  /** The Resources opened in a tab beside the code, in order. */
+  readonly opened: ResourceTarget[] = [];
+  /** Set to make opening a file fail, as VS Code does for a file that is gone. */
+  openFailure: string | undefined;
   /** Every quick pick the core opened, in order. */
   readonly pickers: QuickPickModel<unknown>[] = [];
   private answer: ((intent: unknown) => void) | undefined;
@@ -216,6 +221,14 @@ export class RecordingUi implements UiSink {
 
   showLessonTree(model: LessonTreeModel): void {
     this.lessonTree = model;
+  }
+
+  openResource(target: ResourceTarget): Promise<void> {
+    if (this.openFailure !== undefined) {
+      return Promise.reject(new Error(this.openFailure));
+    }
+    this.opened.push(target);
+    return Promise.resolve();
   }
 }
 
