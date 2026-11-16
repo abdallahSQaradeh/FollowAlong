@@ -10,12 +10,18 @@ import type { QuickPickModel } from './quick-pick.js';
  * A spot the player can sit in:
  * - `editorSplit`: an editor group beside the code (the default);
  * - `bottomPanel`: a view in the bottom panel, beside the terminal;
- * - `secondarySidebar`: a view in the secondary sidebar.
+ * - `secondarySidebar`: a view in the secondary sidebar;
+ * - `miniStrip`: a short editor group above the code (ADR 0100).
  */
-export type VideoSpot = 'editorSplit' | 'bottomPanel' | 'secondarySidebar';
+export type VideoSpot = 'editorSplit' | 'bottomPanel' | 'secondarySidebar' | 'miniStrip';
 
 /** Every spot, in the order _Move video to…_ lists them. */
-export const videoSpots: readonly VideoSpot[] = ['editorSplit', 'bottomPanel', 'secondarySidebar'];
+export const videoSpots: readonly VideoSpot[] = [
+  'editorSplit',
+  'bottomPanel',
+  'secondarySidebar',
+  'miniStrip',
+];
 
 export const defaultVideoSpot: VideoSpot = 'editorSplit';
 
@@ -34,6 +40,7 @@ export const spotLabels: Readonly<Record<VideoSpot, string>> = {
   editorSplit: 'Editor group beside the code',
   bottomPanel: 'Bottom panel',
   secondarySidebar: 'Secondary sidebar',
+  miniStrip: 'Mini strip above the code',
 };
 
 /** The quick pick of _Move video to…_: every spot, the one the player is in marked. */

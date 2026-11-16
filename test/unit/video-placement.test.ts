@@ -34,6 +34,15 @@ describe('where a Lesson opens', () => {
     expect(lastSpot(h)).toBe('secondarySidebar');
   });
 
+  it('opens in the mini strip above the code when the setting names miniStrip', async () => {
+    const h = await createHarness();
+    h.config.set('videoLocation', 'miniStrip');
+
+    await openCourse(h);
+
+    expect(lastSpot(h)).toBe('miniStrip');
+  });
+
   it('opens beside the code when the setting names no spot FollowAlong knows', async () => {
     const h = await createHarness();
     h.config.set('videoLocation', 'ceiling');
@@ -66,6 +75,7 @@ describe('Move video to…', () => {
       'Editor group beside the code',
       'Bottom panel',
       'Secondary sidebar',
+      'Mini strip above the code',
     ]);
     h.ui.choose('Bottom panel');
     // The page the video leaves says what it shows.
@@ -670,5 +680,88 @@ describe('a move that was waiting when the Lesson changed', () => {
     h.core.playPause();
 
     expect(h.player.sent).toEqual([{ type: 'seekBy', seconds: -5 }, { type: 'play' }]);
+  });
+});
+
+describe('the mini strip', () => {
+  it('takes a paused Lesson with its time, speed and zoom, and gives them back when it leaves', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+
+    const into = h.core.moveVideo('miniStrip');
+    answerSnapshot(h, 42.5, false);
+    await into;
+    h.player.clearSent();
+
+    expect(lastSpot(h)).toBe('miniStrip');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 42.5, autoplay: false }),
+      { type: 'setRate', rate: 1.5 },
+      { type: 'restore', zoom: { level: 2, left: 0.25, top: 0.5 } },
+    ]);
+
+    // Zoom the learner changes in the strip goes with the video out again.
+    h.player.clearSent();
+    const out = h.core.moveVideo('editorSplit');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1.5,
+        zoom: { level: 3, left: 0.5, top: 0.25 },
+        lesson: { lessonId, position: 44, playing: false },
+      },
+    });
+    await out;
+    h.player.clearSent();
+
+    expect(lastSpot(h)).toBe('editorSplit');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 44, autoplay: false }),
+      { type: 'setRate', rate: 1.5 },
+      { type: 'restore', zoom: { level: 3, left: 0.5, top: 0.25 } },
+    ]);
+  });
+
+  it('holds for the open player: the move never writes the followalong.videoLocation setting', async () => {
+    const h = await createHarness();
+    h.config.set('videoLocation', 'bottomPanel');
+    await openCourse(h);
+    h.player.ready();
+
+    const moving = h.core.moveVideo('miniStrip');
+    h.clock.advance(1000);
+    await moving;
+
+    expect(h.config.get('videoLocation')).toBe('bottomPanel');
+    h.core.nextLesson();
+    expect(lastSpot(h)).toBe('miniStrip');
+  });
+
+  it('is collapsed and restored where it was, with the Lesson at the position it had', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const into = h.core.moveVideo('miniStrip');
+    answerSnapshot(h, 42, false);
+    await into;
+    h.player.ready();
+    h.player.clearSent();
+
+    const collapsing = h.core.toggleVideo();
+    answerSnapshot(h, 43, false);
+    await collapsing;
+    expect(h.player.hidden).toBe(true);
+
+    await h.core.toggleVideo();
+    h.player.clearSent();
+    h.player.ready();
+
+    expect(lastSpot(h)).toBe('miniStrip');
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 43, autoplay: false }),
+      { type: 'setRate', rate: 1.5 },
+      { type: 'restore', zoom: { level: 2, left: 0.25, top: 0.5 } },
+    ]);
   });
 });
