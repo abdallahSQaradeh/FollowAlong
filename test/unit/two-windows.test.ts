@@ -1,4 +1,4 @@
-import { utimes } from 'node:fs/promises';
+import { readFile, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -326,5 +326,62 @@ describe('the lock two windows take turns with', () => {
         message: expect.stringContaining('without its lock') as unknown,
       }),
     );
+  });
+});
+
+describe('Course data another window changes while this one has the Course open', () => {
+  it('never writes over a progress file a newer FollowAlong wrote meanwhile, and keeps Progress elsewhere', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { [intro]: 'video', [setup]: 'video' });
+    const progressFile = join(course, '.followalong', 'progress.json');
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h.player, intro, 100);
+    pause(h.player, intro);
+    await h.settle();
+    // A window running a newer FollowAlong rewrites the file in a version this one can't read.
+    const newer = `${JSON.stringify({ version: 99, data: { lessons: {} } })}\n`;
+    await writeFile(progressFile, newer);
+
+    playTo(h.player, intro, 150);
+    pause(h.player, intro);
+    await h.settle();
+    playTo(h.player, intro, 200);
+    pause(h.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 195 });
+    expect(await readFile(progressFile, 'utf8')).toBe(newer);
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'warning',
+        text: "FollowAlong can't update this Course's progress file: it is damaged, unreadable or from a newer FollowAlong, so FollowAlong keeps your progress in its own storage for now.",
+      },
+    ]);
+  });
+
+  it('keeps the Resources both windows attach at the same moment', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      [intro]: 'video',
+      [setup]: 'video',
+      'notes.md': '# notes',
+      'cheat.md': '# cheat',
+    });
+    const other = h.openWindow({ clockOffsetMs: 0 });
+    await h.core.openCourse(course);
+    await other.core.openCourse(course);
+
+    await Promise.all([
+      h.core.attachResource(intro, join(course, 'notes.md')),
+      other.core.attachResource(setup, join(course, 'cheat.md')),
+    ]);
+
+    const stored = JSON.parse(
+      await readFile(join(course, '.followalong', 'resources.json'), 'utf8'),
+    ) as { readonly data: unknown };
+    expect(stored.data).toMatchObject({
+      lessons: { [intro]: [{ path: 'notes.md' }], [setup]: [{ path: 'cheat.md' }] },
+    });
+    expect(await h.listFiles(join(course, '.followalong'))).toEqual(['resources.json']);
   });
 });
