@@ -5,17 +5,14 @@
  * Course; any other file is stored by its absolute path.
  */
 import { randomUUID } from 'node:crypto';
-import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { CourseDataFile } from './course-data.js';
 import type { FileSystem, ResourceTarget } from './ports.js';
+import type { QuickPickModel } from './quick-pick.js';
 
-export interface ResourceRecord {
+interface ResourceRecordBase {
   readonly id: string;
-  readonly kind: 'file';
-  /** Relative to the Course folder, with `/` separators, or absolute. */
-  readonly path: string;
-  readonly relative: boolean;
   /**
    * When the Resource was relinked (ms since the epoch); absent until it is. When two copies of
    * the file (in the Course, and in the extension storage) both hold the Resource, the later
@@ -23,6 +20,25 @@ export interface ResourceRecord {
    */
   readonly changedAt?: number;
 }
+
+/** A reference to a file on disk. */
+export interface FileResourceRecord extends ResourceRecordBase {
+  readonly kind: 'file';
+  /** Relative to the Course folder, with `/` separators, or absolute. */
+  readonly path: string;
+  readonly relative: boolean;
+}
+
+/**
+ * A reference to a web page (ADR 0047). `url` is what the file holds, which may be anything: it is
+ * checked again whenever it is opened, never trusted for having been checked when attached.
+ */
+export interface UrlResourceRecord extends ResourceRecordBase {
+  readonly kind: 'url';
+  readonly url: string;
+}
+
+export type ResourceRecord = FileResourceRecord | UrlResourceRecord;
 
 export interface ResourcesData {
   /** The Resources of the whole Course, in the order they were attached. */
@@ -68,22 +84,18 @@ function parseRecord(value: unknown): ResourceRecord | undefined {
   if (typeof value !== 'object' || value === null) {
     return undefined;
   }
-  const { id, kind, path, relative: isRelative, changedAt } = value as Record<string, unknown>;
-  if (
-    typeof id !== 'string' ||
-    kind !== 'file' ||
-    typeof path !== 'string' ||
-    typeof isRelative !== 'boolean'
-  ) {
+  const { id, kind, path, url, relative: isRelative, changedAt } = value as Record<string, unknown>;
+  if (typeof id !== 'string') {
     return undefined;
   }
-  return {
-    id,
-    kind,
-    path,
-    relative: isRelative,
-    ...(isTime(changedAt) ? { changedAt } : {}),
-  };
+  const changed = isTime(changedAt) ? { changedAt } : {};
+  if (kind === 'url' && typeof url === 'string') {
+    return { id, kind, url, ...changed };
+  }
+  if (kind === 'file' && typeof path === 'string' && typeof isRelative === 'boolean') {
+    return { id, kind, path, relative: isRelative, ...changed };
+  }
+  return undefined;
 }
 
 function parseRecords(value: unknown): ResourceRecord[] {
@@ -172,7 +184,7 @@ export const resourcesFile: CourseDataFile<ResourcesData> = {
 };
 
 /** Makes the stored reference to `absolutePath` for a Course in `courseFolder`. */
-export function newResource(courseFolder: string, absolutePath: string): ResourceRecord {
+export function newResource(courseFolder: string, absolutePath: string): FileResourceRecord {
   const inCourse = relative(courseFolder, absolutePath);
   const isInside = inCourse !== '' && !isAbsolute(inCourse) && inCourse.split(sep)[0] !== '..';
   return {
@@ -183,9 +195,21 @@ export function newResource(courseFolder: string, absolutePath: string): Resourc
   };
 }
 
+/** Makes the stored reference to a web page; `url` is what {@link checkWebUrl} accepted. */
+export function newUrlResource(url: string): UrlResourceRecord {
+  return { id: randomUUID(), kind: 'url', url };
+}
+
 /** The file a Resource points to now, for a Course that may have been moved. */
-export function resourcePath(courseFolder: string, record: ResourceRecord): string {
+export function resourcePath(courseFolder: string, record: FileResourceRecord): string {
   return record.relative ? join(courseFolder, ...record.path.split('/')) : record.path;
+}
+
+/** What the learner calls a Resource: a file's name, or a web page's address without its scheme. */
+export function resourceName(courseFolder: string, record: ResourceRecord): string {
+  return record.kind === 'url'
+    ? urlLabel(record.url)
+    : basename(resourcePath(courseFolder, record));
 }
 
 /** The ids of the Resources whose file is no longer where they point (Course `folder` as opened). */
@@ -194,7 +218,10 @@ export async function missingResources(
   folder: string,
   data: ResourcesData,
 ): Promise<ReadonlySet<string>> {
-  const records = [...data.course, ...Object.values(data.lessons).flat()];
+  // A URL has no file to lose (ADR 0047): only file Resources can be missing.
+  const records = [...data.course, ...Object.values(data.lessons).flat()].filter(
+    (record) => record.kind === 'file',
+  );
   const found = await Promise.all(
     records.map(async (record) => fileSystem.exists(resourcePath(folder, record))),
   );
@@ -231,7 +258,8 @@ export function withRelinkedResource(
   target: ResourceRecord,
   at: number,
 ): ResourcesData | undefined {
-  if (findResource(data, id) === undefined) {
+  // A URL has no file to point elsewhere (ADR 0047): detach it and attach another.
+  if (findResource(data, id)?.kind !== 'file') {
     return undefined;
   }
   const relink = (records: readonly ResourceRecord[]): ResourceRecord[] =>
@@ -267,8 +295,57 @@ export function withoutResource(
   return withDetached({ course: without(data.course), lessons }, { ...data.detached, [id]: at });
 }
 
+/** What was wrong with a URL the learner typed, or what a Resource holds when it is opened. */
+export type WebUrlCheck =
+  { readonly ok: true; readonly url: string } | { readonly ok: false; readonly problem: string };
+
+const webSchemes: ReadonlySet<string> = new Set(['http:', 'https:']);
+
+/**
+ * Checks a URL to attach or to open (ADR 0047): only `http` and `https` pages are Resources. Any
+ * other scheme (`file:`, `command:`, `vscode:`, `javascript:`, `data:`, …) is refused, because a
+ * Resource must never run a command, open a local file outside the file Resource rules, or script a
+ * page. `url` is the normalised address (what `new URL` makes of the text).
+ */
+export function checkWebUrl(text: string): WebUrlCheck {
+  const typed = text.trim();
+  if (typed === '') {
+    return { ok: false, problem: 'Type the address of a web page, such as https://example.com.' };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(typed);
+  } catch {
+    return {
+      ok: false,
+      problem: 'That is not a web address. Start it with http:// or https://.',
+    };
+  }
+  if (!webSchemes.has(parsed.protocol)) {
+    return {
+      ok: false,
+      problem: `Only http:// and https:// addresses can be attached, not ${parsed.protocol}`,
+    };
+  }
+  if (parsed.hostname === '') {
+    return { ok: false, problem: 'That web address has no site name.' };
+  }
+  return { ok: true, url: parsed.href };
+}
+
+/** What the tree shows for a URL: the address without its scheme and a bare trailing slash. */
+export function urlLabel(url: string): string {
+  return url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/$/, '');
+}
+
+/** The kinds of {@link ResourceTarget} that open a file on disk. */
+type FileTargetKind = Exclude<ResourceTarget['kind'], 'url'>;
+
+/** The target of a file: what {@link resourceTarget} makes. */
+export type FileResourceTarget = ResourceTarget & { readonly kind: FileTargetKind };
+
 /** The opener per file type, by extension without regard to case; every other type is a file. */
-const targetKinds: Readonly<Record<string, ResourceTarget['kind']>> = {
+const targetKinds: Readonly<Record<string, FileTargetKind>> = {
   '.md': 'markdown',
   '.markdown': 'markdown',
   '.html': 'html',
@@ -285,7 +362,23 @@ const targetKinds: Readonly<Record<string, ResourceTarget['kind']>> = {
 };
 
 /** How the file a Resource points to opens: text and code in the editor, the rest by type. */
-export function resourceTarget(path: string): ResourceTarget {
+export function resourceTarget(path: string): FileResourceTarget {
   const kind = targetKinds[extname(path).toLowerCase()] ?? 'file';
   return { kind, path };
+}
+
+/** What the learner chooses to attach: a file from disk, or the address of a web page. */
+export type AttachKind = 'file' | 'url';
+
+/** The choice the “+” and the chord open first, before any dialog: “File…” next to “URL…”. */
+export function attachChoice(target: 'course' | 'lesson'): QuickPickModel<AttachKind> {
+  return {
+    title: target === 'course' ? 'Attach to this Course' : 'Attach to this Lesson',
+    placeholder: 'What do you want to attach?',
+    matchOnDescription: false,
+    entries: [
+      { kind: 'item', label: 'File…', description: 'from anywhere on disk', intent: 'file' },
+      { kind: 'item', label: 'URL…', description: 'a web page, in Simple Browser', intent: 'url' },
+    ],
+  };
 }

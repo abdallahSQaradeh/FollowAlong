@@ -35,6 +35,7 @@ import {
   Question,
   Storage,
   TerminalSettings,
+  TextPrompt,
   UiSink,
   UserMessage,
 } from '../../src/core/ports.js';
@@ -292,6 +293,18 @@ export class RecordingUi implements UiSink {
     return this.fileDialogRequests.length;
   }
   private fileAnswer: ((path: string | undefined) => void) | undefined;
+  private readonly fileDialogWaiters: (() => void)[] = [];
+  /** Every text prompt the core opened (a URL to attach), in order. */
+  readonly textPrompts: TextPrompt[] = [];
+  private textAnswer: ((text: string | undefined) => void) | undefined;
+  private readonly textPromptWaiters: (() => void)[] = [];
+  /** The labels the learner will pick in the next quick picks, one each; none left is a manual pick. */
+  private readonly scriptedChoices: string[] = [];
+
+  /** The learner will pick the item with this label in the next quick pick, as it opens. */
+  willChoose(label: string): void {
+    this.scriptedChoices.push(label);
+  }
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
@@ -316,6 +329,16 @@ export class RecordingUi implements UiSink {
 
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
     this.pickers.push(model);
+    const scripted = this.scriptedChoices.shift();
+    if (scripted !== undefined) {
+      const item = model.entries.find((entry) => entry.kind === 'item' && entry.label === scripted);
+      if (item?.kind !== 'item') {
+        return Promise.reject(
+          new Error(`No item “${scripted}” in the quick pick “${model.title}”`),
+        );
+      }
+      return Promise.resolve(item.intent);
+    }
     const shown = new Promise<Intent | undefined>((resolve) => {
       this.answer = (intent) => {
         resolve(intent as Intent | undefined);
@@ -398,7 +421,53 @@ export class RecordingUi implements UiSink {
     this.fileDialogRequests.push(dialog);
     return new Promise((resolve) => {
       this.fileAnswer = resolve;
+      for (const waiter of this.fileDialogWaiters.splice(0)) {
+        waiter();
+      }
     });
+  }
+
+  /** Resolves once a file dialog is open: at once if one is, else when the core opens it. */
+  fileDialogShown(): Promise<void> {
+    return this.fileAnswer === undefined
+      ? new Promise((resolve) => {
+          this.fileDialogWaiters.push(resolve);
+        })
+      : Promise.resolve();
+  }
+
+  askText(prompt: TextPrompt): Promise<string | undefined> {
+    this.textPrompts.push(prompt);
+    return new Promise((resolve) => {
+      this.textAnswer = resolve;
+      for (const waiter of this.textPromptWaiters.splice(0)) {
+        waiter();
+      }
+    });
+  }
+
+  /** Resolves once a text prompt is open: at once if one is, else when the core opens it. */
+  textPromptShown(): Promise<void> {
+    return this.textAnswer === undefined
+      ? new Promise((resolve) => {
+          this.textPromptWaiters.push(resolve);
+        })
+      : Promise.resolve();
+  }
+
+  /** The text prompt the learner sees now, if one is open. */
+  get textPrompt(): TextPrompt | undefined {
+    return this.textAnswer === undefined ? undefined : this.textPrompts.at(-1);
+  }
+
+  /** The learner types this text in the open prompt and confirms it, or `undefined` for closing it. */
+  answerText(text: string | undefined): void {
+    const resolve = this.textAnswer;
+    if (resolve === undefined) {
+      throw new Error('No text prompt is open');
+    }
+    this.textAnswer = undefined;
+    resolve(text);
   }
 
   /** Whether a file dialog is open now. */

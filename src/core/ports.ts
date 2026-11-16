@@ -152,19 +152,25 @@ export interface UserMessage {
 }
 
 /**
- * What a Resource opens as. The core picks the kind from the file's type (`resourceTarget`); the
- * adapter turns each kind into a tab beside the code. A URL target comes with its own ticket.
+ * What a Resource opens as. The core picks the kind from the file's type (`resourceTarget`), or
+ * `url` for a URL Resource; the adapter turns each kind into a tab beside the code.
  */
-export interface ResourceTarget {
-  /**
-   * - `file`: text and code, and any type FollowAlong has no better opener for: the editor;
-   * - `image`: VS Code's image preview;
-   * - `markdown`, `html`: a rendered preview;
-   * - `pdf`: the FollowAlong PDF viewer.
-   */
-  readonly kind: 'file' | 'image' | 'markdown' | 'html' | 'pdf';
-  readonly path: string;
-}
+export type ResourceTarget =
+  | {
+      /**
+       * - `file`: text and code, and any type FollowAlong has no better opener for: the editor;
+       * - `image`: VS Code's image preview;
+       * - `markdown`, `html`: a rendered preview;
+       * - `pdf`: the FollowAlong PDF viewer.
+       */
+      readonly kind: 'file' | 'image' | 'markdown' | 'html' | 'pdf';
+      readonly path: string;
+    }
+  | {
+      /** A web page, in VS Code's Simple Browser. The core has checked that it is `http` or `https`. */
+      readonly kind: 'url';
+      readonly url: string;
+    };
 
 /** The two answers to a {@link Question}: the button that agrees, and the one that declines. */
 export type Answer = 'accept' | 'decline';
@@ -190,6 +196,19 @@ export interface FileDialog {
   readonly title: string;
   /** The label of the button that chooses the file. */
   readonly openLabel: string;
+}
+
+/** A box in which the learner types one line of text. */
+export interface TextPrompt {
+  readonly title: string;
+  /** Tells the learner what to type. */
+  readonly prompt: string;
+  readonly placeholder: string;
+  /**
+   * What is wrong with the text as typed so far, shown under the box while the learner types, or
+   * `undefined` when it is fine. The box cannot be confirmed while it answers a problem.
+   */
+  readonly validate: (text: string) => string | undefined;
 }
 
 export interface UiSink {
@@ -225,6 +244,8 @@ export interface UiSink {
    * not modal to the player: the Lesson keeps playing while it is open.
    */
   pickFile(dialog: FileDialog): Promise<string | undefined>;
+  /** Asks for one line of text; resolves with it, or `undefined` when the learner closed the box. */
+  askText(prompt: TextPrompt): Promise<string | undefined>;
 }
 
 // --- Terminal settings ----------------------------------------------------------------------------

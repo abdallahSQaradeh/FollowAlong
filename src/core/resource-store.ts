@@ -16,6 +16,7 @@ import {
   findResource,
   missingResources,
   newResource,
+  newUrlResource,
   noResources,
   resourcesFile,
   withCourseResource,
@@ -44,6 +45,10 @@ export interface ResourceStore {
   attach(lessonId: string, absolutePath: string): Promise<boolean>;
   /** Attaches a file to the whole Course. */
   attachToCourse(absolutePath: string): Promise<boolean>;
+  /** Attaches a web page, already checked with `checkWebUrl`, to a Lesson. */
+  attachUrl(lessonId: string, url: string): Promise<boolean>;
+  /** Attaches a web page, already checked with `checkWebUrl`, to the whole Course. */
+  attachUrlToCourse(url: string): Promise<boolean>;
   detach(resourceId: string): Promise<boolean>;
   /** Points the Resource at another file: it keeps its id and its place in its Lesson. */
   relink(resourceId: string, absolutePath: string): Promise<boolean>;
@@ -162,6 +167,14 @@ export async function openResources(
     attachToCourse: (absolutePath) =>
       change(`attaching ${absolutePath}`, `Attached ${absolutePath} to the Course`, (stored) =>
         withCourseResource(stored, newResource(folder, absolutePath)),
+      ),
+    attachUrl: (lessonId, url) =>
+      change(`attaching ${url}`, `Attached ${url} to ${lessonId}`, (stored) =>
+        withResource(stored, lessonId, newUrlResource(url)),
+      ),
+    attachUrlToCourse: (url) =>
+      change(`attaching ${url}`, `Attached ${url} to the Course`, (stored) =>
+        withCourseResource(stored, newUrlResource(url)),
       ),
     detach: (resourceId) =>
       change(`detaching ${resourceId}`, `Detached ${resourceId}`, (stored) =>
