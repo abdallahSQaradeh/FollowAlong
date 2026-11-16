@@ -188,8 +188,10 @@ export class RecordingLogger implements Logger {
 export type Tree = Readonly<Record<string, string>>;
 
 export interface Harness {
+  /** The core of the VS Code window under test; {@link Harness.restart} replaces it. */
   readonly core: FollowAlong;
   readonly ports: Ports;
+  /** The player of the window under test; {@link Harness.restart} replaces it. */
   readonly player: FakePlayer;
   readonly clock: FakeClock;
   readonly converter: FakeConverter;
@@ -209,6 +211,17 @@ export interface Harness {
   folder(name: string, tree: Tree): Promise<string>;
   /** Every file under `folder`, as sorted relative paths with `/`. */
   listFiles(folder: string): Promise<string[]>;
+  /**
+   * Waits until every file system call the core started has finished, including calls those
+   * calls lead to (a save creates the folder, then writes the file).
+   */
+  settle(): Promise<void>;
+  /**
+   * VS Code starts again on the same workspace: a new core and a new player page, over the same
+   * disk and the same global and workspace storage. The old core is dropped as a crash would
+   * drop it; call `close()` on it first for a clean window close.
+   */
+  restart(): void;
 }
 
 export async function createHarness(): Promise<Harness> {
@@ -226,19 +239,29 @@ export async function createHarness(): Promise<Harness> {
   };
   const nodeFileSystem = createNodeFileSystem();
   const unreadable = new Set<string>();
+  const inFlight = new Set<Promise<unknown>>();
+  /** Counts a call until it settles, so `settle()` can wait for it. */
+  const track = <T>(call: Promise<T>): Promise<T> => {
+    inFlight.add(call);
+    const done = () => inFlight.delete(call);
+    call.then(done, done);
+    return call;
+  };
   const fileSystem: FileSystem = {
-    ...nodeFileSystem,
     readDirectory(path) {
       if (unreadable.has(path)) {
         return Promise.reject(
           new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
         );
       }
-      return nodeFileSystem.readDirectory(path);
+      return track(nodeFileSystem.readDirectory(path));
     },
+    readText: (path) => track(nodeFileSystem.readText(path)),
+    writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
+    makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
   };
-  const ports: Ports = {
-    player,
+  const portsFor = (windowPlayer: FakePlayer): Ports => ({
+    player: windowPlayer,
     fileSystem,
     storage,
     clock,
@@ -246,16 +269,23 @@ export async function createHarness(): Promise<Harness> {
     config,
     ui,
     logger,
-  };
-  const core = createFollowAlong(ports);
+  });
+  const cores: FollowAlong[] = [];
   onTestFinished(async () => {
-    core.dispose();
+    for (const core of cores) {
+      core.dispose();
+    }
     await rm(root, { recursive: true, force: true });
   });
+  const start = (windowPlayer: FakePlayer): FollowAlong => {
+    const core = createFollowAlong(portsFor(windowPlayer));
+    cores.push(core);
+    return core;
+  };
 
-  return {
-    core,
-    ports,
+  const harness: Harness = {
+    core: start(player),
+    ports: portsFor(player),
     player,
     clock,
     converter,
@@ -284,5 +314,24 @@ export async function createHarness(): Promise<Harness> {
         .map((entry) => relative(folder, join(entry.parentPath, entry.name)).split(sep).join('/'))
         .sort();
     },
+    async settle() {
+      for (;;) {
+        // A finished call's continuation may start the next call; let it run first.
+        await new Promise((resolve) => setImmediate(resolve));
+        if (inFlight.size === 0) {
+          return;
+        }
+        await Promise.allSettled([...inFlight]);
+      }
+    },
+    restart() {
+      const windowPlayer = new FakePlayer();
+      Object.assign(harness, {
+        core: start(windowPlayer),
+        player: windowPlayer,
+        ports: portsFor(windowPlayer),
+      });
+    },
   };
+  return harness;
 }
