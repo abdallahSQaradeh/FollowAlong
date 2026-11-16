@@ -16,7 +16,7 @@ import { buildCoursePicker } from './course-picker.js';
 import { scanCourses } from './course-scanner.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
 import { buildLessonPicker } from './lesson-picker.js';
-import { buildLessonTree } from './lesson-tree.js';
+import { buildLessonTree, type LessonTreeModel } from './lesson-tree.js';
 import {
   createLoadedLesson,
   noLessonText,
@@ -114,6 +114,28 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let progress: ProgressRecorder | undefined;
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
   let attaching: Promise<unknown> = Promise.resolve();
+  /** What the Lesson tree shows now (as JSON), so a redraw that would change nothing is skipped. */
+  let shownTree: string | undefined;
+
+  /** Replaces the Lesson tree in the UI. */
+  function drawTree(model: LessonTreeModel): void {
+    shownTree = JSON.stringify(model);
+    ui.showLessonTree(model);
+  }
+
+  /**
+   * Draws the open Course's tree again from what is known now, Progress not yet saved included.
+   * Does nothing when the learner would see the same tree.
+   */
+  function refreshTree(): void {
+    if (openedCourse === undefined || progress === undefined) {
+      return;
+    }
+    const model = buildLessonTree(openedCourse, resources, progress.current());
+    if (JSON.stringify(model) !== shownTree) {
+      drawTree(model);
+    }
+  }
 
   /** The Lesson the player holds, and the playback commands. */
   const loaded = createLoadedLesson(ports, {
@@ -206,7 +228,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // The Course may have been opened again, or another one opened, while this attach wrote.
       if (openedCourse?.folder === course.folder) {
         resources = next;
-        ui.showLessonTree(buildLessonTree(openedCourse, resources));
+        refreshTree();
       } else {
         // The tree shows another Course: without a word the learner might attach the file again.
         const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
@@ -312,7 +334,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       progress = recorder;
       if (first === undefined || recorder === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
-        ui.showLessonTree({ message: text, nodes: [] });
+        drawTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
         // The player still shows the Lesson it had, but this Course has none to offer: the
         // commands and the status bar items follow the Course the learner opened.
@@ -321,7 +343,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       await storage.workspace.set(openCourseKey, folder);
-      ui.showLessonTree(buildLessonTree(course, resources));
+      drawTree(buildLessonTree(course, resources, recorder.current()));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
