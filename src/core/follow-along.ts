@@ -439,8 +439,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /**
    * Opens a Course folder: its Lessons in the tree, and the last Lesson played (paused, 5 s before
    * its position) or else the first Lesson, which plays unless the workspace is being restored.
+   * With `video` (an absolute path, picked in the Folder browser) that Lesson plays instead, as
+   * `playLesson` plays it, whatever the Course had played last.
    */
-  async function open(folder: string, restoring: boolean, request: number): Promise<void> {
+  async function open(
+    folder: string,
+    restoring: boolean,
+    request: number,
+    video?: string,
+  ): Promise<void> {
     /** Whether the learner asked for another Course since this one: then this open is dropped. */
     const superseded = (): boolean => {
       if (request === openRequests) {
@@ -456,7 +463,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return;
     }
     const playing = loaded.lesson();
+    const openLesson = openedCourse === undefined ? undefined : lessonOfVideo(openedCourse, video);
     if (
+      openLesson !== undefined &&
+      openedCourse !== undefined &&
+      sameFolder(openedCourse.folder, folder)
+    ) {
+      // The Course is open and the learner picked one of its videos: nothing is opened again.
+      logger.log({ level: 'info', message: `Not opening ${folder}: it is the open Course.` });
+      playLesson(openLesson.id);
+      return;
+    }
+    if (
+      video === undefined &&
       playing !== undefined &&
       openedCourse !== undefined &&
       sameFolder(openedCourse.folder, folder)
@@ -533,7 +552,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await rememberRecent(folder);
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
-      if (last === undefined) {
+      const picked = lessonOfVideo(course, video);
+      if (picked !== undefined) {
+        // A video the learner picked plays, as a Lesson picked from the Lesson picker does.
+        play(course, picked, resumePosition(saved, picked.id), true);
+      } else if (last === undefined) {
         // A Lesson the learner did not ask for in this session does not start by itself.
         play(course, first, 0, !restoring);
       } else {
@@ -543,6 +566,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } finally {
       switching = false;
     }
+  }
+
+  /** The Lesson of `course` that is the video at this absolute path, if it is one. */
+  function lessonOfVideo(course: Course, video: string | undefined): Lesson | undefined {
+    return video === undefined
+      ? undefined
+      : lessonsInOrder(course).find((lesson) => sameFolder(lesson.path, video));
   }
 
   /** Puts the Course first in Recent; Recent is a convenience, so a failure is only logged. */
@@ -609,10 +639,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let openRequests = 0;
   /** Set while an open has left the Lesson that played and has not played the new Course yet. */
   let switching = false;
-  function openInTurn(folder: string, restoring: boolean): Promise<void> {
+  function openInTurn(folder: string, restoring: boolean, video?: string): Promise<void> {
     openRequests += 1;
     const request = openRequests;
-    const next = opening.then(() => open(folder, restoring, request));
+    const next = opening.then(() => open(folder, restoring, request, video));
     opening = next.catch(() => undefined);
     return next;
   }
@@ -762,6 +792,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'openCourseInNewWindow':
         await openInNewWindow(intent.folder);
         break;
+      case 'playVideo':
+        await openInTurn(intent.folder, false, intent.video);
+        break;
       case 'addCoursesRoot':
         // The learner added a root to pick a Course from it: show the list again, with its Courses.
         if (await chooseCoursesRoot()) {
@@ -826,8 +859,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return openInTurn(folder, false);
     },
     async restoreCourse() {
-      // A fresh Course hand-off means this window is the new one another window asked for. It
-      // wins over a remembered Course: VS Code may share one workspace state between empty windows.
+      const folder = storage.workspace.get(openCourseKey);
+      if (typeof folder === 'string') {
+        // A workspace that remembers a Course keeps it, and leaves the Course hand-off alone.
+        await openInTurn(folder, true);
+        return;
+      }
+      // A window that remembers no Course may be the new one another window asked for.
       const note = readPendingCourse(storage.global, clock.now());
       if (note.present) {
         // Cleared first, so the note is used once; a failure to clear is not a reason to not open.
@@ -839,12 +877,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         if (note.folder !== undefined) {
           await openInTurn(note.folder, false);
-          return;
         }
-      }
-      const folder = storage.workspace.get(openCourseKey);
-      if (typeof folder === 'string') {
-        await openInTurn(folder, true);
       }
     },
     playLesson,

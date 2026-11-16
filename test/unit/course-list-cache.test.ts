@@ -40,13 +40,13 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerOpened();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
     expect(h.ui.pickerBusy).toBe(true);
 
     finishScan();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
     expect(h.ui.pickerBusy).toBe(false);
   });
 
@@ -63,7 +63,7 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerOpened();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
     finishScan();
   });
 
@@ -94,10 +94,10 @@ describe('the Course list cache', () => {
     h.ui.pressToolbar('Refresh');
 
     expect(h.ui.pickerBusy).toBe(true);
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
     finishScan();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
   });
 
   it('keeps the new Course in the cache after Refresh', async () => {
@@ -115,7 +115,7 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerOpened();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
     finishScan();
   });
 
@@ -132,7 +132,7 @@ describe('the Course list cache', () => {
     await h.ui.pickerOpened();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
   });
 
   it('saves the rescan in the cache even when the learner closed the picker before it ended', async () => {
@@ -152,7 +152,7 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerOpened();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
     holdAgain();
   });
 
@@ -165,11 +165,11 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerOpened();
 
-    expect(rows(h.ui.picker)).toEqual(['Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Browse…', 'Add Courses root…']);
     expect(h.ui.pickerBusy).toBe(true);
     finishScan();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
   });
 
   it('does not show the Courses of other roots from the cache', async () => {
@@ -182,10 +182,10 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerOpened();
 
-    expect(rows(h.ui.picker)).toEqual(['Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Browse…', 'Add Courses root…']);
     finishScan();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Gamma', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Gamma', 'Browse…', 'Add Courses root…']);
   });
 
   it('brings nested Courses back from the cache with their category paths unchanged', async () => {
@@ -221,10 +221,10 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerOpened();
 
-    expect(rows(h.ui.picker)).toEqual(['Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Browse…', 'Add Courses root…']);
     finishScan();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
   });
 
   it('still shows the rescan when the cache cannot be written, and says so in the log', async () => {
@@ -236,7 +236,7 @@ describe('the Course list cache', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
     expect(
       h.logger.entries.some(
         (entry) => entry.level === 'warn' && entry.message.includes('disk full'),
@@ -298,18 +298,18 @@ describe('the Course list cache', () => {
 
     h.ui.pressToolbar('Refresh');
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
     olderScan.release();
     await h.settle();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
     expect(h.ui.pickerBusy).toBe(false);
     h.ui.dismissPicker();
     h.restart();
     const finishScan = h.holdReads(learning);
     void h.core.pickCourse();
     await h.ui.pickerOpened();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Beta', 'Browse…', 'Add Courses root…']);
     finishScan();
   });
 });

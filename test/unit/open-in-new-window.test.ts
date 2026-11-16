@@ -117,14 +117,18 @@ describe('opening a Course in a new window', () => {
     expect(h.player.shown).toEqual([]);
   });
 
-  it('opens the requested Course even where the window remembers another one', async () => {
+  it('leaves the hand-off alone in a workspace that remembers a Course, for the new window', async () => {
     const h = await createHarness();
-    const { beta } = await windowWithAlphaOpen(h);
+    const { alpha, beta } = await windowWithAlphaOpen(h);
     await openBetaInNewWindow(h);
 
     h.restart();
     await h.core.restoreCourse();
+    h.player.ready();
+    expect(loadedVideo(h)).toBe(h.player.resourceUri(join(alpha, 'intro.mp4')));
 
+    h.restart({ otherWorkspace: true });
+    await h.core.restoreCourse();
     h.player.ready();
     expect(loadedVideo(h)).toBe(h.player.resourceUri(join(beta, 'intro.mp4')));
   });

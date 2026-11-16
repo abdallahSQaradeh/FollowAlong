@@ -2,7 +2,7 @@
 
 #40 (spec #12, story 17) adds _Open in new window_ to a Course entry of the Course picker, so the
 learner keeps two Courses side by side. These are the choices the spec leaves open; the orchestrator
-was told them before the build.
+approved them (conditions: activation, consume once, the Seam 1 cases).
 
 ## How the new window learns which Course to open
 
@@ -10,11 +10,11 @@ was told them before the build.
   folder), so the Practice area is never changed and the Course folder is not opened as a workspace
   (story 20). The core first leaves a note in the global storage, key `pendingCourse`, as
   `{ folder, at }` (`src/core/pending-course.ts`), `at` from the Clock port.
-- **The new window takes the note once.** At activation `restoreCourse` takes the note first, and a
-  fresh one wins over the Course the workspace remembers: VS Code may give every empty window the
-  same workspace state, so a remembered Course cannot tell a new empty window from a restored one.
-  The note is cleared before the Course is opened, so it is used at most once. The Course then
-  opens like any other, so the new window remembers it per workspace (story 21).
+- **The new window takes the note once.** At activation (`onStartupFinished`, which already runs
+  `restoreCourse`; no new activation event) a window whose workspace remembers a Course restores
+  it and leaves the note alone (story 21). A window that remembers none takes the note: it is
+  cleared before the Course is opened, so it is used at most once. The Course then opens like any
+  other, so the new window remembers it per workspace.
 - **A note lives 30 seconds.** An older note, or one with a future time or a damaged value, is
   dropped unused, so a stray note never opens a Course in a window opened later.
 - **A refused window is undone.** If opening the window fails, the note is taken back, the error is
@@ -35,9 +35,13 @@ any pick. A missing Recent Course keeps _Locate…_ and _Remove_.
 
 ## Consequences
 
-- The first window to activate within 30 seconds of the button takes the note. If another window
-  starts or reloads in that time it may take it instead and open the Course there; that is the
-  price of a hand-off with no window identity, and it is bounded by the 30 seconds.
+- The first window with no remembered Course to activate within 30 seconds of the button takes the
+  note. The global storage can reach another window a little late, so another empty window opened
+  in that time might take it instead; that is the price of a hand-off with no window identity, and
+  the 30 seconds bound it.
+- If VS Code gives all empty windows one workspace state, the new window may find a remembered
+  Course and restore that instead of the note. Manual QA checks this on Windows; the answer, if
+  it fails, is to let a fresh note win.
 - Recorded as the Course hand-off in GLOSSARY.md.
 - The smoke test cannot open a second window reliably; the intent is tested at Seam 1 and the
   window by manual QA.

@@ -19,7 +19,11 @@ export const quickPickStats: { shown: number; active: string | undefined; busy: 
   busy: false,
 };
 
-type IntentItem<Intent> = vscode.QuickPickItem & { readonly intent?: Intent };
+type IntentItem<Intent> = vscode.QuickPickItem & {
+  readonly intent?: Intent;
+  /** Picking it leaves the quick pick open and tells the core (a folder to drill into). */
+  readonly keepsOpen?: boolean;
+};
 
 export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
   return openQuickPick(model, () => undefined).answer;
@@ -28,7 +32,7 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
 /** A quick pick whose list the core replaces while it is open (ADR 0058). */
 export function openQuickPick<Intent>(
   model: QuickPickModel<Intent>,
-  onToolbarButton: (intent: Intent) => void,
+  onStayOpen: (intent: Intent) => void,
 ): LivePicker<Intent> {
   const quickPick = vscode.window.createQuickPick<IntentItem<Intent>>();
   quickPick.title = model.title;
@@ -48,14 +52,23 @@ export function openQuickPick<Intent>(
       }
       return drawn;
     });
+  /** The title of the list shown: another title is another list (a folder), which starts afresh. */
+  let shownTitle: string | undefined;
   const draw = (shown: QuickPickModel<Intent>): void => {
     buttonIntents.clear();
+    const anotherList = shownTitle !== undefined && shownTitle !== shown.title;
+    shownTitle = shown.title;
+    quickPick.title = shown.title;
+    if (anotherList) {
+      // What was typed filtered the list that is gone.
+      quickPick.value = '';
+    }
     staying.clear();
     quickPick.placeholder = shown.placeholder;
     quickPick.busy = shown.busy === true;
     quickPickStats.busy = quickPick.busy;
     quickPick.buttons = buttonsOf(shown.toolbar ?? []);
-    const kept = quickPick.activeItems[0]?.label;
+    const kept = anotherList ? undefined : quickPick.activeItems[0]?.label;
     quickPick.items = shown.entries.map((entry): IntentItem<Intent> =>
       entry.kind === 'separator'
         ? { label: entry.label, kind: vscode.QuickPickItemKind.Separator }
@@ -64,13 +77,19 @@ export function openQuickPick<Intent>(
             ...(entry.description === undefined ? {} : { description: entry.description }),
             ...(entry.detail === undefined ? {} : { detail: entry.detail }),
             ...(entry.buttons === undefined ? {} : { buttons: buttonsOf(entry.buttons) }),
+            ...(entry.keepsOpen === true ? { keepsOpen: true } : {}),
             intent: entry.intent,
           },
     );
-    // The learner's highlighted item stays highlighted when the list is replaced under it.
-    const same = quickPick.items.find((item) => item.label === kept && item.intent !== undefined);
-    if (same !== undefined) {
-      quickPick.activeItems = [same];
+    // The learner's highlighted item and scroll position stay when the list is replaced under it;
+    // another list starts at its first item. VS Code keeps the highlight by position when it is
+    // told to keep the scroll position, so the first item is set, not left to chance.
+    quickPick.keepScrollPosition = !anotherList;
+    const wanted = anotherList
+      ? quickPick.items.find((item) => item.intent !== undefined)
+      : quickPick.items.find((item) => item.label === kept && item.intent !== undefined);
+    if (wanted !== undefined) {
+      quickPick.activeItems = [wanted];
     }
   };
   draw(model);
@@ -89,7 +108,11 @@ export function openQuickPick<Intent>(
       // Enter with nothing to pick (the typed text matches no item) keeps the quick pick open.
       const picked = quickPick.selectedItems[0];
       if (picked?.intent !== undefined) {
-        finish(picked.intent);
+        if (picked.keepsOpen === true) {
+          onStayOpen(picked.intent);
+        } else {
+          finish(picked.intent);
+        }
       }
     });
     quickPick.onDidTriggerItemButton(({ button }) => {
@@ -98,7 +121,7 @@ export function openQuickPick<Intent>(
         return;
       }
       if (staying.has(button)) {
-        onToolbarButton(intent);
+        onStayOpen(intent);
       } else {
         finish(intent);
       }
@@ -107,7 +130,7 @@ export function openQuickPick<Intent>(
       if (!answered && buttonIntents.has(button)) {
         buttonIntents.forEach((intent, drawn) => {
           if (drawn === button) {
-            onToolbarButton(intent);
+            onStayOpen(intent);
           }
         });
       }

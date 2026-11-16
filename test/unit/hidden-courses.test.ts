@@ -31,7 +31,7 @@ describe('hiding a stray folder from the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Stray', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Stray', 'Browse…', 'Add Courses root…']);
     expect(h.ui.buttonsOf('Stray')).toEqual(['Open in new window', 'Hide']);
     expect(h.ui.buttonsOf('Add Courses root…')).toEqual([]);
   });
@@ -45,7 +45,7 @@ describe('hiding a stray folder from the Course picker', () => {
     h.ui.press('Stray', 'Hide');
 
     expect(h.ui.picker).toBeDefined();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
   });
 
   it('leaves the Course folder as it was', async () => {
@@ -71,7 +71,7 @@ describe('hiding a stray folder from the Course picker', () => {
     h.ui.pressToolbar('Refresh');
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
   });
 
   it('stays hidden after a restart, and the next open does not list it even from the cache', async () => {
@@ -86,10 +86,10 @@ describe('hiding a stray folder from the Course picker', () => {
     h.restart();
     void h.core.pickCourse();
     await h.ui.pickerOpened();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
   });
 
   it('keeps the other Courses and hides each folder on its own', async () => {
@@ -106,7 +106,7 @@ describe('hiding a stray folder from the Course picker', () => {
     h.ui.press('Beta', 'Hide');
     h.ui.press('Alpha', 'Hide');
 
-    expect(rows(h.ui.picker)).toEqual(['Gamma', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Gamma', 'Browse…', 'Add Courses root…']);
   });
 
   it('hides a Recent Course from Recent as well, and Unhide gives it back its place in Recent', async () => {
@@ -120,12 +120,13 @@ describe('hiding a stray folder from the Course picker', () => {
       'Stray',
       '── Other Courses',
       'Alpha',
+      'Browse…',
       'Add Courses root…',
     ]);
 
     h.ui.press('Stray', 'Hide');
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
     h.ui.dismissPicker();
     const unhiding = h.core.unhideCourse();
     await h.ui.pickerShown();
@@ -138,6 +139,7 @@ describe('hiding a stray folder from the Course picker', () => {
       'Stray',
       '── Other Courses',
       'Alpha',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -151,7 +153,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
     h.ui.press('Alpha', 'Hide');
 
-    expect(rows(h.ui.picker)).toEqual(['Stray', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Stray', 'Browse…', 'Add Courses root…']);
     h.player.ready();
     expect(h.player.sent).toMatchObject([{ type: 'load' }]);
   });
@@ -178,7 +180,7 @@ describe('hiding a stray folder from the Course picker', () => {
     h.ui.press('Stray', 'Hide');
     await h.settle();
 
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
     expect(
       h.logger.entries.some(
         (entry) => entry.level === 'warn' && entry.message.includes('hidden Courses'),
@@ -231,7 +233,7 @@ describe('unhiding a Course', () => {
     expect(h.ui.messages).toEqual([{ severity: 'info', text: '“Stray” is no longer hidden.' }]);
     void h.core.pickCourse();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Stray', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Stray', 'Browse…', 'Add Courses root…']);
   });
 
   it('keeps the other hidden Courses hidden, and the Course hidden when the learner closes the list', async () => {
@@ -258,6 +260,6 @@ describe('unhiding a Course', () => {
 
     void h.core.pickCourse();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Alpha', 'Browse…', 'Add Courses root…']);
   });
 });
