@@ -302,9 +302,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
         if (existing?.visible === true) {
           this.adopt(spot, existing);
         }
-        // [MUTATION-49] keepShown also after a focus return to a terminal (to be reverted).
-        void this.returnFocus().then(() => {
-          this.keepShown(spot);
+        void this.returnFocus().then((focused) => {
+          // Focus return wins (#12 D12): a terminal the learner types in stays in front, even
+          // when it hides the video in the bottom panel.
+          if (focused !== 'terminal') {
+            this.keepShown(spot);
+          }
         });
       },
       (error: unknown) => {
