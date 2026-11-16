@@ -34,6 +34,7 @@ const openCourseKey = 'openCourse';
 
 /** How often Progress is saved while a Lesson plays (spec #12, Progress store). */
 const saveIntervalMs = 5000;
+import { createTerminalKeysOffer } from './terminal-keys.js';
 
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
@@ -456,6 +457,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return progress?.save() ?? Promise.resolve();
   }
 
+  /** Offers, once, to add the one-press commands to the terminal's skip-shell setting. */
+  const offerTerminalKeys = createTerminalKeysOffer(ports);
+
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
     current = { lesson, startAt, autoplay, engaged: false };
@@ -476,6 +480,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       loadCurrent();
     }
     refreshStatusBar();
+    offerTerminalKeys();
   }
 
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */

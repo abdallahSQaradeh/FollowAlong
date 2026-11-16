@@ -17,6 +17,7 @@ import type { QuickPickModel } from '../../src/core/quick-pick.js';
 import type { StatusBarModel } from '../../src/core/status-bar.js';
 import {
   FileSystemError,
+  type Answer,
   type Clock,
   Config,
   ConversionRequest,
@@ -29,7 +30,9 @@ import {
   PlayerShowResult,
   Ports,
   ResourceTarget,
+  Question,
   Storage,
+  TerminalSettings,
   UiSink,
   UserMessage,
 } from '../../src/core/ports.js';
@@ -147,14 +150,19 @@ export class FakeConverter implements Converter {
 class MemoryStore implements KeyValueStore {
   private readonly values = new Map<string, unknown>();
 
+  /**
+   * `settlesLater`: the promise of `set` settles on a later turn, as a VS Code memento's does once
+   * it is on disk, so a test can reach the moments in between (a Course open stores its folder).
+   */
+  constructor(private readonly settlesLater = false) {}
+
   get(key: string): unknown {
     return this.values.get(key);
   }
 
   set(key: string, value: unknown): Promise<void> {
     this.values.set(key, structuredClone(value));
-    // A VS Code memento writes to disk: its promise settles on a later turn, not at once.
-    return new Promise((resolve) => setImmediate(resolve));
+    return this.settlesLater ? new Promise((resolve) => setImmediate(resolve)) : Promise.resolve();
   }
 }
 
@@ -180,8 +188,34 @@ export class FakeConfig implements Config {
   }
 }
 
+/** The learner's user-level `terminal.integrated.commandsToSkipShell`, and what was written to it. */
+export class FakeTerminalSettings implements TerminalSettings {
+  /** The stored value: `undefined` until the learner sets it. */
+  value: unknown;
+  /** Every value written, in order. */
+  readonly writes: (readonly string[])[] = [];
+  /** Set to make writing fail, as VS Code does when settings.json cannot be saved. */
+  writeFailure: string | undefined;
+
+  skipShellCommands(): unknown {
+    return this.value;
+  }
+
+  setSkipShellCommands(commands: readonly string[]): Promise<void> {
+    if (this.writeFailure !== undefined) {
+      return Promise.reject(new Error(this.writeFailure));
+    }
+    this.writes.push(commands);
+    this.value = [...commands];
+    return Promise.resolve();
+  }
+}
+
 export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
+  /** Every question the core asked, in order. */
+  readonly questions: Question[] = [];
+  private questionAnswer: ((answer: Answer | undefined) => void) | undefined;
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
   /** The status bar items the learner sees now; none until the core shows some. */
@@ -200,6 +234,23 @@ export class RecordingUi implements UiSink {
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
+  }
+
+  ask(question: Question): Promise<Answer | undefined> {
+    this.questions.push(question);
+    return new Promise((resolve) => {
+      this.questionAnswer = resolve;
+    });
+  }
+
+  /** The learner answers the open question: a button, or `undefined` for closing it. */
+  answerQuestion(answer: Answer | undefined): void {
+    const resolve = this.questionAnswer;
+    if (resolve === undefined) {
+      throw new Error('No question is open');
+    }
+    this.questionAnswer = undefined;
+    resolve(answer);
   }
 
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
@@ -283,6 +334,7 @@ export interface Harness {
   readonly config: FakeConfig;
   readonly ui: RecordingUi;
   readonly logger: RecordingLogger;
+  readonly terminalSettings: FakeTerminalSettings;
   readonly storage: Storage;
   /** The temp dir every fixture lives in. */
   readonly root: string;
@@ -318,9 +370,10 @@ export async function createHarness(): Promise<Harness> {
   const config = new FakeConfig();
   const ui = new RecordingUi();
   const logger = new RecordingLogger();
+  const terminalSettings = new FakeTerminalSettings();
   const storage: Storage = {
     global: new MemoryStore(),
-    workspace: new MemoryStore(),
+    workspace: new MemoryStore(true),
     folder: join(root, 'extension-storage'),
   };
   const nodeFileSystem = createNodeFileSystem();
@@ -362,6 +415,7 @@ export async function createHarness(): Promise<Harness> {
     config,
     ui,
     logger,
+    terminalSettings,
   });
   const cores: FollowAlong[] = [];
   onTestFinished(async () => {
@@ -387,6 +441,7 @@ export async function createHarness(): Promise<Harness> {
     config,
     ui,
     logger,
+    terminalSettings,
     storage,
     root,
     makeUnreadable(folder) {
