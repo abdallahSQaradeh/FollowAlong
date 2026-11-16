@@ -68,6 +68,10 @@ _Avoid_: Workflow, session
 One keypress that moves the playhead back or forward by a fixed number of seconds: the short step (5 s by default) or the long step (30 s by default). Both sizes are settings.
 _Avoid_: Skip, jump, scrub
 
+**Rewind**:
+The seconds the video jumps back when the learner resumes a paused Lesson by hand, so they rehear the last words (the `resumeRewind` setting, 0 by default). Automatic resumes never rewind.
+_Avoid_: Replay, back-up
+
 **Speed ladder**:
 The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
 _Avoid_: Speed slider, rate list

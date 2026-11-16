@@ -25,6 +25,11 @@ export type PlayerCommand =
   | { readonly type: 'pause' }
   /** Moves the playhead by `seconds` (negative: back), stopping at the start or the end. */
   | { readonly type: 'seekBy'; readonly seconds: number }
+  /**
+   * The seconds the player steps back when the learner resumes a paused Lesson with a click on the
+   * picture (Rewind, ADR 0016). 0 means none. Holds until the next one; a `load` does not reset it.
+   */
+  | { readonly type: 'setResumeRewind'; readonly seconds: number }
   /** Sets the playback rate (1 is normal speed); it stays for the Lessons that follow. */
   | { readonly type: 'setRate'; readonly rate: number }
   /**
@@ -104,6 +109,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return typeof raw.seconds === 'number' && Number.isFinite(raw.seconds)
         ? { type: 'seekBy', seconds: raw.seconds }
         : undefined;
+    case 'setResumeRewind':
+      return isSeconds(raw.seconds) ? { type: 'setResumeRewind', seconds: raw.seconds } : undefined;
     case 'setRate':
       return isRate(raw.rate) ? { type: 'setRate', rate: raw.rate } : undefined;
     case 'showNext':
