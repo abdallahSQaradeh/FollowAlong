@@ -25,6 +25,8 @@ export const commands = {
   seekForwardShort: 'followalong.seekForwardShort',
   seekBackLong: 'followalong.seekBackLong',
   seekForwardLong: 'followalong.seekForwardLong',
+  /** `Ctrl+'` `L`: the Lesson picker. */
+  goToLesson: 'followalong.goToLesson',
 } as const;
 
 /**
@@ -120,6 +122,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.seekForwardLong, () => {
       core.seekStep('long', 'forward');
     }),
+    register(commands.goToLesson, () => core.goToLesson()),
   );
   return testHooks;
 }
