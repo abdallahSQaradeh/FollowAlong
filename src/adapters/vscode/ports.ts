@@ -43,6 +43,9 @@ export function createUiSink(): UiSink {
       }[severity];
       void show(text);
     },
+    showLessonTree() {
+      // The tree view arrives with the next edit in this slice.
+    },
   };
 }
 

@@ -11,6 +11,7 @@ import { onTestFinished } from 'vitest';
 
 import { createNodeFileSystem } from '../../src/adapters/node/file-system.js';
 import { createFollowAlong, type FollowAlong } from '../../src/core/follow-along.js';
+import type { LessonTreeModel } from '../../src/core/lesson-tree.js';
 import type { LogEntry, Logger } from '../../src/core/logger.js';
 import type {
   Clock,
@@ -161,9 +162,15 @@ export class FakeConfig implements Config {
 
 export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
+  /** The Lesson tree the learner sees in the activity bar now. */
+  lessonTree: LessonTreeModel | undefined;
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
+  }
+
+  showLessonTree(model: LessonTreeModel): void {
+    this.lessonTree = model;
   }
 }
 
