@@ -160,4 +160,80 @@ describe('Reset Section', () => {
       startAt: 7,
     });
   });
+
+  it('starts the Lesson that is playing again: its 10 s of play count from the reset', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', twoSections);
+    await h.core.openCourse(course);
+    h.player.ready();
+    const lesson = 'Basics/01 Intro.webm';
+    h.core.playLesson(lesson);
+    playUntil(h, lesson, 12);
+    expect(glyphs(h)[lesson]).toBe('◐');
+
+    await h.core.resetSection('Basics/');
+    h.player.emit({ type: 'timeUpdate', lessonId: lesson, position: 14, duration: 600 });
+
+    expect(glyphs(h)[lesson]).toBe('○');
+    for (let position = 16; position <= 26; position += 2) {
+      h.player.emit({ type: 'timeUpdate', lessonId: lesson, position, duration: 600 });
+    }
+    expect(glyphs(h)[lesson]).toBe('◐');
+  });
+});
+
+describe('Reset Course progress', () => {
+  it('asks first, and clears the whole Course only once the learner agrees', async () => {
+    const h = await createHarness();
+    const course = await openWithProgress(h);
+    await h.core.markSectionDone('Basics/');
+    // The Lesson played last is not the Course's first.
+    h.core.playLesson('Basics/02 Setup.webm');
+    playUntil(h, 'Basics/02 Setup.webm', 30);
+    pause(h, 'Basics/02 Setup.webm');
+
+    const resetting = h.core.resetCourseProgress();
+    await h.settle();
+
+    expect(h.ui.questions.filter((question) => question.text.includes('Reset'))).toHaveLength(1);
+    expect(h.ui.questions.at(-1)?.text).toContain('“course”');
+    expect(glyphs(h)['Basics/01 Intro.webm']).toBe('✓');
+
+    h.ui.answerQuestion('accept');
+    await resetting;
+
+    expect(Object.values(glyphs(h))).toEqual(['○', '○', '○', '○']);
+    expect(h.ui.lessonTree?.summary?.description).toBe('0/4 · 0%');
+
+    // Reopening goes to the first Lesson from the start, as for a Course never played.
+    expect(await reopen(h, course)).toMatchObject({
+      lessonId: 'Advanced/03 Closures.webm',
+      startAt: 0,
+    });
+    h.core.playLesson('Basics/02 Setup.webm');
+    expect(h.player.sent.at(-1)).toMatchObject({ startAt: 0 });
+  });
+
+  it.each([
+    ['declines', 'decline'],
+    ['closes the question', undefined],
+  ] as const)('changes nothing when the learner %s', async (_what, answer) => {
+    const h = await createHarness();
+    const course = await openWithProgress(h);
+    await h.core.markSectionDone('Basics/');
+
+    const resetting = h.core.resetCourseProgress();
+    await h.settle();
+    h.ui.answerQuestion(answer);
+    await resetting;
+
+    expect(glyphs(h)).toEqual({
+      'Basics/01 Intro.webm': '✓',
+      'Basics/02 Setup.webm': '✓',
+      'Advanced/03 Closures.webm': '◐',
+      'Advanced/04 Prototypes.webm': '○',
+    });
+    await reopen(h, course);
+    expect(glyphs(h)['Basics/01 Intro.webm']).toBe('✓');
+  });
 });

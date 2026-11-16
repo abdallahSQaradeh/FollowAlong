@@ -129,6 +129,12 @@ export interface FollowAlong {
    * Resolves once the change is saved.
    */
   resetSection(sectionId: string): Promise<void>;
+  /**
+   * `FollowAlong: Reset Course progress`: asks the learner to confirm, then clears the open
+   * Course's Progress: every done mark and position, and the Lesson it reopens on. Resources and
+   * prepared sound are untouched. Resolves once the change is saved, or when nothing was changed.
+   */
+  resetCourseProgress(): Promise<void>;
   /** The window is closing: saves Progress, then stops. */
   close(): Promise<void>;
   /** Stops at once, without saving (tests use it as a crash). */
@@ -758,8 +764,47 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     resetSection(sectionId) {
       return changeSection(sectionId, 'reset', (recorder, lessons) => {
-        recorder.clear(lessons.map((lesson) => lesson.id));
+        const lessonIds = lessons.map((lesson) => lesson.id);
+        recorder.clear(lessonIds);
+        loaded.progressCleared(lessonIds);
       });
+    },
+    async resetCourseProgress() {
+      if (refusedWhileOpening()) {
+        return;
+      }
+      // The Course and its Progress are fixed now, before the question is awaited (ADR 0024).
+      const course = openedCourse;
+      const recorder = progress;
+      if (course === undefined || recorder === undefined) {
+        ui.showMessage({ severity: 'info', text: 'Open a Course first, then reset its progress.' });
+        return;
+      }
+      const name = basename(course.folder);
+      const answer = await ui.ask({
+        text: `Reset all progress in “${name}”? Every Lesson's done mark and position is cleared. Resources and sound files are kept.`,
+        accept: 'Reset progress',
+        decline: 'Cancel',
+      });
+      if (answer !== 'accept') {
+        return;
+      }
+      if (openedCourse !== course) {
+        // The question is not modal: the learner opened another Course meanwhile.
+        logger.log({
+          level: 'info',
+          message: `Not resetting ${course.folder}: it is no longer open.`,
+        });
+        ui.showMessage({
+          severity: 'info',
+          text: `FollowAlong did not reset “${name}”: it is no longer open. Open it and try again.`,
+        });
+        return;
+      }
+      recorder.clearAll();
+      loaded.progressCleared(lessonsInOrder(course).map((lesson) => lesson.id));
+      refreshTree();
+      await recorder.save();
     },
     async attachResource(lessonId, absolutePath) {
       const course = openedCourse;

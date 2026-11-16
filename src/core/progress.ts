@@ -34,6 +34,9 @@ export interface LastLesson {
   readonly savedAt: number;
 }
 
+/** The `lessonId` of a {@link LastLesson} that says no Lesson was played last (ADR 0061). */
+export const noLastLesson = '';
+
 /** Version 1 of `progress.json`'s `data`. */
 export interface CourseProgress {
   /** By Lesson id (the Lesson's path in the Course, with `/`). */
@@ -128,6 +131,11 @@ function savedAfter(before: LessonProgress | undefined, now: number): number {
   return before === undefined ? now : Math.max(now, before.savedAt + 1);
 }
 
+/** As {@link savedAfter}, for the Lesson played last. */
+function savedAfterLast(before: LastLesson, now: number): number {
+  return Math.max(now, before.savedAt + 1);
+}
+
 /** A Lesson's state: not started, in progress or done (ADR 0030). */
 export function lessonStatus(progress: CourseProgress, lessonId: string): LessonStatus {
   return lessonEntry(progress.lessons, lessonId)?.status ?? 'notStarted';
@@ -161,6 +169,11 @@ export interface ProgressRecorder {
    * a removed one would come back from the other copy (ADR 0061). Written by the next `save`.
    */
   clear(lessonIds: readonly string[]): void;
+  /**
+   * Clears every Lesson's done mark and position, and the Lesson the Course reopens on, as if the
+   * Course had never been played. Written by the next `save`.
+   */
+  clearAll(): void;
   /** Writes what was recorded since the last save, after any save already under way. */
   save(): Promise<void>;
 }
@@ -246,6 +259,20 @@ export async function openProgress(
     }
   }
 
+  function clearLessons(lessonIds: readonly string[]): void {
+    const lessons: Record<string, LessonProgress> = { ...progress.lessons };
+    for (const lessonId of lessonIds) {
+      const before = lessonEntry(lessons, lessonId);
+      lessons[lessonId] = {
+        position: 0,
+        duration: 0,
+        savedAt: savedAfter(before, clock.now()),
+      };
+    }
+    progress = { ...progress, lessons };
+    unsaved = true;
+  }
+
   return {
     current: () => progress,
     record(lessonId, seen) {
@@ -280,18 +307,15 @@ export async function openProgress(
       progress = { ...progress, lessons };
       unsaved = true;
     },
-    clear(lessonIds) {
-      const lessons: Record<string, LessonProgress> = { ...progress.lessons };
-      for (const lessonId of lessonIds) {
-        const before = lessonEntry(lessons, lessonId);
-        lessons[lessonId] = {
-          position: 0,
-          duration: 0,
-          savedAt: savedAfter(before, clock.now()),
+    clear: clearLessons,
+    clearAll() {
+      clearLessons(Object.keys(progress.lessons));
+      if (progress.last !== undefined) {
+        progress = {
+          ...progress,
+          last: { lessonId: noLastLesson, savedAt: savedAfterLast(progress.last, clock.now()) },
         };
       }
-      progress = { ...progress, lessons };
-      unsaved = true;
     },
     save() {
       saving = saving.then(write);
