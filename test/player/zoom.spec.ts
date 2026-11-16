@@ -805,3 +805,72 @@ test.describe('a double-click at 1×', () => {
     await expect(area).toHaveAttribute('aria-pressed', 'true');
   });
 });
+
+test.describe('the zoom key commands', () => {
+  function areaButton(page: Page) {
+    return page.getByRole('toolbar', { name: 'Zoom' }).getByRole('button', {
+      name: 'Zoom to an area',
+    });
+  }
+
+  test('zoom in steps 1.25× toward the middle, up to 8×, as the ＋ button does', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await player.post({ type: 'zoom', action: 'in' });
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+    expectArea(await shownArea(page), { left: 0.1, top: 0.1, width: 0.8, height: 0.8 });
+    for (let press = 0; press < 12; press += 1) {
+      await player.post({ type: 'zoom', action: 'in' });
+    }
+    await expect(page.getByLabel('Zoom level')).toHaveText('8×');
+    await player.waitForEvent({ type: 'zoomChanged', level: 8 });
+  });
+
+  test('zoom out steps back, and stops at the whole picture', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    await player.post({ type: 'zoom', action: 'in' });
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+
+    await player.post({ type: 'zoom', action: 'out' });
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    await player.post({ type: 'zoom', action: 'out' });
+
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    await expect(page.getByLabel('Zoom level')).toHaveText('1×');
+  });
+
+  test('area mode turns on, makes the next drag draw a box, and turns off with a second press', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await player.post({ type: 'zoom', action: 'areaMode' });
+    await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'true');
+    await player.post({ type: 'zoom', action: 'areaMode' });
+    await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'false');
+
+    await player.post({ type: 'zoom', action: 'areaMode' });
+    await drag(page, { x: 320, y: 180 }, { x: 960, y: 540 });
+    await player.waitForEvent({ type: 'zoomChanged', level: 2 });
+    expectArea(await shownArea(page), { left: 0.25, top: 0.25, width: 0.5, height: 0.5 });
+    await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('do not play, pause or take focus: only the picture changes', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await player.post({ type: 'zoom', action: 'in' });
+    await player.post({ type: 'zoom', action: 'out' });
+    await player.post({ type: 'zoom', action: 'areaMode' });
+
+    expect((await player.video()).paused).toBe(true);
+    expect(await interactions(player)).toBe(0);
+  });
+});

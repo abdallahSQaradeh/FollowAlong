@@ -126,6 +126,21 @@ export class ZoomControls {
     this.show(wholePicture);
   }
 
+  /** Zooms in one step around the middle, as the toolbar's ＋ does (the `=` key). */
+  zoomIn(): void {
+    this.show(zoomBy(this.view, zoomStep));
+  }
+
+  /** Zooms out one step around the middle, as the toolbar's − does (the `-` key). */
+  zoomOut(): void {
+    this.show(zoomBy(this.view, 1 / zoomStep));
+  }
+
+  /** Turns area mode on or off, as the toolbar's area button does (the `Z` key). */
+  toggleAreaMode(): void {
+    this.setAreaMode(!this.areaMode);
+  }
+
   /** What part of the picture the page shows now. */
   get shown(): ZoomView {
     return this.view;
@@ -358,13 +373,13 @@ export class ZoomControls {
   private listenToToolbar(): void {
     const actions: Readonly<Record<string, () => void>> = {
       in: () => {
-        this.show(zoomBy(this.view, zoomStep));
+        this.zoomIn();
       },
       out: () => {
-        this.show(zoomBy(this.view, 1 / zoomStep));
+        this.zoomOut();
       },
       area: () => {
-        this.setAreaMode(!this.areaMode);
+        this.toggleAreaMode();
       },
       reset: () => {
         this.reset();
