@@ -384,6 +384,72 @@ describe('sound in use while the audio cache is being pruned', () => {
   });
 });
 
+describe('a record that names files that are not prepared sound', () => {
+  /** A Course whose own files the record wrongly names, over a limit of nothing. */
+  async function seedRecordWithOwnFiles(h: Harness): Promise<{ first: string; second: string }> {
+    // The only real sidecar: older than the Course opened next.
+    const first = await openCourse(h, 'first', 1);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    const second = await h.folder('second', {
+      ...lessons(1),
+      '01 Extra.mp3': 'a sound file the learner keeps beside the Lessons',
+      '.followalong/sound/notes.txt': 'notes of the learner',
+    });
+    // A damaged, hand-edited or buggy record: the oldest "opened" files are the learner's own.
+    const record = h.storage.global.get('audioCache') as { version: number; files: unknown[] };
+    await h.storage.global.set('audioCache', {
+      version: record.version,
+      files: [
+        ...record.files,
+        ...[
+          join(second, '01 Lesson.mp4'),
+          join(second, '01 Extra.mp3'),
+          join(second, '.followalong', 'sound', 'notes.txt'),
+        ].map((path) => ({ path, openedMs: 0 })),
+      ],
+    });
+    await h.core.openCourse(second);
+    h.player.ready(false);
+    await h.settle();
+    return { first, second };
+  }
+
+  const ownFiles = ['.followalong/sound/notes.txt', '01 Extra.mp3', '01 Lesson.mp4'];
+
+  it('never deletes them when the cache is pruned, and says it left them out', async () => {
+    const h = await createHarness();
+    h.config.set('audioCacheLimit', 0);
+    const { first, second } = await seedRecordWithOwnFiles(h);
+    await finishAll(h);
+
+    expect(await h.listFiles(second)).toEqual(expect.arrayContaining(ownFiles) as string[]);
+    expect(await kept(first)).toEqual([]);
+    expect(await kept(second)).toEqual(['01']);
+    const lines = h.logger.entries.filter((entry) =>
+      entry.message.includes('not a prepared sound file'),
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 'warn' });
+  });
+
+  it('never deletes them when the cache is cleared', async () => {
+    const h = await createHarness();
+    const { first, second } = await seedRecordWithOwnFiles(h);
+    await finishAll(h);
+
+    await h.core.clearAudioCache();
+
+    expect(await h.listFiles(second)).toEqual(expect.arrayContaining(ownFiles) as string[]);
+    expect(await kept(first)).toEqual([]);
+    expect(await kept(second)).toEqual(['01']);
+    expect(h.ui.messages.at(-1)).toEqual({
+      severity: 'info',
+      text: 'FollowAlong deleted 1 prepared sound file (13 bytes). The loaded Lesson’s sound stays.',
+    });
+  });
+});
+
 describe('Clear audio cache', () => {
   it('deletes every prepared sound file in both stores, and nothing else', async () => {
     const h = await createHarness();

@@ -9,9 +9,9 @@
  * folders of the open Course and in the fallback storage are added to it, with the day they were
  * made as the day they were opened.
  */
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
-import { fallbackRoot } from './course-data.js';
+import { courseDataFolderName, fallbackRoot } from './course-data.js';
 import { keyOf } from './courses-roots.js';
 import { messageOf } from './logger.js';
 import { FileSystemError, type DirectoryEntry, type Ports } from './ports.js';
@@ -136,21 +136,55 @@ export function createAudioCache(
     return run;
   }
 
-  function readRecord(): Map<string, OpenedFile> {
+  /**
+   * Whether `path` is a prepared sound file, the only kind of file the cache ever deletes: an
+   * `.mp3` in a folder named `sound` of Course data, either a Course's `.followalong` or a folder
+   * directly in the fallback storage's `courses`. A record that names anything else (damaged,
+   * edited by hand, written by a bug) never makes the cache delete a learner's own file.
+   */
+  function isPreparedSound(path: string): boolean {
+    if (!path.toLowerCase().endsWith('.mp3')) {
+      return false;
+    }
+    const soundFolder = dirname(path);
+    if (keyOf(basename(soundFolder)) !== keyOf(soundFolderName)) {
+      return false;
+    }
+    const courseData = dirname(soundFolder);
+    return (
+      keyOf(basename(courseData)) === keyOf(courseDataFolderName) ||
+      keyOf(dirname(courseData)) === keyOf(fallbackRoot(storage.folder))
+    );
+  }
+
+  /** The record's files, and how many of its entries were left out for not being prepared sound. */
+  function readRecord(): { readonly opened: Map<string, OpenedFile>; readonly dropped: number } {
     const stored: unknown = storage.global.get(recordKey);
     const record =
       typeof stored === 'object' && stored !== null && 'version' in stored && 'files' in stored
         ? stored
         : undefined;
     const opened = new Map<string, OpenedFile>();
+    let dropped = 0;
     if (record?.version === recordVersion && Array.isArray(record.files)) {
       for (const entry of record.files as unknown[]) {
-        if (isOpenedFile(entry)) {
+        if (!isOpenedFile(entry)) {
+          continue;
+        }
+        if (isPreparedSound(entry.path)) {
           opened.set(keyOf(entry.path), { path: entry.path, openedMs: entry.openedMs });
+        } else {
+          dropped += 1;
         }
       }
     }
-    return opened;
+    if (dropped > 0) {
+      logger.log({
+        level: 'warn',
+        message: `Left ${String(dropped)} entr${dropped === 1 ? 'y' : 'ies'} out of the audio cache record: not a prepared sound file.`,
+      });
+    }
+    return { opened, dropped };
   }
 
   /** The record as it is stored: one text, so a record that did not change is not written. */
@@ -206,8 +240,9 @@ export function createAudioCache(
     readonly opened: Map<string, OpenedFile>;
     readonly recordBefore: string;
   }> {
-    const opened = readRecord();
-    const recordBefore = recordText(opened);
+    const { opened, dropped } = readRecord();
+    // A record that had entries left out is written back, so they are not left out again.
+    const recordBefore = dropped > 0 ? '' : recordText(opened);
     const paths = new Map<string, string>();
     for (const entry of opened.values()) {
       paths.set(keyOf(entry.path), entry.path);
@@ -239,6 +274,11 @@ export function createAudioCache(
 
   /** Deletes `file`: `true` when this call took it away, `false` when it did not. */
   async function deleteFile(file: SoundFile, problems: string[]): Promise<boolean> {
+    if (!isPreparedSound(file.path)) {
+      // Never reached for a file found by looking or read from the record: the last guard.
+      problems.push(`${file.path}: not a prepared sound file, left alone.`);
+      return false;
+    }
     try {
       await fileSystem.remove(file.path);
       return true;
@@ -367,8 +407,8 @@ export function createAudioCache(
   /** Changes the record under the cache's turn; `change` says whether it changed anything. */
   function updateRecord(change: (opened: Map<string, OpenedFile>) => boolean): void {
     void exclusive(async () => {
-      const opened = readRecord();
-      if (change(opened)) {
+      const { opened, dropped } = readRecord();
+      if (change(opened) || dropped > 0) {
         await writeRecord(opened);
       }
     }).catch((error: unknown) => {

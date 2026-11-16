@@ -29,6 +29,14 @@ the File system port, which gained `remove(path)`; adapters only delete the file
   is not known, and the run deletes nothing and logs one line. Only this window knows its loaded
   Lesson: another window's loaded Lesson is protected only by being the newest, so it is the last
   to go.
+- **Only prepared sound is ever deleted.** One predicate decides it: an `.mp3` in a folder named
+  `sound` whose parent is a `.followalong` folder or a folder directly under the fallback storage's
+  `courses` (compared with `keyOf`). It is applied when the record is read, where an entry that
+  fails it is left out, logged as one `warn` line and written back out of the record, and again
+  right before every `remove`. So a damaged, hand-edited or buggy record can never make a prune or
+  Clear delete a learner's own file (a Lesson video, an `.mp3` kept beside the Lessons, a note in
+  `sound`). The second check cannot be reached from the record, whose entries the first already
+  filtered; it is there so a later change to how files are found cannot skip the rule.
 - **The limit** is `followalong.audioCacheLimit`, in GB (1 GB = 1024³ bytes), default 5, minimum 0.
   Anything that is not a number of at least 0 means 5. It is read at each look, and a change to it
   prunes at once.
