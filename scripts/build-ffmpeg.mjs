@@ -11,6 +11,8 @@
  *   --work  where sources are downloaded and built (default: a folder in the system temp dir)
  *        node scripts/build-ffmpeg.mjs --check-imports [<ffmpeg.exe>]
  *   builds nothing: lists the DLLs an ffmpeg.exe imports and fails on any outside Windows.
+ *        node scripts/build-ffmpeg.mjs --fetch-sources [<folder>]
+ *   builds nothing: downloads the two source tarballs, checked against their SHA-256.
  * Needs on PATH: x86_64-w64-mingw32-gcc, make, nasm, tar. Runs commands with argument arrays and
  * never through a shell.
  */
@@ -220,6 +222,15 @@ function option(argv, name, fallback) {
 }
 
 async function main() {
+  const fetchAt = process.argv.indexOf('--fetch-sources');
+  if (fetchAt >= 0) {
+    // CI uploads these next to the .vsix as the corresponding source (LGPL 2.1 section 6(d)).
+    const folder = resolve(process.argv[fetchAt + 1] ?? join(root, 'ffmpeg-source'));
+    mkdirSync(folder, { recursive: true });
+    await download(pinned.ffmpeg, folder);
+    await download(pinned.lame, folder);
+    return;
+  }
   if (process.platform !== 'linux') {
     throw new Error('The ffmpeg is cross-compiled on Linux (CI builds it on ubuntu-latest).');
   }
@@ -301,6 +312,11 @@ async function main() {
       `LAME ${pinned.lame.version}, statically linked (LGPL)`,
       `  source: ${pinned.lame.urls.join('\n          ')}`,
       `  SHA-256: ${pinned.lame.sha256}`,
+      '',
+      'The corresponding source: the two tarballs above, and scripts/build-ffmpeg.mjs with',
+      'scripts/bundled-ffmpeg.json (both are in this package). They are also distributed',
+      'alongside the .vsix, as the "ffmpeg-source" artifact of the same CI run that built the',
+      '.vsix.',
       '',
       `Cross-compiled for ${target} by scripts/build-ffmpeg.mjs, from the sources above, with:`,
       ...toolVersions().map((line) => `  ${line}`),

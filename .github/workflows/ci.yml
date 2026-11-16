@@ -123,6 +123,22 @@ jobs:
           path: bin/
           if-no-files-found: error
 
+      # The corresponding source, distributed beside the .vsix (LGPL 2.1 section 6(d), ADR 0070):
+      # the exact tarballs, checked against their SHA-256, with the build script and its settings.
+      # Same run as the followalong-vsix artifact; retention is the repository default.
+      - name: Fetch the exact source tarballs (checked against their SHA-256)
+        run: node scripts/build-ffmpeg.mjs --fetch-sources ffmpeg-source
+
+      - name: Upload ffmpeg-source
+        uses: actions/upload-artifact@v6
+        with:
+          name: ffmpeg-source
+          path: |
+            ffmpeg-source/
+            scripts/build-ffmpeg.mjs
+            scripts/bundled-ffmpeg.json
+          if-no-files-found: error
+
   windows:
     name: windows (typecheck, unit, smoke, bundled ffmpeg, package)
     needs: ffmpeg

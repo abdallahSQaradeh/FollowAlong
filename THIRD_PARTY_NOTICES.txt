@@ -225,10 +225,10 @@ The build is `scripts/build-ffmpeg.mjs` with `scripts/bundled-ffmpeg.json` (vers
 every configure option), both included in this package: on Linux with mingw-w64, `node
 scripts/build-ffmpeg.mjs` builds an `ffmpeg.exe` from the same sources with the same options (the
 compiler versions it used are in `bin/FFMPEG-BUILD.txt`). Everything needed to rebuild it is the two
-public tarballs above plus those two files, which are in this package. This is also FollowAlong's
-written offer: for as long as this version of FollowAlong is distributed, and for at least three
-years after, anyone who has this package can ask the publisher for a copy of those tarballs on a
-medium customarily used for software interchange, for the cost of making it, by opening an issue at
-https://github.com/abdallahSQaradeh/FollowAlong. You may
+public tarballs above plus those two files, which are in this package. The corresponding source is
+also distributed from the same place as this package (LGPL 2.1, section 6(d)): the two tarballs
+above, byte for byte, with `scripts/build-ffmpeg.mjs` and `scripts/bundled-ffmpeg.json`, are the
+`ffmpeg-source` artifact of the same CI run that built this `.vsix` (a run's `followalong-vsix` and
+`ffmpeg-source` artifacts sit side by side). You may
 replace the bundled program with an ffmpeg of your own, built from modified sources: set
 `followalong.ffmpegPath` to it, and FollowAlong runs that one instead.

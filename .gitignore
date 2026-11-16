@@ -2,6 +2,7 @@ node_modules/
 out/
 bin/
 vsix-unpacked/
+ffmpeg-source/
 .logs/
 .claude/logs/
 .vscode-test/

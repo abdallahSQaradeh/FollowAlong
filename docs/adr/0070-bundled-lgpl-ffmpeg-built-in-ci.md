@@ -48,8 +48,14 @@ when `bin/` lacks any of the four files, so a `.vsix` never ships the program wi
   licence, what it was built with and without), the full LGPL 2.1 text of FFmpeg and the LGPL text of LAME.
 - **Source.** FFmpeg here is unmodified, with no patch. The exact tarballs and checksums are in the
   notice and in `bin/FFMPEG-BUILD.txt`; the build script and its settings ship in the `.vsix`, so anyone
-  holding it can rebuild the same program. The notice is also the written offer: a copy of the tarballs
-  on request, at cost, for three years after the version is last distributed.
+  holding it can rebuild the same program. The corresponding source is also **distributed from the same
+  place as the binary** (LGPL 2.1 §6(d)): the CI run that builds the `.vsix` uploads the exact tarballs,
+  re-checked against their SHA-256, with `scripts/build-ffmpeg.mjs` and `scripts/bundled-ffmpeg.json`,
+  as the artifact `ffmpeg-source`, next to the `followalong-vsix` artifact of the same run, at the
+  repository's default artifact retention. There is no written offer to a person: a contact would be
+  a personal or repository address in a shipped file, and a link to a repository fails when it is
+  private. The notice and `bin/FFMPEG-BUILD.txt` say where the source is. Source: the orchestrator's
+  decision D13 on #12.
 - **Relinking and replacing.** `ffmpeg.exe` is a separate program FollowAlong starts, not code linked
   into it. A user who wants a modified ffmpeg builds it from the sources and points
   `followalong.ffmpegPath` at it (ADR 0071); that is the freedom LGPL §6 protects.
