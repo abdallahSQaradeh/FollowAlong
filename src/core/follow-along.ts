@@ -12,9 +12,9 @@ import {
   UnreadableCourseDataError,
   type CourseData,
 } from './course-data.js';
-import { buildCoursePicker } from './course-picker.js';
-import { scanCourses } from './course-scanner.js';
-import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
+import { buildCoursePicker, type RecentCourse } from './course-picker.js';
+import { folderLabel, scanCourses, type ScannedCourse } from './course-scanner.js';
+import { addCoursesRoot, keyOf, playerFolders, readCoursesRoots } from './courses-roots.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
@@ -38,6 +38,7 @@ import {
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
+import { readRecent, recordOpened } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
@@ -323,6 +324,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await storage.workspace.set(openCourseKey, folder);
       ui.showLessonTree(buildLessonTree(course, resources));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
+      await recordOpened(storage.global, folder);
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
       if (last === undefined) {
@@ -418,6 +420,36 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     });
   }
 
+  /** Whether the folder is gone: the folder is not there, or its drive is not. */
+  async function isMissing(folder: string): Promise<boolean> {
+    try {
+      await ports.fileSystem.readDirectory(folder);
+      return false;
+    } catch (error) {
+      if (error instanceof FileSystemError) {
+        return error.reason === 'notFound';
+      }
+      throw error;
+    }
+  }
+
+  /** The Recent Courses as the picker shows them: named and filed as the scan has them. */
+  async function recentCourses(scanned: readonly ScannedCourse[]): Promise<RecentCourse[]> {
+    const byFolder = new Map(scanned.map((course) => [keyOf(course.folder), course]));
+    return Promise.all(
+      readRecent(storage.global).map(async (folder): Promise<RecentCourse> => {
+        const found = byFolder.get(keyOf(folder));
+        return {
+          folder,
+          name: found?.name ?? folderLabel(folder),
+          categories: found?.categories ?? [],
+          // A Course the scan found is there; any other is looked for.
+          missing: found === undefined && (await isMissing(folder)),
+        };
+      }),
+    );
+  }
+
   /** The Course picker. */
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
@@ -432,7 +464,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       });
     }
     const intent = await ui.pick(
-      buildCoursePicker({ hasRoots: roots.length > 0, courses: scan.courses }),
+      buildCoursePicker({
+        hasRoots: roots.length > 0,
+        courses: scan.courses,
+        recent: await recentCourses(scan.courses),
+        openFolder: openedCourse?.folder,
+      }),
     );
     switch (intent?.type) {
       case 'openCourse':

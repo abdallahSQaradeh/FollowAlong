@@ -4,6 +4,16 @@
  * the learner picked, or `undefined` when the learner closed the quick pick without picking.
  */
 
+/** A button at the end of an item's line: pressing it answers with its own intent. */
+export interface QuickPickButtonModel<Intent> {
+  /** What the button does, as its tooltip says it. */
+  readonly label: string;
+  /** The name of a codicon to draw it with, such as `folder-opened`. */
+  readonly icon: string;
+  /** What pressing the button asks the core to do. */
+  readonly intent: Intent;
+}
+
 export interface QuickPickItemModel<Intent> {
   readonly kind: 'item';
   readonly label: string;
@@ -11,6 +21,8 @@ export interface QuickPickItemModel<Intent> {
   readonly description?: string;
   /** What picking this item asks the core to do. */
   readonly intent: Intent;
+  /** Buttons beside the item, each with an intent of its own. */
+  readonly buttons?: readonly QuickPickButtonModel<Intent>[];
 }
 
 /** A heading line that groups the items after it. */
