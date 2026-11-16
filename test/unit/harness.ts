@@ -26,6 +26,7 @@ import {
   PlayerShowOptions,
   PlayerShowResult,
   Ports,
+  ResourceOpener,
   Storage,
   UiSink,
   UserMessage,
@@ -176,6 +177,16 @@ export class RecordingUi implements UiSink {
   }
 }
 
+/** Records the files the learner opened as Resources, in order. */
+export class RecordingResourceOpener implements ResourceOpener {
+  readonly opened: string[] = [];
+
+  openFile(absolutePath: string): Promise<void> {
+    this.opened.push(absolutePath);
+    return Promise.resolve();
+  }
+}
+
 export class RecordingLogger implements Logger {
   readonly entries: LogEntry[] = [];
 
@@ -195,6 +206,7 @@ export interface Harness {
   readonly converter: FakeConverter;
   readonly config: FakeConfig;
   readonly ui: RecordingUi;
+  readonly resourceOpener: RecordingResourceOpener;
   readonly logger: RecordingLogger;
   readonly storage: Storage;
   /** The temp dir every fixture lives in. */
@@ -218,6 +230,7 @@ export async function createHarness(): Promise<Harness> {
   const converter = new FakeConverter();
   const config = new FakeConfig();
   const ui = new RecordingUi();
+  const resourceOpener = new RecordingResourceOpener();
   const logger = new RecordingLogger();
   const storage: Storage = {
     global: new MemoryStore(),
@@ -245,6 +258,7 @@ export async function createHarness(): Promise<Harness> {
     converter,
     config,
     ui,
+    resourceOpener,
     logger,
   };
   const core = createFollowAlong(ports);
@@ -261,6 +275,7 @@ export async function createHarness(): Promise<Harness> {
     converter,
     config,
     ui,
+    resourceOpener,
     logger,
     storage,
     root,

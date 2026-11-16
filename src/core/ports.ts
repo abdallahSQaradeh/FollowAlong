@@ -134,6 +134,13 @@ export interface UiSink {
   showLessonTree(model: LessonTreeModel): void;
 }
 
+// --- Resource opener ------------------------------------------------------------------------------
+
+export interface ResourceOpener {
+  /** Opens a file Resource in a tab beside the code, without touching the player. */
+  openFile(absolutePath: string): Promise<void>;
+}
+
 // --- All of them --------------------------------------------------------------------------------
 
 export interface Ports {
@@ -144,5 +151,6 @@ export interface Ports {
   readonly converter: Converter;
   readonly config: Config;
   readonly ui: UiSink;
+  readonly resourceOpener: ResourceOpener;
   readonly logger: Logger;
 }
