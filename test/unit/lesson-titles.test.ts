@@ -181,3 +181,95 @@ describe('Lesson titles from a .txt title list', () => {
     expect(h.logger.entries.filter((entry) => entry.level === 'warn')).toHaveLength(1);
   });
 });
+
+describe('the Course name a cleaned title drops, for a Course under wrapper folders', () => {
+  /** A download as it often lands: the Lessons one folder below the folder named after the Course. */
+  const dockerMastery = {
+    'Docker Mastery/docker-mastery-2024/01 Intro _ Docker Mastery.mp4': 'v',
+    'Docker Mastery/docker-mastery-2024/02 Setup _ docker mastery.mp4': 'v',
+    'Docker Mastery/docker-mastery-2024/.followalong/progress.json': JSON.stringify({
+      version: 1,
+      data: {
+        lessons: {
+          '02 Setup _ docker mastery.mp4': {
+            position: 30,
+            duration: 600,
+            savedAt: 1000,
+            status: 'inProgress',
+          },
+        },
+        last: { lessonId: '02 Setup _ docker mastery.mp4', savedAt: 1000 },
+      },
+    }),
+  };
+
+  /** The Lesson titles in the tree, flat: the Course has no Sections. */
+  function treeTitles(h: Harness): string[] {
+    return (h.ui.lessonTree?.nodes ?? []).map((node) => node.label);
+  }
+
+  it('drops the wrapper’s name, as the Course picker shows it, opened from the picker', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', dockerMastery);
+    h.config.set('coursesRoots', [learning]);
+
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    const line = h.ui.picker?.entries.find(
+      (entry) => entry.kind === 'item' && entry.label === 'Docker Mastery',
+    );
+    h.ui.choose('Docker Mastery');
+    await picking;
+
+    expect(line?.kind === 'item' ? line.detail : undefined).toBe('0/2 · 0% · last: Setup');
+    expect(treeTitles(h)).toEqual(['Intro', 'Setup']);
+  });
+
+  it('gives the same titles when the Course is opened by its folder (Recent, a restore)', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', dockerMastery);
+    h.config.set('coursesRoots', [learning]);
+
+    await h.core.openCourse(join(learning, 'Docker Mastery', 'docker-mastery-2024'));
+
+    expect(treeTitles(h)).toEqual(['Intro', 'Setup']);
+  });
+
+  it('also drops a category folder’s name: an accepted over-strip of a title ending in it', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/React Basics/01 Intro _ Web.mp4': 'v',
+      'Web/Vue Basics/01 Hello.webm': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+
+    await h.core.openCourse(join(learning, 'Web', 'React Basics'));
+
+    expect(treeTitles(h)).toEqual(['Intro']);
+  });
+
+  it('drops only one name, and never the Courses root’s', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Docker Mastery/docker-mastery-2024/01 Intro _ Learning.mp4': 'v',
+      'Docker Mastery/docker-mastery-2024/02 Setup _ Docker Mastery _ docker-mastery-2024.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+
+    await h.core.openCourse(join(learning, 'Docker Mastery', 'docker-mastery-2024'));
+
+    expect(treeTitles(h)).toEqual(['Intro _ Learning', 'Setup _ Docker Mastery']);
+  });
+
+  it('drops only the Course folder’s own name when the Course is under no Courses root', async () => {
+    const h = await createHarness();
+    const outer = await h.folder('Docker Mastery', {
+      'docker-mastery-2024/01 Intro _ Docker Mastery.mp4': 'v',
+      'docker-mastery-2024/02 Setup _ docker-mastery-2024.mp4': 'v',
+    });
+
+    await h.core.openCourse(join(outer, 'docker-mastery-2024'));
+
+    expect(treeTitles(h)).toEqual(['Intro _ Docker Mastery', 'Setup']);
+  });
+});

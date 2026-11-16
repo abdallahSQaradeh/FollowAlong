@@ -1,10 +1,17 @@
 /**
  * Reads a Course folder's tree through the File system port, into the listing the Course model
- * reads.
+ * reads, and the Course from it.
  */
-import { extname, join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 
-import { isLessonFile, isSkippedFolder, type FolderListing } from './course-model.js';
+import {
+  buildCourse,
+  isLessonFile,
+  isSkippedFolder,
+  type Course,
+  type FolderListing,
+} from './course-model.js';
+import { courseNames } from './courses-roots.js';
 import { FileSystemError, type Ports } from './ports.js';
 
 type ListingPorts = Pick<Ports, 'fileSystem' | 'logger'>;
@@ -74,4 +81,21 @@ async function readTextFiles(
     }
   }
   return texts;
+}
+
+/**
+ * Reads the Course in `folder`. Every place that shows a Course's Lesson titles reads it here (the
+ * open, the Progress lines, Locate…), so each cleans the file names with the same Course names:
+ * the folder's own and its wrappers' up to the Courses root that holds it (ADR 0085). Rejects as
+ * {@link readFolderListing} does.
+ */
+export async function readCourse(
+  ports: ListingPorts,
+  folder: string,
+  roots: readonly string[],
+): Promise<Course> {
+  return buildCourse(
+    await readFolderListing(ports, folder, basename(folder)),
+    courseNames(folder, roots),
+  );
 }

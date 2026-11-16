@@ -6,13 +6,7 @@ import { basename } from 'node:path';
 
 import { messageOf } from './logger.js';
 import { isTyping, type DocumentEdit } from './auto-pause.js';
-import {
-  buildCourse,
-  findSection,
-  lessonsInOrder,
-  type Course,
-  type Lesson,
-} from './course-model.js';
+import { findSection, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
 import { takeCourseHandOff } from './course-hand-off.js';
@@ -39,7 +33,7 @@ import {
   urlLabel,
   type ResourceRecord,
 } from './resources.js';
-import { readFolderListing } from './folder-listing.js';
+import { readCourse } from './folder-listing.js';
 import { lessonStatus, openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
 import { recordOpened } from './recent-courses.js';
@@ -507,7 +501,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
     let course: Course;
     try {
-      course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
+      course = await readCourse(ports, folder, readCoursesRoots(config).roots);
     } catch (error) {
       // A later open replaces this one: what this folder failed with no longer matters.
       if (error instanceof FileSystemError && superseded()) {

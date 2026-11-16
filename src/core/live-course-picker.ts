@@ -154,7 +154,7 @@ export async function showCoursePicker(
     }
     reading += 1;
     try {
-      const found = await readProgressLines(ports, folders, () => closed);
+      const found = await readProgressLines(ports, folders, roots, () => closed);
       for (const [key, line] of found) {
         lines.set(key, line);
       }

@@ -2,7 +2,7 @@
  * The Courses roots (ADR 0022): the `followalong.coursesRoots` setting, read and written through
  * the Config port, and the folders the player may read media from, which follow from it.
  */
-import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, posix, relative, resolve, sep } from 'node:path';
 
 import type { Config } from './ports.js';
 
@@ -72,6 +72,25 @@ export function sameFolder(a: string, b: string): boolean {
 export function isInsideFolder(folder: string, path: string): boolean {
   const inside = relative(folder, path);
   return inside !== '' && !isAbsolute(inside) && inside.split(sep)[0] !== '..';
+}
+
+/**
+ * The names a Lesson file name may end in as ` _ <name>`: the Course folder's own, then the name of
+ * each folder between it and the first Courses root that holds it, inside out. A Course's outermost
+ * wrapper, whose name the Course picker shows (ADR 0032), is always among them. A Course under no
+ * root, or that is a root, has only its own name. The root's own name is never one (ADR 0085).
+ */
+export function courseNames(folder: string, roots: readonly string[]): string[] {
+  const own = basename(folder);
+  const spelled = normalisedRoot(folder) ?? folder;
+  const root = roots.find((candidate) => isInsideFolder(keyOf(candidate), keyOf(spelled)));
+  if (root === undefined) {
+    return [own];
+  }
+  // How many folders lie between, counted on the keys; their names taken as the folder spells them.
+  const depth = relative(keyOf(root), keyOf(spelled)).split(sep).length;
+  const between = spelled.split(sep).slice(-depth).reverse();
+  return [own, ...between.slice(1)];
 }
 
 /** The setting's entries that are text, as written. */

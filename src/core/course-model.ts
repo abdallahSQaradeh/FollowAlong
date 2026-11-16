@@ -89,7 +89,11 @@ function withoutWrappers({ lessons, sections }: Outline): Outline {
     : { lessons, sections };
 }
 
-function outlineOf(listing: FolderListing, idPrefix: string, courseName: string): Outline {
+function outlineOf(
+  listing: FolderListing,
+  idPrefix: string,
+  courseNames: readonly string[],
+): Outline {
   const lessons = listing.files
     .flatMap((file): Lesson[] => {
       const container = containerOf(file);
@@ -99,7 +103,7 @@ function outlineOf(listing: FolderListing, idPrefix: string, courseName: string)
             {
               id: `${idPrefix}${file}`,
               path: join(listing.path, file),
-              title: cleanFileName(file, courseName),
+              title: cleanFileName(file, courseNames),
               container,
             },
           ];
@@ -110,7 +114,7 @@ function outlineOf(listing: FolderListing, idPrefix: string, courseName: string)
     .sort((a, b) => naturalOrder(a.name, b.name))
     .flatMap((folder): Section[] => {
       const id = `${idPrefix}${folder.name}/`;
-      const inside = outlineOf(folder, id, courseName);
+      const inside = outlineOf(folder, id, courseNames);
       return inside.lessons.length === 0 && inside.sections.length === 0
         ? []
         : [{ id, name: folder.name, ...withoutWrappers(inside) }];
@@ -149,8 +153,15 @@ function withTitles({ lessons, sections }: Outline, titles: ReadonlyMap<string, 
   };
 }
 
-export function buildCourse(listing: FolderListing): Course {
-  const outline = withoutWrappers(outlineOf(listing, '', listing.name));
+/**
+ * The Course in `listing`. `courseNames` are the names a Lesson file name may end in as
+ * ` _ <name>` ({@link courseNames} in `courses-roots.ts`); by default the folder's own.
+ */
+export function buildCourse(
+  listing: FolderListing,
+  courseNames: readonly string[] = [listing.name],
+): Course {
+  const outline = withoutWrappers(outlineOf(listing, '', courseNames));
   const lessons = lessonsInOrder(outline);
   const listed = titlesFromLists(titleListTexts(listing), lessons.length);
   const titled =

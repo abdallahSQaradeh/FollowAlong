@@ -8,10 +8,10 @@ import { basename } from 'node:path';
 
 import { messageOf } from './logger.js';
 import { openCourseData, type CourseData, type CourseDataFile } from './course-data.js';
-import { buildCourse, lessonsInOrder } from './course-model.js';
+import { lessonsInOrder } from './course-model.js';
 import { normalisedRoot } from './courses-roots.js';
 import { folderLabel } from './course-scanner.js';
-import { readFolderListing } from './folder-listing.js';
+import { readCourse } from './folder-listing.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { progressFile } from './progress.js';
 import { relocateRecent } from './recent-courses.js';
@@ -24,7 +24,11 @@ type LocatePorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger' | 'ui'>;
  * whether it did: not when the learner cancels, when the new folder holds no Lessons, or when its
  * Course data could not be carried over; the entry then stays as it was.
  */
-export async function locateCourse(ports: LocatePorts, folder: string): Promise<boolean> {
+export async function locateCourse(
+  ports: LocatePorts,
+  folder: string,
+  roots: readonly string[],
+): Promise<boolean> {
   const { ui, storage, logger } = ports;
   const chosen = await ui.chooseFolder({
     title: `Locate “${folderLabel(folder)}”`,
@@ -34,7 +38,7 @@ export async function locateCourse(ports: LocatePorts, folder: string): Promise<
   if (located === undefined) {
     return false;
   }
-  if (!(await holdsLessons(ports, located))) {
+  if (!(await holdsLessons(ports, located, roots))) {
     ui.showMessage({
       severity: 'warning',
       text: `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(located)}”, so “${folderLabel(folder)}” still points to its old folder.`,
@@ -63,12 +67,13 @@ export async function locateCourse(ports: LocatePorts, folder: string): Promise<
 }
 
 /** Whether the folder holds a Lesson at any depth, as the Course model reads it. */
-async function holdsLessons(ports: LocatePorts, folder: string): Promise<boolean> {
+async function holdsLessons(
+  ports: LocatePorts,
+  folder: string,
+  roots: readonly string[],
+): Promise<boolean> {
   try {
-    return (
-      lessonsInOrder(buildCourse(await readFolderListing(ports, folder, basename(folder)))).length >
-      0
-    );
+    return lessonsInOrder(await readCourse(ports, folder, roots)).length > 0;
   } catch (error) {
     if (error instanceof FileSystemError) {
       return false;

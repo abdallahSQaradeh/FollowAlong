@@ -119,7 +119,7 @@ export function createCoursePickerCommand(
           await host.saveProgress();
         }
         // Shown again either way: the entry is re-pointed, or still missing after a cancel.
-        await locateCourse(ports, intent.folder);
+        await locateCourse(ports, intent.folder, roots);
         await pickCourse();
         break;
       }
