@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { messageOf } from '../../core/logger.js';
 import {
   FileSystemError,
   type DirectoryEntry,
@@ -48,8 +49,7 @@ async function wrap<T>(path: string, action: () => Promise<T>): Promise<T> {
     if (error instanceof FileSystemError) {
       throw error;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    throw new FileSystemError(reasonOf(error), path, message);
+    throw new FileSystemError(reasonOf(error), path, messageOf(error));
   }
 }
 
@@ -160,6 +160,10 @@ async function takeOverLeftBehind(lockPath: string): Promise<void> {
   }
   // A lock whose token cannot be read is judged by its age alone: removed only if it is still the
   // same file, untouched since it was found old (another window may have taken it over since).
+  // The moment between this second look and the removal is the same residual gap that
+  // `removeLockOf` leaves between reading the token and removing the lock (ADR 0074): another
+  // window can take the lock over in it. Renaming the lock aside first would not close it, because
+  // the rename could take that window's new lock just as the removal does.
   const stillSame = await stat(lockPath).then(
     (found) => found.mtimeMs === modifiedMs,
     () => false,

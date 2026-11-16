@@ -4,7 +4,19 @@
  * the learner picked, or `undefined` when the learner closed the quick pick without picking.
  */
 
-/** A button at the end of an item's line: pressing it answers with its own intent. */
+/**
+ * What answering with an intent does to the quick pick. By default picking an item, or pressing
+ * the button beside one, closes the quick pick and answers with the intent. With `keepsOpen` it
+ * does not: as for a title bar button, the core is told the intent while the quick pick stays
+ * open, and may replace the model (a folder to drill into, ADR 0066; a Hide, ADR 0072). The text
+ * the learner typed is cleared when the core replaces the list under another title, because it
+ * filtered the list that is gone. Items and their buttons share the flag.
+ */
+interface KeepsOpen {
+  readonly keepsOpen?: boolean;
+}
+
+/** A button, in the title bar or beside an item: pressing it answers with its own intent. */
 export interface QuickPickButtonModel<Intent> {
   /** What the button does, as its tooltip says it. */
   readonly label: string;
@@ -12,14 +24,12 @@ export interface QuickPickButtonModel<Intent> {
   readonly icon: string;
   /** What pressing the button asks the core to do. */
   readonly intent: Intent;
-  /**
-   * An item button closes the quick pick and answers with its intent. With `staysOpen` it does
-   * not: like a title bar button, the core is told, and may replace the model (a Hide).
-   */
-  readonly staysOpen?: boolean;
 }
 
-export interface QuickPickItemModel<Intent> {
+/** A button at the end of an item's line. */
+export interface QuickPickItemButtonModel<Intent> extends QuickPickButtonModel<Intent>, KeepsOpen {}
+
+export interface QuickPickItemModel<Intent> extends KeepsOpen {
   readonly kind: 'item';
   readonly label: string;
   /** Shown beside the label, and matched when the learner types if the model says so. */
@@ -29,14 +39,7 @@ export interface QuickPickItemModel<Intent> {
   /** What picking this item asks the core to do. */
   readonly intent: Intent;
   /** Buttons beside the item, each with an intent of its own. */
-  readonly buttons?: readonly QuickPickButtonModel<Intent>[];
-  /**
-   * Whether picking the item leaves the quick pick open (a folder to drill into, ADR 0066). Like a
-   * title bar button, the core is told the item's intent and may replace the model; the text
-   * the learner typed is cleared when the core replaces the list under another title, because it
-   * filtered the list that is gone.
-   */
-  readonly keepsOpen?: boolean;
+  readonly buttons?: readonly QuickPickItemButtonModel<Intent>[];
 }
 
 /** A heading line that groups the items after it. */
@@ -60,8 +63,8 @@ export interface QuickPickModel<Intent> {
    */
   readonly busy?: boolean;
   /**
-   * Buttons in the title bar. Unlike an item's button, pressing one does not close the quick
-   * pick: the core is told, and may replace the model (a Refresh).
+   * Buttons in the title bar. Pressing one never closes the quick pick: the core is told, and may
+   * replace the model (a Refresh).
    */
   readonly toolbar?: readonly QuickPickButtonModel<Intent>[];
 }

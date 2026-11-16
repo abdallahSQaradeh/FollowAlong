@@ -3,12 +3,11 @@
  * <Lesson title>`, read from the Course's own Progress. It only reads: a Course is never written
  * to, and a Progress file that cannot be read gives no line (spec #12, D5).
  */
-import { basename } from 'node:path';
-
+import { messageOf } from './logger.js';
 import { openCourseData } from './course-data.js';
-import { buildCourse, lessonsInOrder } from './course-model.js';
+import { lessonsInOrder } from './course-model.js';
 import { keyOf } from './courses-roots.js';
-import { readFolderListing } from './folder-listing.js';
+import { readCourse } from './folder-listing.js';
 import { summaryOf, totalsOf } from './lesson-tree.js';
 import { lessonStatus, noLastLesson, progressFile } from './progress.js';
 import { FileSystemError, type Ports } from './ports.js';
@@ -27,6 +26,7 @@ const readAtOnce = 8;
 export async function progressLineOf(
   ports: LinePorts,
   folder: string,
+  roots: readonly string[],
 ): Promise<string | undefined> {
   const progress = await openCourseData(folder, ports).read(progressFile);
   // Looked at before the Course's folders are: most Courses of a library have not been played.
@@ -38,7 +38,7 @@ export async function progressLineOf(
   }
   let course;
   try {
-    course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
+    course = await readCourse(ports, folder, roots);
   } catch (error) {
     if (error instanceof FileSystemError) {
       return undefined;
@@ -57,11 +57,12 @@ export async function progressLineOf(
 
 /**
  * The Progress lines of these Course folders, by {@link keyOf} the folder (`undefined` for a Course
- * with none). `cancelled` stops the reading early, between batches of Courses.
+ * with none), under the Courses `roots`. `cancelled` stops the reading early, between batches.
  */
 export async function readProgressLines(
   ports: LinePorts,
   folders: readonly string[],
+  roots: readonly string[],
   cancelled: () => boolean,
 ): Promise<Map<string, string | undefined>> {
   const lines = new Map<string, string | undefined>();
@@ -69,13 +70,13 @@ export async function readProgressLines(
     await Promise.all(
       folders.slice(start, start + readAtOnce).map(async (folder) => {
         try {
-          lines.set(keyOf(folder), await progressLineOf(ports, folder));
+          lines.set(keyOf(folder), await progressLineOf(ports, folder, roots));
         } catch (error) {
           // Not read: an older line must not stay up for a Progress that cannot be read now.
           lines.set(keyOf(folder), undefined);
           ports.logger.log({
             level: 'error',
-            message: `Could not read the Progress of ${folder}: ${error instanceof Error ? error.message : String(error)}`,
+            message: `Could not read the Progress of ${folder}: ${messageOf(error)}`,
           });
         }
       }),

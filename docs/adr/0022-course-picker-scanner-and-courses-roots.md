@@ -29,7 +29,8 @@ the setting, the scanner and the picker model. These are the choices spec #12 le
   whose Course data is keyed by its absolute path (ADR 0005), that is a second key: its Progress
   and Resources are split between the two spellings. Writable Courses keep theirs in
   `.followalong` and are not affected. Making Windows paths canonical (`realpath.native`) would
-  need a new File system port call, and is left for when such a split is seen (Manual QA).
+  need a new File system port call, and is left for when such a split is seen (Manual QA). CP2
+  looked again and kept it so: ADR 0083.
 - **Only full paths.** An entry that is not a full path is skipped, with one warning per window
   naming it: `.`, `~` and `Courses` everywhere, and on Windows also a rooted path without a drive
   (`\Learning`, `/Learning`), which names a folder on whatever drive VS Code runs from. Such a

@@ -9,7 +9,8 @@ approved them (conditions: activation, consume once, the Seam 1 cases).
 - **An empty window, plus a note.** The adapter runs `workbench.action.newWindow` (a window with no
   folder), so the Practice area is never changed and the Course folder is not opened as a workspace
   (story 20). The core first leaves a note in the global storage, key `pendingCourse`, as
-  `{ folder, at }` (`src/core/pending-course.ts`), `at` from the Clock port.
+  `{ folder, at }` (`src/core/course-hand-off.ts`, named `pending-course.ts` until CP2), `at`
+  from the Clock port.
 - **Only a window with no workspace takes the note** (orchestrator ruling on #40, which replaced
   its first answer). The new window is empty: no folder and no workspace file, which the core asks
   the Storage port (`workspaceIsEmpty`). At activation (`onStartupFinished`, which already runs

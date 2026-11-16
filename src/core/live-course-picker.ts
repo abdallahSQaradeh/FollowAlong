@@ -4,6 +4,7 @@
  * scan fills the list in when it is done, and the title bar's Refresh starts a new one. The list
  * itself is built by {@link buildCoursePicker}; this module decides when it is shown again.
  */
+import { messageOf } from './logger.js';
 import { buildCoursePicker, type CoursePickerIntent } from './course-picker.js';
 import { readProgressLines } from './course-progress-lines.js';
 import { keyOf, sameFolder } from './courses-roots.js';
@@ -38,10 +39,6 @@ export interface CoursePickerSession {
 
 /** What the learner can ask of the picker: for its list of Courses, or for the Folder browser. */
 export type PickerIntent = CoursePickerIntent | FolderBrowserIntent;
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Shows the picker and resolves with the intent the learner picked, or `undefined` when they
@@ -104,7 +101,7 @@ export async function showCoursePicker(
     } catch (error) {
       ports.logger.log({
         level: 'error',
-        message: `Could not look at the Recent Courses: ${describe(error)}`,
+        message: `Could not look at the Recent Courses: ${messageOf(error)}`,
       });
     } finally {
       checking -= 1;
@@ -123,7 +120,7 @@ export async function showCoursePicker(
     try {
       found = await scan;
     } catch (error) {
-      ports.logger.log({ level: 'error', message: `The Course scan failed: ${describe(error)}` });
+      ports.logger.log({ level: 'error', message: `The Course scan failed: ${messageOf(error)}` });
     }
     if (closed || mine !== newestScan) {
       return;
@@ -157,7 +154,7 @@ export async function showCoursePicker(
     }
     reading += 1;
     try {
-      const found = await readProgressLines(ports, folders, () => closed);
+      const found = await readProgressLines(ports, folders, roots, () => closed);
       for (const [key, line] of found) {
         lines.set(key, line);
       }
@@ -245,7 +242,7 @@ export async function showCoursePicker(
       } else {
         ports.logger.log({
           level: 'error',
-          message: `Could not browse ${folder ?? 'the start'}: ${describe(error)}`,
+          message: `Could not browse ${folder ?? 'the start'}: ${messageOf(error)}`,
         });
       }
       if (!stale()) {
@@ -269,7 +266,7 @@ export async function showCoursePicker(
     } catch (error) {
       ports.logger.log({
         level: 'warn',
-        message: `Could not keep “${course.folder}” in the hidden Courses: ${describe(error)}`,
+        message: `Could not keep “${course.folder}” in the hidden Courses: ${messageOf(error)}`,
       });
     }
   };

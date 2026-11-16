@@ -3,6 +3,7 @@
  * as they are, but the three one-press keys go to the shell unless their commands are in the
  * learner's `terminal.integrated.commandsToSkipShell`. The core asks once whether to add them.
  */
+import { messageOf } from './logger.js';
 import type { Ports, Question } from './ports.js';
 
 /** The commands of the one-press keys: Ctrl+Alt+Space, and Ctrl+Alt+← / →. */
@@ -92,7 +93,7 @@ export function createTerminalKeysOffer(
     run().catch((error: unknown) => {
       logger.log({
         level: 'warn',
-        message: `Could not add the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not add the terminal keys: ${messageOf(error)}`,
       });
       ui.showMessage({
         severity: 'error',

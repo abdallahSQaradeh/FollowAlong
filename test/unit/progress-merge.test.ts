@@ -19,7 +19,10 @@ const lessonId = 'Section 1/01 Intro.webm';
 
 type Status = LessonProgress['status'];
 
-/** Every entry of the domain: status × statusAt (or none written) × savedAt × position. */
+/**
+ * Every entry of the domain: status × statusAt (or none written) × savedAt × position × duration.
+ * Two durations, so the place's last tie-break (the longer duration) is exercised too.
+ */
 const entries: readonly LessonProgress[] = (() => {
   const statuses: readonly Status[] = [undefined, 'inProgress', 'done'];
   const stamps: readonly (number | undefined)[] = [undefined, 0, 1_000, 2_000];
@@ -28,13 +31,15 @@ const entries: readonly LessonProgress[] = (() => {
     for (const statusAt of stamps) {
       for (const savedAt of [1_500, 2_500]) {
         for (const position of [10, 20]) {
-          all.push({
-            position,
-            duration: 600,
-            savedAt,
-            ...(status === undefined ? {} : { status }),
-            ...(statusAt === undefined ? {} : { statusAt }),
-          });
+          for (const duration of [0, 600]) {
+            all.push({
+              position,
+              duration,
+              savedAt,
+              ...(status === undefined ? {} : { status }),
+              ...(statusAt === undefined ? {} : { statusAt }),
+            });
+          }
         }
       }
     }

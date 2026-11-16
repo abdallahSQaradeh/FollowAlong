@@ -24,7 +24,8 @@ trailing ` _ <Course name>` removed). These are the details it leaves open:
 - **File-name cleanup**, in this order, on the name without its extension:
   1. a trailing ` _ <Course name>` goes (case-insensitive). The Course name is the name of the
      folder the learner opened as the Course, which is the outermost wrapper when they open that
-     one (ADR 0007); opening an inner folder names the Course after it;
+     one (ADR 0007); opening an inner folder names the Course after it. Since CP2 the names of the
+     folders between it and its Courses root count too (ADR 0085);
   2. a leading number goes, with the separator after it (`01 `, `02. `, `03 - `, `04_`, `05)`),
      but not when the number is part of the title: `3D Graphics` and `1.5x Speed` keep theirs;
   3. a `Lesson N -` prefix goes (hyphen, en dash or em dash, any letter case), also after the

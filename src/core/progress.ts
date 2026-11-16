@@ -6,6 +6,7 @@
  */
 import { basename } from 'node:path';
 
+import { messageOf } from './logger.js';
 import {
   CourseDataBusyError,
   openCourseData,
@@ -304,7 +305,8 @@ export async function openProgress(
       const written = await data.write(progressFile, progress);
       failing = undefined;
       if (written.merged !== undefined) {
-        // The file held Lessons this session could not read when the Course opened.
+        // The copy on disk, read again under the lock, was merged into the write (ADR 0074): what
+        // another window saved since this one read it is known here from now on.
         progress = mergeProgress(written.merged, progress);
       }
       if (written.keptElsewhere !== undefined && !keptElsewhereShown) {
@@ -347,9 +349,7 @@ export async function openProgress(
       }
       const reason = FileSystemError.is(error, 'notFound')
         ? 'the Course folder is missing'
-        : error instanceof Error
-          ? error.message
-          : String(error);
+        : messageOf(error);
       if (failing !== 'error') {
         failing = 'error';
         logger.log({ level: 'error', message: `Could not save Progress for ${course}: ${reason}` });
@@ -366,7 +366,7 @@ export async function openProgress(
 
   /**
    * Replaces each of these Lessons' entries by hand, in memory: `change` gives the entry's fields
-   * from what was there, and it is stamped after that entry (`savedAfter`).
+   * from what was there, and a stamp after both of that entry's stamps (`changedAfter`).
    */
   function changeEntries(
     lessonIds: readonly string[],

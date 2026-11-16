@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';
 
+import { messageOf } from './logger.js';
 import { isInsideFolder, keyOf } from './courses-roots.js';
 import { FileSystemError, type Ports, type ReleaseLock } from './ports.js';
 
@@ -125,10 +126,6 @@ export function isCourseDataFile(path: string, storageFolder: string): boolean {
 
 /** How many times a write reads a file again that read fine before and fails to read now. */
 const rereadAttempts = 3;
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /** `<storage>/courses/<folder name>-<hash of the absolute path>`: readable, and unique per path. */
 function fallbackFolder(course: string, storageFolder: string): string {

@@ -4,21 +4,15 @@
  */
 import { basename } from 'node:path';
 
+import { messageOf } from './logger.js';
 import { isTyping, type DocumentEdit } from './auto-pause.js';
-import {
-  buildCourse,
-  findSection,
-  lessonsInOrder,
-  type Course,
-  type Lesson,
-} from './course-model.js';
+import { findSection, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
-import { createCourseScans } from './course-list-cache.js';
+import { takeCourseHandOff } from './course-hand-off.js';
+import { createCoursePickerCommand } from './course-picker-command.js';
 import { unhideCourse } from './hidden-courses.js';
-import { showCoursePicker } from './live-course-picker.js';
-import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
-import { locateCourse } from './locate-course.js';
+import { playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree, type LessonTreeModel } from './lesson-tree.js';
 import {
@@ -39,11 +33,10 @@ import {
   urlLabel,
   type ResourceRecord,
 } from './resources.js';
-import { readFolderListing } from './folder-listing.js';
+import { readCourse } from './folder-listing.js';
 import { lessonStatus, openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
-import { leavePendingCourse, readPendingCourse, withdrawPendingCourse } from './pending-course.js';
-import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
+import { recordOpened } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 import { buildSpotPicker, type VideoSpot } from './video-placement.js';
 
@@ -175,7 +168,7 @@ export interface FollowAlong {
 export type { SpeedDirection, StepDirection, StepSize } from './loaded-lesson.js';
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { storage, ui, logger, config, clock } = ports;
+  const { storage, ui, logger, config } = ports;
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
@@ -508,7 +501,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
     let course: Course;
     try {
-      course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
+      course = await readCourse(ports, folder, readCoursesRoots(config).roots);
     } catch (error) {
       // A later open replaces this one: what this folder failed with no longer matters.
       if (error instanceof FileSystemError && superseded()) {
@@ -598,7 +591,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } catch (error) {
       logger.log({
         level: 'warn',
-        message: `Could not remember ${folder} as a Recent Course: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not remember ${folder} as a Recent Course: ${messageOf(error)}`,
       });
     }
   }
@@ -645,10 +638,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     play(course, lesson, startAt, true);
   }
 
-  /** The Courses roots setting entries, and the roots, the learner was told about in this window. */
-  const warnedRoots = new Set<string>();
-  const warnedUnreadable = new Set<string>();
-  const courseScans = createCourseScans(ports);
+  /** _Open Course…_: the Course picker, opening what the learner picks in this window. */
+  const pickCourse = createCoursePickerCommand(ports, {
+    openCourseFolder: () => openedCourse?.folder,
+    saveProgress: () => progress?.save() ?? Promise.resolve(),
+    open: (folder, video) => openInTurn(folder, false, video),
+  });
   /**
    * Opens run one after another, so the one asked for last is the Course left open. An open that
    * a later one superseded while it waited, or while it read its folder, is dropped when it gets
@@ -685,26 +680,6 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // A Lesson switch like any other: the Lesson left is saved, the next resumes 5 s back.
       playLesson(beside.target.id);
     }
-  }
-
-  /**
-   * Tells the learner, once per window, about setting entries that are not a full path: they are
-   * skipped, because a path such as `.` resolves against whatever folder VS Code runs in.
-   */
-  function warnNotAbsolute(entries: readonly string[]): void {
-    const unwarned = entries.filter((entry) => !warnedRoots.has(entry));
-    if (unwarned.length === 0) {
-      return;
-    }
-    for (const entry of unwarned) {
-      warnedRoots.add(entry);
-    }
-    const names = unwarned.map((entry) => `“${entry}”`).join(', ');
-    const root = unwarned.length === 1 ? 'root' : 'roots';
-    ui.showMessage({
-      severity: 'warning',
-      text: `FollowAlong skips the Courses ${root} ${names}: a Courses root must be a full path, such as D:\\Learning.`,
-    });
   }
 
   /**
@@ -784,118 +759,20 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return change(progress, [lessonId]);
   }
 
-  /** The Course picker. */
-  async function pickCourse(): Promise<void> {
-    const { roots, notAbsolute } = readCoursesRoots(config);
-    warnNotAbsolute(notAbsolute);
-    const intent = await showCoursePicker({
-      ports,
-      scans: courseScans,
-      roots,
-      recent: readRecent(storage.global),
-      openFolder: () => openedCourse?.folder,
-      warnUnreadableRoot(root) {
-        // Once per window: a drive that stays unplugged would otherwise be named at every open.
-        if (!warnedUnreadable.has(root)) {
-          warnedUnreadable.add(root);
-          ui.showMessage({
-            severity: 'warning',
-            text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
-          });
-        }
-      },
-    });
-    switch (intent?.type) {
-      case 'openCourse':
-        await openInTurn(intent.folder, false);
-        break;
-      case 'openCourseInNewWindow':
-        await openInNewWindow(intent.folder);
-        break;
-      case 'playVideo':
-        await openInTurn(intent.folder, false, intent.video);
-        break;
-      case 'addCoursesRoot':
-        // The learner added a root to pick a Course from it: show the list again, with its Courses.
-        if (await chooseCoursesRoot()) {
-          await pickCourse();
-        }
-        break;
-      case 'removeRecentCourse':
-        await removeRecent(storage.global, intent.folder);
-        await pickCourse();
-        break;
-      case 'locateCourse':
-        if (openedCourse !== undefined && sameFolder(openedCourse.folder, intent.folder)) {
-          // The Course that moved is still open: what it has not saved yet is carried too.
-          await progress?.save();
-        }
-        // Shown again either way: the entry is re-pointed, or still missing after a cancel.
-        await locateCourse(ports, intent.folder);
-        await pickCourse();
-        break;
-      case undefined:
-        break;
-    }
-  }
-
-  /** Leaves a note for the new window, then opens it; this window's Course is not touched. */
-  async function openInNewWindow(folder: string): Promise<void> {
-    try {
-      await leavePendingCourse(storage.global, folder, clock.now());
-      await ui.openNewWindow();
-    } catch (error) {
-      logger.log({
-        level: 'error',
-        message: `Could not open “${folder}” in a new window: ${error instanceof Error ? error.message : String(error)}`,
-      });
-      ui.showMessage({
-        severity: 'error',
-        text: `FollowAlong could not open “${basename(folder)}” in a new window.`,
-      });
-      await withdrawPendingCourse(storage.global).catch(() => {
-        // Nothing more to do: the note expires by itself after 30 seconds.
-      });
-    }
-  }
-
-  /**
-   * Asks for a folder and adds it to the Courses roots, after the ones already there. Resolves
-   * with whether the learner chose one (it may already have been a root).
-   */
-  async function chooseCoursesRoot(): Promise<boolean> {
-    const root = await ui.chooseFolder({ title: 'Add Courses root', openLabel: 'Add' });
-    if (root === undefined) {
-      return false;
-    }
-    if (await addCoursesRoot(config, root)) {
-      logger.log({ level: 'info', message: `Added the Courses root ${root}` });
-    }
-    return true;
-  }
-
   return {
     openCourse(folder) {
       return openInTurn(folder, false);
     },
     async restoreCourse() {
-      // Only a window with no workspace may be the new one another window asked for (ADR 0077):
-      // a window with a workspace never takes the Course hand-off, whatever it remembers.
-      if (storage.workspaceIsEmpty) {
-        const note = readPendingCourse(storage.global, clock.now());
-        if (note.present) {
-          // Cleared first, so the note is used once; a failure to clear does not stop the open.
-          await withdrawPendingCourse(storage.global).catch((error: unknown) => {
-            logger.log({
-              level: 'warn',
-              message: `Could not clear the Course hand-off: ${error instanceof Error ? error.message : String(error)}`,
-            });
-          });
-          if (note.folder !== undefined) {
-            await openInTurn(note.folder, false);
-            return;
-          }
-        }
+      // A window opened for a Course hand-off opens that Course, not the one it remembers. Awaited
+      // only when there is a note: with none, the remembered Course is queued in this same turn, so
+      // a Course the learner opens meanwhile is queued after it and wins (a plain `await` would
+      // let that open in first).
+      const handOff = takeCourseHandOff(ports);
+      const handedOff = handOff === undefined ? undefined : await handOff;
+      if (handedOff !== undefined) {
+        await openInTurn(handedOff, false);
+        return;
       }
       const folder = storage.workspace.get(openCourseKey);
       if (typeof folder === 'string') {

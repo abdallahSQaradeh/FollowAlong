@@ -25,3 +25,11 @@ export function atLeast(minimum: LogLevel, sink: Logger): Logger {
     },
   };
 }
+
+/**
+ * The text of something thrown, for a log line or a message: an `Error`'s message, or anything
+ * else as `String` spells it.
+ */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

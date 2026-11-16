@@ -48,7 +48,8 @@ interface FoundCourse {
  * under the folders between the root and that name. Hidden folders (a leading `.`, so `.git` and
  * `.followalong` too), `node_modules`, `$RECYCLE.BIN` and `System Volume Information` are not
  * walked. A subfolder that cannot be read is logged and left out, and the walk carries on. A
- * Course under two roots is listed once, as the root named first files it.
+ * Course under two roots is listed once, as the root named first files it, also when on Windows
+ * the two spell its folder in other letter case.
  */
 export async function scanCourses(
   ports: ScanPorts,
@@ -61,8 +62,9 @@ export async function scanCourses(
   for (const root of roots) {
     try {
       for (const course of await walk(ports, known, root, true)) {
-        if (!found.has(course.folder)) {
-          found.set(course.folder, scannedCourse(root, course));
+        // By its key: on Windows two roots can spell one folder in other letter case.
+        if (!found.has(keyOf(course.folder))) {
+          found.set(keyOf(course.folder), scannedCourse(root, course));
         }
       }
     } catch (error) {
