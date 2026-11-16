@@ -248,6 +248,9 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
     case 'setResumeRewind':
       resumeRewind = command.seconds;
       break;
+    case 'zoom':
+      showZoom(wholePicture, media);
+      break;
   }
 }
 

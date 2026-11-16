@@ -345,3 +345,16 @@ test.describe('the zoom', () => {
     ]);
   });
 });
+
+test.describe('the zoom reset command', () => {
+  test('shows the whole picture again, as the status bar item asks', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    await player.post({ type: 'zoom', action: 'reset' });
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    expect((await player.video()).controls).toBe(true);
+    await expect(page.getByLabel('Zoom level')).toHaveText('1×');
+  });
+});

@@ -43,7 +43,15 @@ export type PlayerCommand =
    * Shows the "Next: <title>" overlay over the picture of the Lesson that has ended (ADR 0019). The
    * player hides it again when a Lesson loads, plays or seeks.
    */
-  | { readonly type: 'showNext'; readonly title: string };
+  | { readonly type: 'showNext'; readonly title: string }
+  /** Changes the picture's zoom (ADR 0037); the player answers with `zoomChanged`. */
+  | { readonly type: 'zoom'; readonly action: ZoomAction };
+
+/**
+ * What a `zoom` command does. `reset` shows the whole picture (the status bar item); #48 adds
+ * `in`, `out` and `areaMode` for the keys.
+ */
+export type ZoomAction = 'reset';
 
 /**
  * What every event about a Lesson carries, so late events are recognisable: the Lesson's id, and
@@ -162,6 +170,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return isRate(raw.rate) ? { type: 'setRate', rate: raw.rate } : undefined;
     case 'showNext':
       return isText(raw.title) ? { type: 'showNext', title: raw.title } : undefined;
+    case 'zoom':
+      return raw.action === 'reset' ? { type: 'zoom', action: raw.action } : undefined;
     default:
       return undefined;
   }
