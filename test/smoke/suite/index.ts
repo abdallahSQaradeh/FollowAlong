@@ -48,6 +48,10 @@ interface TestHooks {
     readonly command?: { readonly id: string; readonly argument: unknown };
   }[];
   selectedLesson(): string | undefined;
+  /** How many quick picks were shown so far. */
+  quickPicksShown(): number;
+  /** The label of the highlighted item of the quick pick shown last. */
+  activeQuickPickItem(): string | undefined;
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -329,7 +333,8 @@ async function aPickedCourseKeepsThePlayer(
   root: string,
   code: vscode.TextDocument,
 ): Promise<void> {
-  // A–Z, the picker lists "Picked Course" first, so accepting its first item picks it.
+  // The Warm-up Course is opened first, so it is the Recent Course (open) at the top of the
+  // picker, and "Picked Course" is the first of the other Courses: select the next item, accept it.
   const lessons = { warmUp: 'warm-up.webm', picked: 'picked.webm' } as const;
   for (const [folder, lesson] of [
     ['Warm-up Course', lessons.warmUp],
@@ -377,12 +382,26 @@ async function aPickedCourseKeepsThePlayer(
     const [playerBefore] = playerTabs();
     assert.ok(playerBefore, 'no player is open before the Course picker');
 
+    const picksBefore = hooks.quickPicksShown();
     const picking = vscode.commands.executeCommand('followalong.openCourse');
-    // The picker shows once the scan is done; accepting before that does nothing.
-    await waitForAsync('the Course picker to open the picked Course', async () => {
-      await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
-      return hooks.lessonTree().nodes.some((node) => node.id === lessons.picked) ? true : undefined;
+    // The picker shows once the scan is done, with its first item highlighted.
+    await waitFor('the Course picker to show', () =>
+      hooks.quickPicksShown() > picksBefore && hooks.activeQuickPickItem() !== undefined
+        ? true
+        : undefined,
+    );
+    // Highlight “Picked Course” by moving down until it is the highlighted item, then accept it.
+    await waitForAsync('“Picked Course” to be the highlighted item', async () => {
+      if (hooks.activeQuickPickItem() === 'Picked Course') {
+        return true;
+      }
+      await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
+      return undefined;
     });
+    await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+    await waitFor('the picked Course to open', () =>
+      hooks.lessonTree().nodes.some((node) => node.id === lessons.picked) ? true : undefined,
+    );
     await picking;
     say('the Course picker lists the Courses under the Courses root, and picking one opens it');
 

@@ -53,6 +53,8 @@ describe('a Resource whose file is missing', () => {
     await h.core.attachResource('intro.webm', join(course, 'cheat.md'));
     await rm(join(course, 'notes.md'));
 
+    // VS Code starts again: picking the Course that is open changes nothing (ADR 0041).
+    h.restart();
     await h.core.openCourse(course);
 
     expect(resourceNamed(h, 'intro.webm', 'notes.md').missing).toBe(true);
@@ -351,6 +353,8 @@ describe('when the Course’s own Resources file cannot be read', () => {
     await h.core.attachResource('intro.webm', join(course, 'a.md'));
 
     await writeFile(join(course, '.followalong', 'resources.json'), resourceFile('b1', 'b.md'));
+    // VS Code starts again: picking the Course that is open changes nothing (ADR 0041).
+    h.restart();
     await h.core.openCourse(course);
 
     expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual([

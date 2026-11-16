@@ -9,7 +9,8 @@ import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
 import { scanCourses } from './course-scanner.js';
-import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
+import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
+import { locateCourse } from './locate-course.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree, type LessonTreeModel } from './lesson-tree.js';
 import {
@@ -33,6 +34,7 @@ import {
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
+import { readRecent, recentCourses, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
@@ -197,6 +199,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Offers, once, to add the one-press commands to the terminal's skip-shell setting. */
   const offerTerminalKeys = createTerminalKeysOffer(ports);
 
+  /** The folders the player may read for `course` (ADR 0022). */
+  function resourceRootsOf(course: Course): string[] {
+    return playerFolders(
+      readCoursesRoots(config).roots,
+      course.folder,
+      fallbackRoot(storage.folder),
+    );
+  }
+
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
@@ -204,11 +215,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     loaded.load(lesson, {
       startAt,
       autoplay,
-      resourceRoots: playerFolders(
-        readCoursesRoots(config).roots,
-        course.folder,
-        fallbackRoot(storage.folder),
-      ),
+      resourceRoots: resourceRootsOf(course),
     });
     offerTerminalKeys();
   }
@@ -400,6 +407,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (superseded()) {
       return;
     }
+    const playing = loaded.lesson();
+    if (
+      playing !== undefined &&
+      openedCourse !== undefined &&
+      sameFolder(openedCourse.folder, folder)
+    ) {
+      // The Course is open and its Lesson is in the player: picking it again changes nothing, so
+      // the Lesson is not reloaded and the learner does not land on Lesson 1 (ADR 0041).
+      logger.log({ level: 'info', message: `Not opening ${folder}: it is the open Course.` });
+      ui.selectLesson(playing.id);
+      ports.player.show({
+        title: playing.title,
+        resourceRoots: resourceRootsOf(openedCourse),
+      });
+      return;
+    }
     let course: Course;
     try {
       course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
@@ -436,11 +459,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const inOrder = lessonsInOrder(course);
       const first = inOrder[0];
       const recorder = first === undefined ? undefined : await openProgress(folder, ports);
-      openedCourse = course;
-      resourceStore = store;
-      progress = recorder;
-      sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
       if (first === undefined || recorder === undefined) {
+        openedCourse = course;
+        resourceStore = store;
+        progress = recorder;
+        sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         drawTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
@@ -450,9 +473,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         loaded.unload(hadLesson);
         return;
       }
+      // Stored before the Course counts as open: if this fails, the Course that was open still is,
+      // with its tree, and no click plays this Course's Lesson by matching its id (ADR 0041).
       await storage.workspace.set(openCourseKey, folder);
+      openedCourse = course;
+      resourceStore = store;
+      progress = recorder;
+      sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
       drawTree(buildLessonTree(course, store.current(), recorder.current(), store.missing()));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
+      await rememberRecent(folder);
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
       if (last === undefined) {
@@ -467,9 +497,34 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /** Puts the Course first in Recent; Recent is a convenience, so a failure is only logged. */
+  async function rememberRecent(folder: string): Promise<void> {
+    try {
+      await recordOpened(storage.global, folder);
+    } catch (error) {
+      logger.log({
+        level: 'warn',
+        message: `Could not remember ${folder} as a Recent Course: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
+  /**
+   * Whether a Course is being opened, in which case a command that needs a Lesson is refused with
+   * one message: the tree and the status bar still show the Course being left, and a silent
+   * refusal looks like a dead key.
+   */
+  function refusedWhileOpening(): boolean {
+    if (!switching) {
+      return false;
+    }
+    ui.showMessage({ severity: 'info', text: 'FollowAlong is opening a Course…' });
+    return true;
+  }
+
   /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
   function playLesson(lessonId: string): void {
-    if (switching) {
+    if (refusedWhileOpening()) {
       logger.log({
         level: 'info',
         message: `Not playing ${lessonId}: another Course is opening.`,
@@ -519,6 +574,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
    * no Lesson to move from.
    */
   function moveToLesson(offset: number): void {
+    if (refusedWhileOpening()) {
+      return;
+    }
     const beside = lessonBeside(loaded.lesson(), offset);
     if (beside === undefined) {
       ui.showMessage({ severity: 'info', text: noLessonText });
@@ -554,7 +612,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
     warnNotAbsolute(notAbsolute);
-    const scan = await scanCourses(ports, roots);
+    const recent = readRecent(storage.global);
+    // A Recent Course is a known Course: listed as itself, not as its Sections (ADR 0032).
+    const scan = await scanCourses(ports, roots, recent);
     // Once per window: a drive that stays unplugged would otherwise be named at every open.
     for (const root of scan.unreadableRoots.filter((unread) => !warnedUnreadable.has(unread))) {
       warnedUnreadable.add(root);
@@ -564,7 +624,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       });
     }
     const intent = await ui.pick(
-      buildCoursePicker({ hasRoots: roots.length > 0, courses: scan.courses }),
+      buildCoursePicker({
+        hasRoots: roots.length > 0,
+        courses: scan.courses,
+        recent: await recentCourses(ports, recent, scan.courses),
+        openFolder: openedCourse?.folder,
+      }),
     );
     switch (intent?.type) {
       case 'openCourse':
@@ -575,6 +640,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         if (await chooseCoursesRoot()) {
           await pickCourse();
         }
+        break;
+      case 'removeRecentCourse':
+        await removeRecent(storage.global, intent.folder);
+        await pickCourse();
+        break;
+      case 'locateCourse':
+        if (openedCourse !== undefined && sameFolder(openedCourse.folder, intent.folder)) {
+          // The Course that moved is still open: what it has not saved yet is carried too.
+          await progress?.save();
+        }
+        // Shown again either way: the entry is re-pointed, or still missing after a cancel.
+        await locateCourse(ports, intent.folder);
+        await pickCourse();
         break;
       case undefined:
         break;
@@ -609,6 +687,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     playLesson,
     pickCourse,
     async goToLesson() {
+      if (refusedWhileOpening()) {
+        return;
+      }
       if (openedCourse === undefined) {
         // With no Course there is no Lesson to go to: the key opens the Course picker (story 35).
         await pickCourse();

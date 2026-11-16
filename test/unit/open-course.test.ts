@@ -157,17 +157,22 @@ describe('opening a Course', () => {
     ]);
   });
 
-  it('loads at once when the same Course is opened again in the open player', async () => {
+  it('loads at once when another Course is opened in the open player', async () => {
     const h = await createHarness();
-    const course = await h.folder('course', { 'intro.webm': 'video' });
+    // Under one Courses root, so the player keeps its page (ADR 0022).
+    const learning = await h.folder('Learning', {
+      'course/intro.webm': 'video',
+      'other/welcome.webm': 'video',
+    });
+    h.config.set('coursesRoots', [learning]);
 
-    await h.core.openCourse(course);
+    await h.core.openCourse(join(learning, 'course'));
     h.player.ready();
-    await h.core.openCourse(course);
+    await h.core.openCourse(join(learning, 'other'));
 
     expect(h.player.sent).toMatchObject([
       { type: 'load', lessonId: 'intro.webm' },
-      { type: 'load', lessonId: 'intro.webm' },
+      { type: 'load', lessonId: 'welcome.webm' },
     ]);
   });
 

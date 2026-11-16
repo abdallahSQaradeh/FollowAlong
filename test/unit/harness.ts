@@ -14,7 +14,7 @@ import { createNodeFileSystem } from '../../src/adapters/node/file-system.js';
 import { createFollowAlong, type FollowAlong } from '../../src/core/follow-along.js';
 import type { LessonTreeModel } from '../../src/core/lesson-tree.js';
 import type { LogEntry, Logger } from '../../src/core/logger.js';
-import type { QuickPickModel } from '../../src/core/quick-pick.js';
+import type { QuickPickItemModel, QuickPickModel } from '../../src/core/quick-pick.js';
 import type { StatusBarModel } from '../../src/core/status-bar.js';
 import {
   FileSystemError,
@@ -214,6 +214,11 @@ class MemoryStore implements KeyValueStore {
   }
 
   set(key: string, value: unknown): Promise<void> {
+    if (this.failure !== undefined) {
+      const failure = this.failure;
+      this.failure = undefined;
+      return Promise.reject(new Error(failure));
+    }
     this.values.set(key, structuredClone(value));
     const gate = this.gate;
     if (gate !== undefined) {
@@ -222,6 +227,13 @@ class MemoryStore implements KeyValueStore {
       return gate.released;
     }
     return this.settlesLater ? new Promise((resolve) => setImmediate(resolve)) : Promise.resolve();
+  }
+
+  private failure: string | undefined;
+
+  /** Makes the next `set` fail, and store nothing, as a full or locked disk does. */
+  failNextSet(reason: string): void {
+    this.failure = reason;
   }
 
   private gate: { readonly reach: () => void; readonly released: Promise<void> } | undefined;
@@ -416,6 +428,30 @@ export class RecordingUi implements UiSink {
     answer(item.intent);
   }
 
+  /** The open quick pick's item with this label, if there is one. */
+  private itemLabelled(label: string): QuickPickItemModel<unknown> | undefined {
+    const entry = this.picker?.entries.find(
+      (candidate) => candidate.kind === 'item' && candidate.label === label,
+    );
+    return entry?.kind === 'item' ? entry : undefined;
+  }
+
+  /** The labels of the buttons beside the open quick pick's item with this label. */
+  buttonsOf(label: string): string[] {
+    return (this.itemLabelled(label)?.buttons ?? []).map((button) => button.label);
+  }
+
+  /** The learner presses a button beside the open quick pick's item with this label. */
+  press(label: string, button: string): void {
+    const pressed = this.itemLabelled(label)?.buttons?.find((b) => b.label === button);
+    if (this.answer === undefined || pressed === undefined) {
+      throw new Error(`No button “${button}” beside “${label}” in the open quick pick`);
+    }
+    const answer = this.answer;
+    this.answer = undefined;
+    answer(pressed.intent);
+  }
+
   /** The learner closes the quick pick without picking. */
   dismissPicker(): void {
     const answer = this.answer;
@@ -570,6 +606,8 @@ export interface Harness {
    * `release` is called; `reached` settles once the write has started.
    */
   holdWorkspaceWrite(): { readonly reached: Promise<void>; release(): void };
+  /** Makes the next write to the workspace state or the global storage fail, storing nothing. */
+  failNextWrite(store: 'workspace' | 'global', reason: string): void;
   /** Undoes {@link Harness.makeUnreadable}: the path reads as usual again. */
   makeReadable(path: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
@@ -584,9 +622,11 @@ export interface Harness {
   /**
    * VS Code starts again on the same workspace: a new core and a new player page, over the same
    * disk and the same global and workspace storage. The old core is dropped (`dispose`) as a
-   * crash would drop it; call `close()` on it first for a clean window close.
+   * crash would drop it; call `close()` on it first for a clean window close. With
+   * `otherWorkspace` it is another workspace of the same machine: the global storage is kept and
+   * the workspace storage starts empty.
    */
-  restart(): void;
+  restart(options?: { readonly otherWorkspace: boolean }): void;
 }
 
 export async function createHarness(): Promise<Harness> {
@@ -598,10 +638,13 @@ export async function createHarness(): Promise<Harness> {
   const ui = new RecordingUi();
   const logger = new RecordingLogger();
   const terminalSettings = new FakeTerminalSettings();
-  const workspace = new MemoryStore(true);
+  let workspace = new MemoryStore(true);
+  const globalStore = new MemoryStore();
   const storage: Storage = {
-    global: new MemoryStore(),
-    workspace,
+    global: globalStore,
+    get workspace() {
+      return workspace;
+    },
     folder: join(root, 'extension-storage'),
   };
   const nodeFileSystem = createNodeFileSystem();
@@ -693,6 +736,9 @@ export async function createHarness(): Promise<Harness> {
     holdWorkspaceWrite() {
       return workspace.holdNextSet();
     },
+    failNextWrite(store, reason) {
+      (store === 'workspace' ? workspace : globalStore).failNextSet(reason);
+    },
     holdReads(folder) {
       let release = (): void => undefined;
       held.set(
@@ -756,8 +802,12 @@ export async function createHarness(): Promise<Harness> {
         await Promise.allSettled([...inFlight]);
       }
     },
-    restart() {
+    restart(options) {
       harness.core.dispose();
+      if (options?.otherWorkspace === true) {
+        // The same machine, so the same global storage; the workspace state starts empty.
+        workspace = new MemoryStore(true);
+      }
       const windowPlayer = new FakePlayer();
       Object.assign(harness, {
         core: start(windowPlayer),

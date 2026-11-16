@@ -29,7 +29,7 @@ changes. These are the choices the spec leaves open.
   is a Course even when its Lessons are only in subfolders, and the walk stops there, so those
   subfolders are not listed as Courses of their own. Without a Lesson below it is left out,
   like any folder the scan finds nothing in. Recent Courses are the other kind of known
-  Course in the spec; they arrive with #35.
+  Course in the spec; they arrived with #35 (ADR 0041).
 - **A folder that holds only a zip is not a Course**, as before: a Course needs a Lesson file.
 - **A Course found under two roots is listed once, as the root named first in the setting files
   it.** Names and categories depend on the root, so the two spellings of one folder could
