@@ -155,6 +155,11 @@ export interface UiSink {
   selectLesson(lessonId: string): void;
   /** Opens a Resource in a tab beside the code, without touching the player or taking focus. */
   openResource(target: ResourceTarget): Promise<void>;
+  /**
+   * Hands keyboard focus back to the editor or terminal the learner used last, so a click in
+   * the player is not a Focus change (ADR 0009).
+   */
+  returnFocus(): void;
 }
 
 // --- All of them --------------------------------------------------------------------------------

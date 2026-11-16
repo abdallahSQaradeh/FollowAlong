@@ -301,6 +301,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           playback = { ...playback, ended: false };
         }
         break;
+      case 'userInteracted':
+        ui.returnFocus();
+        break;
       case 'timeUpdate':
         if (event.lessonId === current?.id) {
           position = event.position;
@@ -678,6 +681,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           }
           break;
       }
+      // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
+      // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
+      ui.returnFocus();
     },
     nextLesson() {
       moveToLesson(1);

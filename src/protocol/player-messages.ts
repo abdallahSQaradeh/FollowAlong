@@ -56,7 +56,13 @@ export type PlayerEvent =
   | { readonly type: 'rateChanged'; readonly lessonId: string; readonly rate: number }
   | { readonly type: 'error'; readonly lessonId: string; readonly message: string }
   /** The learner clicked the "Next: <title>" overlay shown for this Lesson's end. */
-  | { readonly type: 'nextClicked'; readonly lessonId: string };
+  | { readonly type: 'nextClicked'; readonly lessonId: string }
+  /**
+   * The learner finished an interaction with the player page (a click, a key, a native control,
+   * the release of a seek-bar drag), so the extension hands keyboard focus back to the Practice
+   * area (Focus return, ADR 0009). Not about a Lesson: it carries no `lessonId`.
+   */
+  | { readonly type: 'userInteracted' };
 
 type Fields = Readonly<Record<string, unknown>>;
 
@@ -124,6 +130,9 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
     return typeof raw.aacSupported === 'boolean'
       ? { type, aacSupported: raw.aacSupported }
       : undefined;
+  }
+  if (type === 'userInteracted') {
+    return { type };
   }
   if (!isText(lessonId)) {
     return undefined;
