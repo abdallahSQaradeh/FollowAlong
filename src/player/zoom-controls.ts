@@ -188,8 +188,9 @@ export class ZoomControls {
       }
       // A drag whose `click` never came must not swallow this press's click.
       this.dragEnded = false;
-      // A drag pans only while zoomed, where there is more picture to move to.
-      const draws = !this.zoomed || this.areaMode;
+      // A drag pans only while zoomed, where there is more picture to move to; Shift, or area
+      // mode, asks for a new area instead (ADR 0087).
+      const draws = !this.zoomed || this.areaMode || event.shiftKey;
       this.press = {
         pointerId: event.pointerId,
         x: event.clientX,
