@@ -144,3 +144,50 @@ describe('Next and Previous Lesson before a Lesson is open', () => {
     expect(h.ui.selectedLesson).toBe('Section 1/01 Welcome.webm');
   });
 });
+
+describe('Next and Previous Lesson in a Course with no Lessons', () => {
+  it('say no Lesson is open when the Course the learner opened last has no Lessons', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    const empty = await h.folder('Empty', { 'notes.pdf': 'x' });
+    await h.core.openCourse(empty);
+    h.ui.messages.length = 0;
+
+    h.core.nextLesson();
+    h.core.previousLesson();
+
+    expect(h.ui.messages.map((message) => message.text)).toEqual([
+      'FollowAlong: no Lesson is open. Open a Course first.',
+      'FollowAlong: no Lesson is open. Open a Course first.',
+    ]);
+    expect(h.player.sent).toEqual([]);
+  });
+});
+
+describe('Course order inside nested Sections', () => {
+  it('goes through a Section’s own Lessons, then its nested Section, then the next Section', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Nested', {
+      'Part 1/01 A.mp4': 'v',
+      'Part 1/Deep/02 B.mp4': 'v',
+      'Part 2/03 C.mp4': 'v',
+    });
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.player.clearSent();
+
+    h.core.nextLesson();
+    h.core.nextLesson();
+    expect(h.ui.selectedLesson).toBe('Part 2/03 C.mp4');
+    h.core.previousLesson();
+    h.core.previousLesson();
+
+    expect(loadedLessons(h)).toEqual([
+      'Part 1/Deep/02 B.mp4',
+      'Part 2/03 C.mp4',
+      'Part 1/Deep/02 B.mp4',
+      'Part 1/01 A.mp4',
+    ]);
+    expect(h.ui.selectedLesson).toBe('Part 1/01 A.mp4');
+  });
+});

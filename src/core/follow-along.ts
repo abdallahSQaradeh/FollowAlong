@@ -255,18 +255,23 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     play(course, lesson);
   }
 
-  /** Plays the Lesson `offset` places from the current one in Course order, if there is one. */
+  /**
+   * Plays the Lesson `offset` places from the current one in Course order, if there is one. The
+   * current Lesson is not in the open Course when the learner opened a Course with no Lessons
+   * after it: its player still shows the old Lesson, but there is no Lesson to move from.
+   */
   function moveToLesson(offset: number): void {
     const course = openedCourse;
-    if (current === undefined || course === undefined) {
+    const lessons = course === undefined ? [] : lessonsInOrder(course);
+    const here = lessons.findIndex((lesson) => lesson.id === current?.id);
+    if (course === undefined || here === -1) {
       ui.showMessage({
         severity: 'info',
         text: 'FollowAlong: no Lesson is open. Open a Course first.',
       });
       return;
     }
-    const lessons = lessonsInOrder(course);
-    const target = lessons[lessons.findIndex((lesson) => lesson.id === current?.id) + offset];
+    const target = lessons[here + offset];
     if (target !== undefined) {
       play(course, target);
     }

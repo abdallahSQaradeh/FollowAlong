@@ -4,51 +4,42 @@
  */
 import * as vscode from 'vscode';
 
+import type { Logger } from '../../core/logger.js';
 import type { LessonTreeModel, LessonTreeNode } from '../../core/lesson-tree.js';
 
 export const lessonTreeViewId = 'followalong.lessons';
 export const playLessonCommand = 'followalong.playLesson';
 
-/** The node with this id, anywhere in the tree. */
-function findNode(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode | undefined {
+/** The nodes from the top of the tree down to the node with this id, or none if it is not there. */
+function pathTo(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode[] {
   for (const node of nodes) {
     if (node.id === id) {
-      return node;
+      return [node];
     }
-    const inside = node.kind === 'section' ? findNode(node.children, id) : undefined;
-    if (inside !== undefined) {
-      return inside;
-    }
-  }
-  return undefined;
-}
-
-/** The Section that holds `target`, or undefined for a node at the top. */
-function findParent(
-  nodes: readonly LessonTreeNode[],
-  target: LessonTreeNode,
-  parent?: LessonTreeNode,
-): LessonTreeNode | undefined {
-  for (const node of nodes) {
-    if (node.id === target.id) {
-      return parent;
-    }
-    const inside = node.kind === 'section' ? findParent(node.children, target, node) : undefined;
-    if (inside !== undefined) {
-      return inside;
+    const inside = node.kind === 'section' ? pathTo(node.children, id) : [];
+    if (inside.length > 0) {
+      return [node, ...inside];
     }
   }
-  return undefined;
+  return [];
 }
 
 export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, vscode.Disposable {
   private model: LessonTreeModel = { nodes: [] };
   private readonly changed = new vscode.EventEmitter<undefined>();
   private readonly view: vscode.TreeView<LessonTreeNode>;
+  private readonly subscription: vscode.Disposable;
+  /** The Lesson the core last asked to select. */
+  private selectedLessonId: string | undefined;
   readonly onDidChangeTreeData = this.changed.event;
 
-  constructor() {
+  constructor(private readonly logger: Logger) {
     this.view = vscode.window.createTreeView(lessonTreeViewId, { treeDataProvider: this });
+    this.subscription = this.view.onDidChangeVisibility((event) => {
+      if (event.visible) {
+        this.revealSelected();
+      }
+    });
   }
 
   show(model: LessonTreeModel): void {
@@ -57,16 +48,37 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
     this.changed.fire(undefined);
   }
 
-  /** Selects the Lesson and scrolls it into view, without taking focus from the code. */
+  /**
+   * Selects the Lesson and scrolls it into view, without taking focus from the code. A view that
+   * is not on screen cannot select anything, so the Lesson is kept and selected when it appears.
+   */
   select(lessonId: string): void {
-    const node = findNode(this.model.nodes, lessonId);
-    if (node !== undefined) {
-      void this.view.reveal(node, { select: true, focus: false, expand: true });
+    this.selectedLessonId = lessonId;
+    this.revealSelected();
+  }
+
+  /** The id of the Lesson the tree shows as selected, for the smoke test. */
+  selectedLesson(): string | undefined {
+    return this.view.selection[0]?.id;
+  }
+
+  private revealSelected(): void {
+    const node = pathTo(this.model.nodes, this.selectedLessonId ?? '').at(-1);
+    if (node === undefined || !this.view.visible) {
+      return;
     }
+    this.view
+      .reveal(node, { select: true, focus: false, expand: true })
+      .then(undefined, (error: unknown) => {
+        this.logger.log({
+          level: 'warn',
+          message: `Could not select ${node.id} in the Lesson tree: ${String(error)}`,
+        });
+      });
   }
 
   getParent(node: LessonTreeNode): LessonTreeNode | undefined {
-    return findParent(this.model.nodes, node);
+    return pathTo(this.model.nodes, node.id).at(-2);
   }
 
   getChildren(node?: LessonTreeNode): LessonTreeNode[] {
@@ -92,6 +104,7 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
   }
 
   dispose(): void {
+    this.subscription.dispose();
     this.view.dispose();
     this.changed.dispose();
   }
