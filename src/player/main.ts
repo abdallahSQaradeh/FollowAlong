@@ -33,6 +33,10 @@ if (nextButton === null) {
 }
 /** The "Next: <title>" overlay over the picture of a Lesson that has ended (ADR 0019). */
 const nextOverlay: HTMLElement = nextButton;
+/** "Preparing sound… N%", or the error and its button, over the first frame (ADR 0055). */
+const soundNotice = part('.sound-notice');
+const soundText = part('.sound-text');
+const soundSkip = part('.sound-skip');
 const soundElement = document.querySelector('audio');
 if (soundElement === null) {
   throw new Error('The player page has no <audio> element.');
@@ -49,6 +53,20 @@ const sidecar: HTMLAudioElement = soundElement;
  * never plays a sidecar, so the sound never plays twice (ADR 0034).
  */
 const aacSupported = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') !== '';
+/**
+ * The other sound codecs the page decodes in an MP4, by ffmpeg's names (`ready {soundCodecs}`,
+ * ADR 0056): an MP4 whose sound is one of them plays its own track, so it gets no sidecar and the
+ * sound never plays twice. Asked of the page, not assumed from the VS Code it was measured in.
+ */
+const soundCodecs = (
+  [
+    ['mp3', 'mp4a.6B'],
+    ['opus', 'opus'],
+    ['flac', 'flac'],
+  ] as const
+)
+  .filter(([, mp4Codec]) => video.canPlayType(`audio/mp4; codecs="${mp4Codec}"`) !== '')
+  .map(([name]) => name);
 /** How far the sidecar may drift from the video before it is moved back to it, in seconds. */
 const maxDriftSeconds = 0.1;
 
@@ -102,10 +120,11 @@ interface Lesson {
   playing: boolean;
   /**
    * Where the Lesson's sound comes from: its own track (`own`); the sidecar, still to come
-   * (`awaited`) or playing beside the video (`sidecar`); or none, because it could not be
-   * prepared (`none`).
+   * (`awaited`) or playing beside the video (`sidecar`); none, because the learner chose to play
+   * without it (`none`); or none yet, because it could not be prepared and the learner has not
+   * chosen (`failed`: the error and its button are shown, ADR 0055).
    */
-  sound: 'own' | 'awaited' | 'sidecar' | 'none';
+  sound: 'own' | 'awaited' | 'sidecar' | 'none' | 'failed';
   /** Set while the sound is awaited: the Lesson plays as soon as it arrives (autoplay, or a press). */
   playWhenSound: boolean;
   /** The last `currentTime` the player wrote itself, until a seek lands. */
@@ -177,6 +196,7 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
   media.pause();
   // Its sound must not play on alone, now or when it arrives (`soundSettled` and `play` check).
   dropSound();
+  hideSoundNotice();
 }
 
 /** Stops the sidecar of the Lesson before and empties it, so it never plays over the next one. */
@@ -191,6 +211,7 @@ function dropSound(): void {
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
   hideNext();
+  hideSoundNotice();
   dropSound();
   // An MP4 whose AAC sound the page cannot decode waits for its sound. The native controls are
   // hidden meanwhile: their play button would start the picture without its sound. The video is
@@ -253,11 +274,11 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
 }
 
 /**
- * Whether the native controls are held back for the Lesson's sound: while it is awaited, their
- * play button would start the picture without it.
+ * Whether the native controls are held back for the Lesson's sound: while it is awaited, or has
+ * failed and waits for the learner's choice, their play button would start the picture without it.
  */
 function controlsHeldForSound(): boolean {
-  return current?.sound === 'awaited';
+  return current?.sound === 'awaited' || current?.sound === 'failed';
 }
 
 /**
@@ -277,23 +298,69 @@ function alignSound(media: HTMLVideoElement): void {
   }
 }
 
+/** Shows `text` over the first frame, and the "Play without sound" button when `skippable`. */
+function showSoundNotice(text: string, skippable: boolean): void {
+  soundText.textContent = text;
+  soundText.setAttribute('role', skippable ? 'alert' : 'status');
+  soundSkip.hidden = !skippable;
+  soundNotice.hidden = false;
+}
+
+function hideSoundNotice(): void {
+  soundNotice.hidden = true;
+  soundSkip.hidden = true;
+  soundText.textContent = '';
+}
+
+/** The sound is `percent` prepared: "Preparing sound… N%", over a Lesson that waits for it. */
+function soundProgress(percent: number): void {
+  if (current?.sound === 'awaited' && !current.failed) {
+    showSoundNotice(`Preparing sound… ${String(Math.floor(percent))}%`, false);
+  }
+}
+
 /**
- * The wait for the Lesson's sound is over. Its sidecar arrived (`audioUri`) and plays beside the
- * video from now on; or none is coming (`without`): it could not be prepared (`none`: the Lesson
- * plays without sound, which ticket #42 replaces with an overlay and a "Play without sound"
- * button), or the video needs none (`own`). A play asked for meanwhile goes ahead.
+ * The sound could not be prepared: the error is shown over the first frame with a button, and the
+ * Lesson waits for the learner's choice. A play asked for meanwhile is dropped, so the picture
+ * never starts silently without their say (ADR 0055).
  */
-function soundSettled(
-  audioUri: string | undefined,
-  media: HTMLVideoElement,
-  without: 'none' | 'own' = 'none',
-): void {
+function soundFailed(message: string, media: HTMLVideoElement): void {
   const lesson = current;
   if (lesson?.sound !== 'awaited' || lesson.failed) {
     return;
   }
+  lesson.sound = 'failed';
+  lesson.playWhenSound = false;
+  showSoundNotice(`FollowAlong could not prepare the sound of this Lesson: ${message}`, true);
+  showControls(media);
+}
+
+/** The learner chose to play the picture without its sound after the sound failed. */
+function playWithoutSound(media: HTMLVideoElement): void {
+  const lesson = current;
+  if (lesson?.sound !== 'failed' || lesson.failed) {
+    return;
+  }
+  lesson.sound = 'none';
+  hideSoundNotice();
+  showControls(media);
+  post({ type: 'playWithoutSound', ...lesson.about });
+  play(media);
+}
+
+/**
+ * The wait for the Lesson's sound is over. Its sidecar arrived (`audioUri`) and plays beside the
+ * video from now on; or none is coming: the video needs none (`own`). A play asked for meanwhile
+ * goes ahead.
+ */
+function soundSettled(audioUri: string | undefined, media: HTMLVideoElement): void {
+  const lesson = current;
+  if (lesson?.sound !== 'awaited' || lesson.failed) {
+    return;
+  }
+  hideSoundNotice();
   if (audioUri === undefined) {
-    lesson.sound = without;
+    lesson.sound = 'own';
   } else {
     lesson.sound = 'sidecar';
     sidecar.src = audioUri;
@@ -316,6 +383,10 @@ function play(media: HTMLVideoElement): void {
   const lesson = current;
   if (lesson?.failed === true) {
     // The player posts nothing more for a failed Lesson (ADR 0003), and plays nothing of it.
+    return;
+  }
+  if (lesson?.sound === 'failed') {
+    // The error is on show: the button is the way to play (ADR 0055).
     return;
   }
   if (lesson?.sound === 'awaited') {
@@ -438,12 +509,15 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
     case 'soundReady':
       soundSettled(command.audioUri, media);
       break;
+    case 'soundProgress':
+      soundProgress(command.percent);
+      break;
     case 'soundFailed':
-      soundSettled(undefined, media);
+      soundFailed(command.message, media);
       break;
     case 'noSidecar':
       // A silent MP4, or one whose sound the page decodes: the video plays as it is (ADR 0034).
-      soundSettled(undefined, media, 'own');
+      soundSettled(undefined, media);
       break;
     case 'zoom':
       zoomControls.reset();
@@ -586,6 +660,9 @@ function togglePlayback(media: HTMLVideoElement): void {
   if (current === undefined || current.failed) {
     return;
   }
+  if (current.sound === 'failed') {
+    return;
+  }
   if (current.sound === 'awaited') {
     // The click asks for the Lesson as soon as its sound arrives, or takes that back.
     current.playWhenSound = !current.playWhenSound;
@@ -721,6 +798,9 @@ const zoomControls = new ZoomControls({
   controlsHeldBack: controlsHeldForSound,
 });
 
+soundSkip.addEventListener('click', () => {
+  playWithoutSound(video);
+});
 nextOverlay.addEventListener('click', () => {
   if (current !== undefined && !current.failed) {
     post({ type: 'nextClicked', ...current.about });
@@ -735,6 +815,6 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
     run(command, video);
   }
 });
-post({ type: 'ready', aacSupported });
+post({ type: 'ready', aacSupported, soundCodecs });
 // A reloaded page shows the zoom the page before it had, and so reports it after `ready`.
 zoomControls.restore();

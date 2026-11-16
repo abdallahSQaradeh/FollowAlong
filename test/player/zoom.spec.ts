@@ -344,7 +344,7 @@ test.describe('the zoom', () => {
     await expect
       .poll(() => page.evaluate(() => window.followalongSent))
       .toEqual([
-        { type: 'ready', aacSupported: true },
+        { type: 'ready', aacSupported: true, soundCodecs: expect.any(Array) },
         { type: 'zoomChanged', level: 4 },
       ]);
     expectArea(await shownArea(page), { left: 0.25, top: 0.25, width: 0.25, height: 0.25 });
@@ -360,7 +360,7 @@ test.describe('the zoom', () => {
     await page.waitForTimeout(300);
 
     expect(await page.evaluate(() => window.followalongSent)).toEqual([
-      { type: 'ready', aacSupported: true },
+      { type: 'ready', aacSupported: true, soundCodecs: expect.any(Array) },
     ]);
   });
 });

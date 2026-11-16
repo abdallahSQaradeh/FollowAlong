@@ -57,13 +57,17 @@ test.describe('the player', () => {
   test('reports ready, saying AAC plays where it does', async ({ page }) => {
     const player = await openPlayer(page, { aac: true });
 
-    expect(await player.events()).toEqual([{ type: 'ready', aacSupported: true }]);
+    expect(await player.events()).toEqual([
+      { type: 'ready', aacSupported: true, soundCodecs: expect.any(Array) },
+    ]);
   });
 
   test('reports ready, saying AAC does not play in VS Code', async ({ page }) => {
     const player = await openPlayer(page, { aac: false });
 
-    expect(await player.events()).toEqual([{ type: 'ready', aacSupported: false }]);
+    expect(await player.events()).toEqual([
+      { type: 'ready', aacSupported: false, soundCodecs: expect.any(Array) },
+    ]);
   });
 
   test('plays a WebM Lesson through MediaSource, with sound', async ({ page }) => {
@@ -971,6 +975,8 @@ test.describe('the player', () => {
     });
 
     expect((await player.video()).currentSrc).toBe('');
-    expect(await player.events()).toEqual([{ type: 'ready', aacSupported: expect.any(Boolean) }]);
+    expect(await player.events()).toEqual([
+      { type: 'ready', aacSupported: expect.any(Boolean), soundCodecs: expect.any(Array) },
+    ]);
   });
 });
