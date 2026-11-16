@@ -170,7 +170,7 @@ describe('attaching a file Resource to a Lesson', () => {
     }
 
     expect(h.ui.opened).toEqual([
-      { kind: 'file', path: join(moved, 'notes', 'cheat.md') },
+      { kind: 'markdown', path: join(moved, 'notes', 'cheat.md') },
       { kind: 'file', path: join(outside, 'snippet.ts') },
     ]);
   });
@@ -355,9 +355,57 @@ describe('opening a Resource', () => {
 
     await h.core.openResource(firstResourceId(h, 'intro.webm'));
 
-    expect(h.ui.opened).toEqual([{ kind: 'file', path: join(course, 'notes', 'cheat.md') }]);
+    expect(h.ui.opened).toEqual([{ kind: 'markdown', path: join(course, 'notes', 'cheat.md') }]);
     expect(h.player.shown).toEqual(shown);
     expect(h.player.sent).toEqual(sent);
+  });
+
+  it.each([
+    ['notes.md', 'markdown'],
+    ['README.markdown', 'markdown'],
+    ['page.html', 'html'],
+    ['page.htm', 'html'],
+    ['diagram.png', 'image'],
+    ['photo.jpg', 'image'],
+    ['photo.jpeg', 'image'],
+    ['anim.gif', 'image'],
+    ['shot.webp', 'image'],
+    ['slides.pdf', 'pdf'],
+    ['snippet.ts', 'file'],
+    ['notes.txt', 'file'],
+    ['logo.svg', 'file'],
+    ['Makefile', 'file'],
+    ['NOTES.MD', 'markdown'],
+    ['Slides.PDF', 'pdf'],
+    ['PAGE.HTML', 'html'],
+  ])('opens %s as a %s', async (name, kind) => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { 'intro.webm': 'video', [`res/${name}`]: 'content' });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'res', name));
+
+    await h.core.openResource(firstResourceId(h, 'intro.webm'));
+
+    expect(h.ui.opened).toEqual([{ kind, path: join(course, 'res', name) }]);
+  });
+
+  it('opens a file whose name only ends like a type as a plain file', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'res/pdf': 'x',
+      'res/.md': 'x',
+    });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'res', 'pdf'));
+    await h.core.attachResource('intro.webm', join(course, 'res', '.md'));
+    const node = lessonNode(h, 'intro.webm');
+    const ids = node?.kind === 'lesson' ? node.resources.map((resource) => resource.id) : [];
+    for (const id of ids) {
+      await h.core.openResource(id);
+    }
+
+    expect(h.ui.opened.map((target) => target.kind)).toEqual(['file', 'file']);
   });
 
   it('opens nothing for a Resource the open Course does not have', async () => {
