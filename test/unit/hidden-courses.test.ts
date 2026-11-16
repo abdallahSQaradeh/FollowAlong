@@ -32,7 +32,7 @@ describe('hiding a stray folder from the Course picker', () => {
     await h.ui.pickerShown();
 
     expect(rows(h.ui.picker)).toEqual(['Alpha', 'Stray', 'Browse…', 'Add Courses root…']);
-    expect(h.ui.buttonsOf('Stray')).toEqual(['Hide']);
+    expect(h.ui.buttonsOf('Stray')).toEqual(['Open in new window', 'Hide']);
     expect(h.ui.buttonsOf('Add Courses root…')).toEqual([]);
   });
 
