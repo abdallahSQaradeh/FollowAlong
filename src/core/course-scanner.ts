@@ -29,7 +29,8 @@ export interface CourseScan {
 /**
  * Walks each Courses root at any depth. The first folder on a branch that directly holds a Lesson
  * file is a Course, and the walk does not go below it: its subfolders are its Sections. Hidden
- * folders (a leading `.`, so `.git` and `.followalong` too) and `node_modules` are not walked.
+ * folders (a leading `.`, so `.git` and `.followalong` too), `node_modules`, `$RECYCLE.BIN` and
+ * `System Volume Information` are not walked.
  * A subfolder that cannot be read is logged and left out, and the walk carries on.
  */
 export async function scanCourses(ports: ScanPorts, roots: readonly string[]): Promise<CourseScan> {
@@ -55,6 +56,17 @@ export async function scanCourses(ports: ScanPorts, roots: readonly string[]): P
   return { courses, unreadableRoots };
 }
 
+/**
+ * Folders Windows keeps at the root of a drive, which a drive named as a Courses root would show:
+ * the recycle bin holds deleted Courses, which must not be offered. Matched in any letter case.
+ */
+const driveFolders = new Set(['$recycle.bin', 'system volume information']);
+
+/** Whether the scan walks into a subfolder of this name. */
+function isWalked(name: string): boolean {
+  return !isSkippedFolder(name) && !driveFolders.has(name.toLowerCase());
+}
+
 /** Rejects only when `folder` itself cannot be read. */
 async function walk(
   ports: ScanPorts,
@@ -67,7 +79,7 @@ async function walk(
     return;
   }
   for (const entry of entries) {
-    if (entry.kind !== 'directory' || isSkippedFolder(entry.name)) {
+    if (entry.kind !== 'directory' || !isWalked(entry.name)) {
       continue;
     }
     const subfolder = join(folder, entry.name);

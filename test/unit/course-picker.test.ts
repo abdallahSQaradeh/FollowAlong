@@ -351,4 +351,48 @@ describe('the Course picker', () => {
       [learning, h.storage.folder],
     ]);
   });
+
+  it("skips a drive's recycle bin and System Volume Information", async () => {
+    const h = await createHarness();
+    const drive = await h.folder('Drive', {
+      'Real Course/01 Intro.mp4': 'v',
+      '$RECYCLE.BIN/S-1-5-21-1000/Deleted Course/01 Intro.mp4': 'v',
+      'System Volume Information/Snapshot/demo.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [drive]);
+
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+  });
+
+  it('says once per window that a Courses root cannot be read', async () => {
+    const h = await createHarness();
+    const unplugged = join(h.root, 'Unplugged drive');
+    h.config.set('coursesRoots', [unplugged]);
+
+    for (let open = 0; open < 2; open += 1) {
+      const picking = h.core.pickCourse();
+      await h.ui.pickerShown();
+      h.ui.dismissPicker();
+      await picking;
+    }
+
+    expect(h.ui.messages).toHaveLength(1);
+  });
+
+  it('gives the player a Course whose path differs in letter case from its root as its own folder', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Some Course/intro.webm': 'v' });
+    // VS Code matches the player's files against its folders by spelling, letter case included.
+    const otherCase = await h.folder(join('LEARNING', 'Some Course'), { 'intro.webm': 'v' });
+    h.config.set('coursesRoots', [learning]);
+
+    await h.core.openCourse(otherCase);
+
+    expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
+      [learning, otherCase, h.storage.folder],
+    ]);
+  });
 });

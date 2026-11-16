@@ -10,16 +10,25 @@ the setting, the scanner and the picker model. These are the choices spec #12 le
 - An array of absolute folder paths, empty by default. Its `scope` is **`machine`**: it can only be
   set in user settings (the spec's "user-level") and Settings Sync does not carry it to another
   machine, where the same paths rarely exist (`D:\Learning` on one PC is not on the next).
-- `src/core/courses-roots.ts` reads it through the Config port when the picker opens, keeps only
-  non-empty strings, and writes it through a new `Config.update(name, value)`, which the VS Code
-  adapter sends to the user settings (`ConfigurationTarget.Global`). A root already in the list is
-  not added again.
-- Paths are used as written: a Course's path is its root's spelling joined with folder names, so
-  the same Course always has the same spelling, as ADR 0005 needs for the fallback-storage key.
-  The one change is made where a path comes from VS Code (the folder dialog, a folder URI passed
-  to _Open Course…_): VS Code's `fsPath` spells a Windows drive letter in lower case (`d:`), so the
-  adapter upper-cases it, the way Windows and a learner write it. Otherwise the same root could be
-  added twice, and the same Course get two storage keys.
+- `src/core/courses-roots.ts` reads it through the Config port each time it is needed (the
+  picker opens, a Lesson is shown). It writes it through a new `Config.update(name, value)`, which
+  the VS Code adapter sends to the user settings (`ConfigurationTarget.Global`). Entries the
+  learner wrote stay as written; a root is appended after them.
+- **One spelling per root.** Every entry is normalised when it is read: resolved (no `.` or `..`
+  segments, no trailing separator) and, on Windows, with an upper-case drive letter. Two entries
+  for one folder (`D:\Learning`, `D:\Learning\`, and on Windows `d:\learning`, compared
+  without letter case) count once, and _Add Courses root…_ does not add a root that is already
+  there in any spelling. A Course's path is its normalised root joined with folder names, so the
+  same Course always has the same spelling, as ADR 0005 needs for the fallback-storage key, and
+  its Progress is never split between two keys. Where a path comes from VS Code (the folder
+  dialog, a folder URI passed to _Open Course…_), the adapter also upper-cases the drive letter
+  that VS Code's `fsPath` spells in lower case.
+- **Only full paths.** An entry that is not absolute (`.`, `~`, `Courses`) is skipped, with one
+  warning per window naming it: it would resolve against whatever folder VS Code runs in, and,
+  as one of the player's folders, could hand the page a whole disk.
+- **A changed setting is not acted on at once.** The player's folders follow the setting at the
+  next Lesson shown. Narrowing them live would reload the page under the Lesson that plays, at
+  0:00 and without the click (#12 D3), for a page that only fetches what the core sends it.
 
 ## The Course scanner (`src/core/course-scanner.ts`)
 
@@ -31,14 +40,21 @@ the setting, the scanner and the picker model. These are the choices spec #12 le
   Sections, so the Course model, not the scanner, decides about them. A root that directly holds a
   Lesson is itself a Course.
 - **Not walked:** hidden folders (a leading `.`, so `.git` and `.followalong`) and `node_modules`,
-  through the same `isSkippedFolder` as the Course model. Entries that are neither file nor folder
+  through the same `isSkippedFolder` as the Course model, and the folders Windows keeps at a
+  drive's root, `$RECYCLE.BIN` (it holds deleted Courses) and `System Volume Information`, in any
+  letter case. Entries that are neither file nor folder
   (symbolic links, junctions) are ignored, so a link loop cannot trap the scan.
 - **No depth limit**, one folder at a time (ADR 0007's reason: a drive root as a root must not open
   thousands of folders at once).
 - **Unreadable folders.** A subfolder that cannot be read is logged and left out, and the walk goes
   on. A root that cannot be read (missing, an unplugged drive, no permission) is logged and
-  returned in `unreadableRoots`; the core tells the learner with one warning per root, and lists
-  the other roots' Courses.
+  returned in `unreadableRoots`; the core tells the learner with one warning per root, once per
+  window (an unplugged drive would otherwise be named at every open), and lists the other roots'
+  Courses.
+- **A root is taken as given.** Nothing above a root is read. A root named inside a Course
+  (`D:\Learning\Some Course\Section 2`) therefore lists that Section as a Course: the learner
+  asked for that folder, and the scanner cannot know a folder above it is a Course without
+  walking up out of the root.
 - **Order and duplicates.** Courses are sorted A–Z by name with the natural order of ADR 0007
   (`lesson2` before `lesson10`, the fixed `en` collator), ties by path. A folder found twice (one
   root inside another) is listed once.
@@ -81,13 +97,22 @@ at every switch, and moved the tab. Two changes:
   panel is never disposed on a switch, so `Player.onDidClose` cannot fire for it, and the tab stays
   in its editor group.
 - **The roots rarely change.** Measured in the smoke test on VS Code 1.146 (Windows, CI run
-  43813403964): the reload loses the click. The picked Course's Lesson was refused autoplay
+  43813403964): the reload loses the click. Accepted by the orchestrator (#12 D3/D9). The picked Course's Lesson was refused autoplay
   (`paused {byUser: false}`) in the kept panel. So the core now gives the player the **Courses
   roots** as its folders, plus the Course folder only when it is outside every root, plus the
   extension storage. Switching between Courses under the roots keeps the same roots: `show`
   answers `revealed`, the same page loads the next Lesson, and it still has the click. The smoke
   test asserts it: after one click, a Course picked under the same root starts by itself. A
   Course outside the roots, or a changed `coursesRoots` setting, reloads the page once.
+
+A Course counts as under a root only when its path starts with the root's spelling, letter case
+included: VS Code matches the player's files against its folders by spelling, so a Course whose
+path differs in case is given to the player as its own folder rather than left unreadable.
+
+One page now outlives a Course, so a late event from the previous Course's Lesson can arrive after
+the next Course's Lesson with the same id (`01.mp4`) was loaded. The core therefore numbers its
+`load`s, the player echoes the number on every event about the Lesson, and the core acts only on
+events of the current load (ADR 0003).
 
 The cost: the player page may read any file under the Courses roots, not only the open Course's.
 The roots are folders the learner named for their Courses, and the page is FollowAlong's own,
@@ -108,6 +133,8 @@ with a nonce CSP and no remote content, which only fetches the URIs the core sen
 
 - `Config` has `update`, and `UiSink` has `chooseFolder`; every implementation (the VS Code ones,
   the Seam 1 fakes) has them.
+- The scan runs each time the picker opens, before it shows, with no cache and no busy indicator:
+  #37 adds the cache and the background rescan.
 - A read-only Course keeps its Resources in the extension storage, keyed by its absolute path
   (ADR 0005), so they do not follow a Course folder that is moved or renamed; the Course then shows
   under its new path without them. This picker lists Courses by their current path only; #35's

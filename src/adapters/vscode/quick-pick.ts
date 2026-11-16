@@ -1,7 +1,7 @@
 /**
  * The VS Code adapter for the core's quick-pick view models. It knows nothing of any one picker:
  * it draws a {@link QuickPickModel} and answers with the intent of the item the learner picked.
- * The Lesson picker uses it now; the Course picker will too.
+ * The Lesson picker and the Course picker both use it.
  */
 import * as vscode from 'vscode';
 

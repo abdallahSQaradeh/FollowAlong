@@ -408,8 +408,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** The open Course's Course data, and the Resources read from it. */
   let courseData: CourseData | undefined;
   let resources: ResourcesData = noResources;
-  /** The Courses roots setting entries the learner was told about in this window. */
+  /** The Courses roots setting entries, and the roots, the learner was told about in this window. */
   const warnedRoots = new Set<string>();
+  const warnedUnreadable = new Set<string>();
   /** How many Course opens have started: the number of the latest, which is the one that wins. */
   let opens = 0;
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
@@ -651,7 +652,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     const { roots, notAbsolute } = readCoursesRoots(config);
     warnNotAbsolute(notAbsolute);
     const scan = await scanCourses(ports, roots);
-    for (const root of scan.unreadableRoots) {
+    // Once per window: a drive that stays unplugged would otherwise be named at every open.
+    for (const root of scan.unreadableRoots.filter((unread) => !warnedUnreadable.has(unread))) {
+      warnedUnreadable.add(root);
       ui.showMessage({
         severity: 'warning',
         text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
