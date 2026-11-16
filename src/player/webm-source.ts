@@ -121,7 +121,7 @@ export class WebmSource {
       .then(() => {
         URL.revokeObjectURL(objectUrl);
         this.buffer = this.mediaSource.addSourceBuffer(webmType);
-        this.declareSeekableRange(this.buffer);
+        this.declareSeekableRange();
         return this.run(0);
       })
       .catch((error: unknown) => {
@@ -131,21 +131,17 @@ export class WebmSource {
 
   /**
    * A WebM without a Duration element leaves the MediaSource duration unknown (Infinity) until the
-   * stream ends, and then `seekable` stops at the buffered end: a seek further ahead, such as a
-   * long forward step, would be silently cut short. Declaring the whole timeline seekable lets such
-   * a seek go through `onSeeking` and wait for the stream like any other seek ahead of it. The
-   * range ends with the stream (`endOfStream` fixes the duration).
+   * stream ends, and then `seekable` stops at the buffered end: a start position or a long forward
+   * step further ahead would be cut short, or dropped while nothing is buffered. Declaring the
+   * whole timeline seekable lets such a seek go through `onSeeking` and wait for the stream like
+   * any other seek ahead of it. It is declared before the first append: MediaSource sets the
+   * duration from the init segment before the media element has its metadata, so the range is in
+   * place when `loadedmetadata` applies a start position, which can come before the end of that
+   * append. MediaSource uses the range only while the duration is Infinity, so a WebM with a
+   * Duration keeps [0, duration], and `endOfStream` fixes the duration of one without.
    */
-  private declareSeekableRange(buffer: SourceBuffer): void {
-    buffer.addEventListener(
-      'updateend',
-      () => {
-        if (this.mediaSource.readyState === 'open' && !Number.isFinite(this.mediaSource.duration)) {
-          this.mediaSource.setLiveSeekableRange(0, unknownLengthSeekableEnd);
-        }
-      },
-      { once: true, signal: this.lifetime.signal },
-    );
+  private declareSeekableRange(): void {
+    this.mediaSource.setLiveSeekableRange(0, unknownLengthSeekableEnd);
   }
 
   dispose(): void {

@@ -7,6 +7,7 @@ import {
   longClusterOffset,
   media,
   mp4Duration,
+  noDurationClusterOffset,
   openPlayer,
   webmDuration,
   type PlayerHarness,
@@ -328,6 +329,36 @@ test.describe('the player', () => {
         .toBe(true);
       expect((await player.video()).currentTime).toBeCloseTo(6, 1);
       expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+  }
+
+  // With the default 1 MB appends, `loadedmetadata` (which applies `startAt`) can come before the
+  // end of the first append; held at a Cluster, only what is before it is buffered by then.
+  for (const [what, cluster] of [
+    ['before any of its media is buffered', 0],
+    ['with only its first two seconds buffered', 2],
+  ] as const) {
+    test(`reaches a start position in a WebM without a Duration whose metadata comes ${what}`, async ({
+      page,
+    }) => {
+      const player = await openPlayer(page, {
+        holdAt: noDurationClusterOffset(cluster),
+        metadataBeforeFirstAppendEnds: true,
+      });
+      await player.post(load({ videoUri: media.noDuration, startAt: 6, autoplay: false }));
+      await expect.poll(async () => (await player.video()).duration).toBe(Infinity);
+
+      await player.releaseStream();
+
+      await expect
+        .poll(async () => seekedAt(await player.events(), 6), {
+          message: 'the player sends a timeUpdate at 0:06, then seeked',
+        })
+        .toBe(true);
+      expect((await player.video()).currentTime).toBeCloseTo(6, 1);
+      const types = (await player.events()).map((event) => event.type);
+      expect(types.filter((type) => type === 'seeked')).toHaveLength(1);
+      expect(types).not.toContain('error');
     });
   }
 
