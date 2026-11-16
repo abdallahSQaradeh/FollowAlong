@@ -139,11 +139,25 @@ export interface ConversionRequest {
   readonly signal: AbortSignal;
 }
 
+export interface SoundProbe {
+  /** The ffmpeg to run: a path, or a command name looked up on PATH. */
+  readonly program: string;
+  /** The Lesson video whose sound is asked about. */
+  readonly input: string;
+  readonly signal: AbortSignal;
+}
+
 export interface Converter {
+  /**
+   * The codec of the video's first sound track, as ffmpeg names it (`aac`, `mp3`, `opus`, …), or
+   * `undefined` when the video has no sound. Rejects when the video cannot be read.
+   */
+  soundCodec(probe: SoundProbe): Promise<string | undefined>;
   /**
    * Writes `output` and resolves, or rejects with the reason it could not. `output` appears only
    * once it is whole, so a file found there is a finished conversion. Aborting `signal` stops the
-   * conversion, leaves no `output`, and rejects.
+   * conversion, leaves no `output`, and rejects. A folder that cannot be written rejects with a
+   * {@link FileSystemError} `readOnly`, before anything is converted.
    */
   extractSound(request: ConversionRequest): Promise<void>;
 }

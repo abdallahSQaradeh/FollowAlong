@@ -57,6 +57,11 @@ export type PlayerCommand =
    */
   | { readonly type: 'soundFailed'; readonly message: string }
   /**
+   * The loaded MP4 Lesson needs no sidecar: it has no sound, or its sound is one the page decodes
+   * itself (ADR 0034). The player stops waiting and plays the video as it is.
+   */
+  | { readonly type: 'noSidecar' }
+  /**
    * Changes the picture's zoom (ADR 0037). The player reports `zoomChanged` when the level changes:
    * a reset at 1× reports nothing.
    */
@@ -202,6 +207,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return isText(raw.audioUri) ? { type: 'soundReady', audioUri: raw.audioUri } : undefined;
     case 'soundFailed':
       return isText(raw.message) ? { type: 'soundFailed', message: raw.message } : undefined;
+    case 'noSidecar':
+      return { type: 'noSidecar' };
     case 'zoom':
       return raw.action === 'reset' ? { type: 'zoom', action: raw.action } : undefined;
     default:

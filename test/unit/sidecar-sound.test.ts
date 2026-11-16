@@ -344,4 +344,60 @@ describe('sound for MP4 Lessons', () => {
       },
     ]);
   });
+
+  it('plays a silent MP4 Lesson at once, with no conversion and no error', async () => {
+    const h = await createHarness();
+    h.converter.audioCodec = undefined;
+    await openMp4Lesson(h, false);
+
+    expect(h.converter.requests).toEqual([]);
+    expect(h.ui.messages).toEqual([]);
+    expect(
+      h.player.sent.filter(
+        (command) => command.type.startsWith('sound') || command.type === 'noSidecar',
+      ),
+    ).toEqual([{ type: 'noSidecar' }]);
+  });
+
+  it('lets an MP4 Lesson play its own sound when the page can decode it, so it never plays twice', async () => {
+    const h = await createHarness();
+    h.converter.audioCodec = 'mp3';
+    await openMp4Lesson(h, false);
+
+    expect(h.converter.requests).toEqual([]);
+    expect(h.player.sent.filter((command) => command.type === 'noSidecar')).toHaveLength(1);
+    expect(soundCommands(h)).toEqual([]);
+  });
+
+  it('converts sound the page cannot decode, AAC or another', async () => {
+    const h = await createHarness();
+    h.converter.audioCodec = 'ac3';
+    await openMp4Lesson(h, false);
+
+    expect(h.converter.requests).toHaveLength(1);
+    expect(h.player.sent.filter((command) => command.type === 'noSidecar')).toEqual([]);
+  });
+
+  it('keeps the sound in its own storage when the Course already has a sound folder it cannot write', async () => {
+    const h = await createHarness();
+    // Written by FollowAlong before the Course went read-only (a share mounted read-only, say).
+    const course = await h.folder('course', {
+      [lessonId]: 'mp4 video with AAC sound',
+      '.followalong/sound/older-lesson-0123456789abcdef.mp3': 'sound of another Lesson',
+    });
+    makeReadOnly(join(course, '.followalong', 'sound'));
+    await h.core.openCourse(course);
+    h.player.ready(false);
+    await h.settle();
+
+    const output = h.converter.requests.at(-1)?.request.output ?? '';
+    expect(output.startsWith(join(h.storage.folder, 'courses'))).toBe(true);
+    await h.converter.requests.at(-1)?.succeed();
+    await h.settle();
+
+    expect(soundCommands(h)).toEqual([
+      { type: 'soundReady', audioUri: h.player.resourceUri(output) },
+    ]);
+    expect(h.ui.messages).toEqual([]);
+  });
 });

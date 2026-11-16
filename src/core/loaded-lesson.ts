@@ -7,6 +7,7 @@
  */
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import type { Lesson } from './course-model.js';
+import type { PreparedSound } from './sidecar-sound.js';
 import type { Disposable, Ports } from './ports.js';
 import type { PlayheadSeen } from './lesson-status.js';
 import { lessonStatus, type ProgressRecorder } from './progress.js';
@@ -43,10 +44,10 @@ export interface OpenCourseView {
   /** The learner clicked the Next overlay of the Loaded Lesson: `next` is the Lesson it names. */
   nextClicked(next: Lesson): void;
   /**
-   * The path of `lesson`'s sound as an MP3, prepared now or before (the audio sidecar, ADR 0034).
-   * Rejects when it cannot be prepared, or once `signal` aborts.
+   * What `lesson`'s sound needs: its MP3, prepared now or before (the audio sidecar, ADR 0034), or
+   * no sidecar. Rejects when it cannot be prepared, or once `signal` aborts.
    */
-  prepareSound(lesson: Lesson, signal: AbortSignal): Promise<string>;
+  prepareSound(lesson: Lesson, signal: AbortSignal): Promise<PreparedSound>;
   /**
    * What the Lesson tree shows of the Progress may have changed: a Lesson's state changed, or
    * Progress was saved (every 5 s while playing, on pause and seek). Never called for every
@@ -128,7 +129,7 @@ interface LessonLoad {
 interface SoundPreparation {
   readonly lesson: Lesson;
   readonly stop: AbortController;
-  readonly path: Promise<string>;
+  readonly prepared: Promise<PreparedSound>;
   /** Set once the learner was told it failed: a page that reloads is told again, they are not. */
   toldFailure: boolean;
 }
@@ -322,14 +323,24 @@ export function createLoadedLesson(
     // A `load` of another Lesson has stopped the sound of the one before (`load`).
     if (sound?.lesson !== lesson) {
       const stop = new AbortController();
-      sound = { lesson, stop, path: course.prepareSound(lesson, stop.signal), toldFailure: false };
+      sound = {
+        lesson,
+        stop,
+        prepared: course.prepareSound(lesson, stop.signal),
+        toldFailure: false,
+      };
     }
     const preparation = sound;
-    preparation.path.then(
-      (path) => {
-        if (currentLoad === loadId && current?.lesson === lesson) {
-          player.send({ type: 'soundReady', audioUri: player.resourceUri(path) });
+    preparation.prepared.then(
+      (prepared) => {
+        if (currentLoad !== loadId || current?.lesson !== lesson) {
+          return;
         }
+        player.send(
+          prepared.kind === 'sidecar'
+            ? { type: 'soundReady', audioUri: player.resourceUri(prepared.path) }
+            : { type: 'noSidecar' },
+        );
       },
       (error: unknown) => {
         // A Lesson left, or a page reloaded since: the current load reports it, or nobody needs to.

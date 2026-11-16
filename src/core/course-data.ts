@@ -76,6 +76,13 @@ export interface CourseData {
    * `.followalong`, or in the fallback storage when the Course is read-only, as `write` decides.
    */
   prepareFolder(name: string): Promise<string>;
+  /**
+   * The subfolder `name` in `.followalong` turned out read-only after `prepareFolder` made it (it
+   * was there already, written before the Course turned read-only): from now on Course data goes
+   * to the fallback storage, as if the folder could not be made. Makes the fallback subfolder and
+   * resolves with its path.
+   */
+  prepareFallbackFolder(name: string): Promise<string>;
 }
 
 type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
@@ -290,6 +297,15 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
           }
           useFallback();
         }
+      }
+      const folder = join(fallback, name);
+      await fileSystem.makeDirectory(folder, { hidden: false, parents: true });
+      return folder;
+    },
+
+    async prepareFallbackFolder(name) {
+      if (target !== fallback) {
+        useFallback();
       }
       const folder = join(fallback, name);
       await fileSystem.makeDirectory(folder, { hidden: false, parents: true });

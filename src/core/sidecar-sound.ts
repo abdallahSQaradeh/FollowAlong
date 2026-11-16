@@ -18,6 +18,13 @@ import { FileSystemError, type FileStat, type Ports } from './ports.js';
 /** The Course data subfolder that holds prepared sound. */
 const soundFolderName = 'sound';
 
+/**
+ * The sound codecs the player page decodes in an MP4 itself: Chromium's own codecs, which VS Code
+ * ships (it leaves out AAC). A Lesson with such sound plays its own track: a sidecar would play the
+ * sound twice (ADR 0034).
+ */
+const pageDecodable = new Set(['mp3', 'opus', 'vorbis', 'flac']);
+
 /** The ffmpeg used when `followalong.ffmpegPath` is not set: the one on PATH. */
 const defaultProgram = 'ffmpeg';
 
@@ -76,13 +83,23 @@ type SidecarSoundPorts = Pick<
   'fileSystem' | 'storage' | 'converter' | 'config' | 'ui' | 'logger'
 >;
 
+/**
+ * What an MP4 Lesson's sound needs:
+ * - `sidecar`: its sound as an MP3 at `path`;
+ * - `none`: no sidecar, because the Lesson has no sound (`silent`), or its sound is one the page
+ *   decodes itself (`ownSound`).
+ */
+export type PreparedSound =
+  | { readonly kind: 'sidecar'; readonly path: string }
+  | { readonly kind: 'none'; readonly why: 'silent' | 'ownSound' };
+
 /** The audio sidecars of one Course, kept in its Course data. */
 export interface SidecarSound {
   /**
-   * Resolves with the path of `lesson`'s sound as an MP3: the one prepared before, if any, else a
-   * new conversion. Rejects when the conversion fails or `signal` aborts it.
+   * Resolves with what `lesson`'s sound needs: the MP3 prepared before, if any, else a new
+   * conversion, unless it needs none. Rejects when the conversion fails or `signal` aborts it.
    */
-  prepare(lesson: Lesson, signal: AbortSignal): Promise<string>;
+  prepare(lesson: Lesson, signal: AbortSignal): Promise<PreparedSound>;
 }
 
 /**
@@ -107,28 +124,55 @@ async function prepareSound(
   lesson: Lesson,
   signal: AbortSignal,
   warnedPaths: Set<string>,
-): Promise<string> {
+): Promise<PreparedSound> {
   const { fileSystem, converter, logger } = ports;
   const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
   for (const folder of data.folders(soundFolderName)) {
     const path = join(folder, name);
     if (await exists(fileSystem, path)) {
       logger.log({ level: 'debug', message: `Reusing the prepared sound of ${lesson.id}` });
-      return path;
+      return { kind: 'sidecar', path };
     }
   }
   signal.throwIfAborted();
-  const output = join(await data.prepareFolder(soundFolderName), name);
   const program = ffmpegProgram(ports, warnedPaths);
+  const codec = await converter.soundCodec({ program, input: lesson.path, signal });
+  if (codec === undefined || pageDecodable.has(codec)) {
+    const why = codec === undefined ? 'silent' : 'ownSound';
+    logger.log({
+      level: 'info',
+      message: `${lesson.id} needs no sidecar: ${codec === undefined ? 'it has no sound' : `the page decodes its ${codec} sound`}.`,
+    });
+    return { kind: 'none', why };
+  }
   logger.log({ level: 'info', message: `Preparing the sound of ${lesson.id} with ${program}` });
-  await converter.extractSound({
-    program,
-    input: lesson.path,
-    output,
-    // The "Preparing sound… N%" overlay is ticket #42's.
-    onProgress: () => undefined,
-    signal,
-  });
+  const convertInto = async (folder: string): Promise<string> => {
+    const output = join(folder, name);
+    await converter.extractSound({
+      program,
+      input: lesson.path,
+      output,
+      // The "Preparing sound… N%" overlay is ticket #42's.
+      onProgress: () => undefined,
+      signal,
+    });
+    return output;
+  };
+  const folder = await data.prepareFolder(soundFolderName);
+  let output: string;
+  try {
+    output = await convertInto(folder);
+  } catch (error) {
+    // A sound folder that was there already, in a Course that has turned read-only: the sound goes
+    // to the fallback storage, as Course data does (story 107), with only a log line.
+    const fallback = FileSystemError.is(error, 'readOnly')
+      ? await data.prepareFallbackFolder(soundFolderName)
+      : folder;
+    if (fallback === folder) {
+      throw error;
+    }
+    output = await convertInto(fallback);
+  }
   logger.log({ level: 'info', message: `Prepared the sound of ${lesson.id}` });
-  return output;
+  return { kind: 'sidecar', path: output };
 }
