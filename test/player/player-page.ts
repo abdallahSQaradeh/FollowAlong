@@ -19,6 +19,8 @@ export const origin = 'https://webview.followalong.test';
 export const media = {
   /** 3 s, VP8 + Vorbis (scripts/make-media-fixtures.mjs). */
   webm: `${origin}/media/lesson.webm`,
+  /** 3 s, H.264 + AAC, index at the start (scripts/make-media-fixtures.mjs). */
+  mp4: `${origin}/media/sample.mp4`,
   /** 8 s, VP8 + Vorbis, a Cluster every second. */
   long: `${origin}/media/long.webm`,
   /** A text file with a .webm name, as a broken download would be. */
@@ -27,6 +29,7 @@ export const media = {
   empty: `${origin}/media/empty.webm`,
 } as const;
 export const webmDuration = 3;
+export const mp4Duration = 3;
 
 declare global {
   interface Window {
@@ -79,23 +82,28 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
     const path = new URL(route.request().url()).pathname;
     if (path === '/') {
       await route.fulfill({ contentType: 'text/html', body: html });
-    } else if (path === '/media/lesson.webm' || path === '/media/long.webm') {
+    } else if (
+      path === '/media/lesson.webm' ||
+      path === '/media/long.webm' ||
+      path === '/media/sample.mp4'
+    ) {
+      const contentType = path.endsWith('.mp4') ? 'video/mp4' : 'video/webm';
       const body = readFileSync(join(root, 'test', 'fixtures', path));
       // Byte ranges, as VS Code's webview resource loader answers them (research 01: 206).
       const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? '');
       if (range === null) {
-        await route.fulfill({ contentType: 'video/webm', body });
+        await route.fulfill({ contentType, body });
         return;
       }
       if (options.brokenRanges === true) {
-        await route.fulfill({ status: 206, contentType: 'video/webm', body: 'changed on disk' });
+        await route.fulfill({ status: 206, contentType, body: 'changed on disk' });
         return;
       }
       const start = Number(range[1]);
       const end = range[2] === '' ? body.length - 1 : Math.min(Number(range[2]), body.length - 1);
       await route.fulfill({
         status: 206,
-        contentType: 'video/webm',
+        contentType,
         headers: {
           'Accept-Ranges': 'bytes',
           'Content-Range': `bytes ${String(start)}-${String(end)}/${String(body.length)}`,

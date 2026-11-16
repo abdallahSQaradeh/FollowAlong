@@ -1,6 +1,6 @@
 import type { PlayerCommand } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
-import { media, openPlayer, webmDuration } from './player-page.js';
+import { media, mp4Duration, openPlayer, webmDuration } from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
 
@@ -49,6 +49,60 @@ test.describe('the player', () => {
     expect(last).toMatchObject({ lessonId });
     expect(last?.position).toBeGreaterThan(0);
     expect(last?.duration).toBeCloseTo(webmDuration, 1);
+  });
+
+  test('plays an MP4 Lesson straight from its file, with sound where AAC plays', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    const mp4Id = 'Section 1/02 Setup.mp4';
+
+    await player.post(load({ lessonId: mp4Id, videoUri: media.mp4, container: 'mp4' }));
+    await player.waitForEvent({ type: 'played', lessonId: mp4Id });
+    await expect.poll(async () => (await player.video()).currentTime).toBeGreaterThan(0.5);
+
+    const video = await player.video();
+    expect(video.currentSrc).toBe(media.mp4);
+    expect(video.paused).toBe(false);
+    expect(video.videoBytesDecoded).toBeGreaterThan(0);
+    const last = (await player.events()).filter((event) => event.type === 'timeUpdate').at(-1);
+    expect(last).toMatchObject({ lessonId: mp4Id });
+    expect(last?.duration).toBeCloseTo(mp4Duration, 1);
+  });
+
+  test('starts an MP4 Lesson at the given second, paused when not told to autoplay', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    const mp4Id = 'sample.mp4';
+
+    await player.post(
+      load({
+        lessonId: mp4Id,
+        videoUri: media.mp4,
+        container: 'mp4',
+        startAt: 1.5,
+        autoplay: false,
+      }),
+    );
+
+    await expect.poll(async () => (await player.video()).currentTime).toBeCloseTo(1.5, 1);
+    expect((await player.video()).paused).toBe(true);
+  });
+
+  test('moves from an MP4 Lesson to a WebM Lesson and back', async ({ page }) => {
+    const player = await openPlayer(page);
+    await player.post(load({ lessonId: 'a.mp4', videoUri: media.mp4, container: 'mp4' }));
+    await player.waitForEvent({ type: 'played', lessonId: 'a.mp4' });
+
+    await player.post(load({ lessonId: 'b.webm' }));
+    await player.waitForEvent({ type: 'played', lessonId: 'b.webm' });
+    expect((await player.video()).currentSrc).toMatch(/^blob:/);
+
+    await player.post(load({ lessonId: 'c.mp4', videoUri: media.mp4, container: 'mp4' }));
+    await player.waitForEvent({ type: 'played', lessonId: 'c.mp4' });
+    expect((await player.video()).currentSrc).toBe(media.mp4);
+    expect((await player.events()).filter((event) => event.type === 'error')).toEqual([]);
   });
 
   test('pauses and plays on command', async ({ page }) => {

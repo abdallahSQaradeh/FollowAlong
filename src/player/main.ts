@@ -62,13 +62,19 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
   };
   current = lesson;
   const { signal } = lesson.stop;
-  const source = new WebmSource(media, command.videoUri, (message) => {
-    fail(lesson, message, media);
-  });
-  signal.addEventListener('abort', () => {
-    source.dispose();
-  });
-  source.start();
+  if (command.container === 'webm') {
+    // `<video src>` cannot play WebM in VS Code, so it is streamed through MediaSource.
+    const source = new WebmSource(media, command.videoUri, (message) => {
+      fail(lesson, message, media);
+    });
+    signal.addEventListener('abort', () => {
+      source.dispose();
+    });
+    source.start();
+  } else {
+    // The picture plays straight from the file; its sound is a later ticket's sidecar.
+    media.src = command.videoUri;
+  }
   if (command.startAt > 0) {
     media.addEventListener(
       'loadedmetadata',
