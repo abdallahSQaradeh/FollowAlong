@@ -24,7 +24,9 @@ export type PlayerCommand =
   | { readonly type: 'play' }
   | { readonly type: 'pause' }
   /** Moves the playhead by `seconds` (negative: back), stopping at the start or the end. */
-  | { readonly type: 'seekBy'; readonly seconds: number };
+  | { readonly type: 'seekBy'; readonly seconds: number }
+  /** Sets the playback rate (1 is normal speed); it stays for the Lessons that follow. */
+  | { readonly type: 'setRate'; readonly rate: number };
 
 /** Player → extension. Events about a Lesson carry its `lessonId`, so late events are recognisable. */
 export type PlayerEvent =
@@ -40,6 +42,8 @@ export type PlayerEvent =
   | { readonly type: 'ended'; readonly lessonId: string }
   /** The playhead has arrived at the place a seek asked for (also after a seek bar drag). */
   | { readonly type: 'seeked'; readonly lessonId: string }
+  /** The playback rate is now `rate`, whoever changed it (a `setRate` or the video's own menu). */
+  | { readonly type: 'rateChanged'; readonly lessonId: string; readonly rate: number }
   | { readonly type: 'error'; readonly lessonId: string; readonly message: string }
   /**
    * The learner finished an interaction with the player page (a click, a key, a native control,
@@ -60,6 +64,11 @@ function isText(value: unknown): value is string {
 
 function isSeconds(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/** A playback rate a media element accepts in practice: finite and above 0. */
+function isRate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
 /** Returns the command, or `undefined` when `raw` is not a well-formed player command. */
@@ -88,6 +97,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return typeof raw.seconds === 'number' && Number.isFinite(raw.seconds)
         ? { type: 'seekBy', seconds: raw.seconds }
         : undefined;
+    case 'setRate':
+      return isRate(raw.rate) ? { type: 'setRate', rate: raw.rate } : undefined;
     default:
       return undefined;
   }
@@ -123,6 +134,8 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
     case 'ended':
     case 'seeked':
       return { type, lessonId };
+    case 'rateChanged':
+      return isRate(raw.rate) ? { type, lessonId, rate: raw.rate } : undefined;
     case 'paused':
       return typeof raw.byUser === 'boolean' ? { type, lessonId, byUser: raw.byUser } : undefined;
     case 'error':

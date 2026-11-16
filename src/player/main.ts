@@ -49,6 +49,8 @@ let current: Lesson | undefined;
 let pauseBy: 'extension' | 'picture' | undefined;
 /** Set while the player's own `play()` starts the media element, so its `play` is not the control bar's. */
 let playRequested = false;
+/** The playback rate last reported, so a `ratechange` that changes nothing is not. */
+let reportedRate = 1;
 
 /** Reports the Lesson's one `error`, and silences it from then on. */
 function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
@@ -132,6 +134,15 @@ function seekBy(seconds: number, media: HTMLVideoElement): void {
   media.currentTime = Math.min(Math.max(media.currentTime + seconds, 0), end);
 }
 
+/**
+ * Sets the playback rate. The default rate is set too, because a new `src` (the next Lesson)
+ * resets the playback rate to it, and the rate is meant to stay from Lesson to Lesson.
+ */
+function setRate(rate: number, media: HTMLVideoElement): void {
+  media.defaultPlaybackRate = rate;
+  media.playbackRate = rate;
+}
+
 function run(command: PlayerCommand, media: HTMLVideoElement): void {
   switch (command.type) {
     case 'load':
@@ -148,6 +159,9 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       break;
     case 'seekBy':
       seekBy(command.seconds, media);
+      break;
+    case 'setRate':
+      setRate(command.rate, media);
       break;
   }
 }
@@ -200,6 +214,18 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   });
   on('seeked', ({ lessonId }) => {
     post({ type: 'seeked', lessonId });
+  });
+  // Also for a rate the learner picks in the video's own menu, so the extension never drifts.
+  // `ratechange` also fires for a change of `defaultPlaybackRate`, which `setRate` makes too, and
+  // it is tracked even when nothing can be reported (no Lesson, or a failed one).
+  media.addEventListener('ratechange', () => {
+    if (media.playbackRate === reportedRate) {
+      return;
+    }
+    reportedRate = media.playbackRate;
+    if (current !== undefined && !current.failed) {
+      post({ type: 'rateChanged', lessonId: current.lessonId, rate: reportedRate });
+    }
   });
   on('ended', (lesson) => {
     lesson.playing = false;

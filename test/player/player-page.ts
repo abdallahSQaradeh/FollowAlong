@@ -71,6 +71,7 @@ export interface VideoState {
   readonly volume: number;
   readonly ended: boolean;
   readonly currentTime: number;
+  readonly playbackRate: number;
   readonly duration: number;
   readonly currentSrc: string;
   readonly audioBytesDecoded: number;
@@ -189,6 +190,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
           volume: element.volume,
           ended: element.ended,
           currentTime: element.currentTime,
+          playbackRate: element.playbackRate,
           duration: element.duration,
           currentSrc: element.currentSrc,
           audioBytesDecoded: decoded.webkitAudioDecodedByteCount,

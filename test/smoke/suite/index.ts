@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { chromium } from '@playwright/test';
@@ -29,6 +30,15 @@ interface SeenEvent {
 /** What `activate` returns in ExtensionMode.Test (src/adapters/vscode/extension.ts). */
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
+  lessonTree(): { readonly nodes: readonly TreeNode[] };
+}
+
+/** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
+interface TreeNode {
+  readonly kind: string;
+  readonly id: string;
+  readonly label: string;
+  readonly resources?: readonly TreeNode[];
 }
 export async function run(): Promise<void> {
   // The suite runs inside the extension host, where Node prints a warning without saying who
@@ -51,11 +61,15 @@ export async function run(): Promise<void> {
   for (const command of [
     'followalong.openCourse',
     'followalong.playLesson',
+    'followalong.attachResource',
+    'followalong.openResource',
     'followalong.playPause',
     'followalong.seekBackShort',
     'followalong.seekForwardShort',
     'followalong.seekBackLong',
     'followalong.seekForwardLong',
+    'followalong.speedUp',
+    'followalong.speedDown',
     'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
@@ -73,6 +87,9 @@ export async function run(): Promise<void> {
   goToLessonIsBoundToItsChord(extension.packageJSON);
   say("FollowAlong: Go to Lesson… is in the Command Palette and bound to Ctrl+' L");
 
+  speedIsBoundToItsKeys(extension.packageJSON);
+  say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
+
   stepsAreBoundToTheirKeys(extension.packageJSON);
   say(
     'the four step commands are in the Command Palette, bound to their keys, with 5 s / 30 s steps',
@@ -89,6 +106,98 @@ export async function run(): Promise<void> {
   // A click on a Lesson in the tree runs this command with the Lesson's id.
   await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
   say(await theLessonStarts(hooks.playerEvents, 'long.webm'));
+
+  await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
+  say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+}
+
+/** Attaches a text file to a Lesson of a scratch Course, then opens it from the tree. */
+async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHooks): Promise<void> {
+  // A scratch Course, so attaching never writes a `.followalong` folder into the repository.
+  const scratch = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
+  try {
+    const course = join(scratch, 'Course');
+    mkdirSync(course);
+    copyFileSync(
+      join(extensionPath, 'test', 'fixtures', 'media', 'lesson.webm'),
+      join(course, 'lesson.webm'),
+    );
+    const notes = join(scratch, 'notes.ts');
+    writeFileSync(notes, 'export const note = "beside the video";\n');
+    const code = await vscode.workspace.openTextDocument({
+      language: 'javascript',
+      content: '1;\n',
+    });
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+
+    // The "+" on the Lesson runs this command with the Lesson's tree node.
+    const lesson = hooks.lessonTree().nodes.find((node) => node.id === 'lesson.webm');
+    assert.ok(lesson, 'the scratch Course shows no Lesson lesson.webm');
+    await vscode.commands.executeCommand(
+      'followalong.attachResource',
+      lesson,
+      vscode.Uri.file(notes),
+    );
+    const shown = await waitFor(
+      'the Resource under its Lesson',
+      () => hooks.lessonTree().nodes.find((node) => node.id === lesson.id)?.resources?.[0],
+    );
+
+    const isPlayer = (tab: vscode.Tab): boolean =>
+      tab.input instanceof vscode.TabInputWebview &&
+      tab.input.viewType.endsWith('followalong.player');
+    const groupHolding = (file: string): vscode.TabGroup | undefined =>
+      vscode.window.tabGroups.all.find((group) =>
+        group.tabs.some(
+          (tab) =>
+            tab.input instanceof vscode.TabInputText &&
+            tab.input.uri.fsPath === vscode.Uri.file(file).fsPath,
+        ),
+      );
+
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('followalong.openResource', shown.id);
+    const resourceGroup = await waitFor('the Resource tab', () => groupHolding(notes));
+    const playerGroup = vscode.window.tabGroups.all.find((group) => group.tabs.some(isPlayer));
+    assert.ok(playerGroup, 'opening the Resource closed the player');
+    // Story 94: the Resource never covers the video, so both stay in sight.
+    assert.notEqual(
+      resourceGroup.viewColumn,
+      playerGroup.viewColumn,
+      'the file opened in the player’s editor group',
+    );
+    assert.notEqual(
+      resourceGroup.viewColumn,
+      vscode.ViewColumn.One,
+      'the file opened over the code',
+    );
+    assert.ok(playerGroup.activeTab && isPlayer(playerGroup.activeTab), 'the player is covered');
+    assert.equal(
+      vscode.window.activeTextEditor?.document,
+      code,
+      'opening the Resource took the focus from the code',
+    );
+
+    // A second Resource goes to the same group, not to another new one.
+    const more = join(scratch, 'more.ts');
+    writeFileSync(more, 'export const more = 1;\n');
+    await vscode.commands.executeCommand(
+      'followalong.attachResource',
+      lesson,
+      vscode.Uri.file(more),
+    );
+    const second = await waitFor(
+      'the second Resource under its Lesson',
+      () => hooks.lessonTree().nodes.find((node) => node.id === lesson.id)?.resources?.[1],
+    );
+    await vscode.commands.executeCommand('followalong.openResource', second.id);
+    const secondGroup = await waitFor('the second Resource tab', () => groupHolding(more));
+    assert.equal(secondGroup.viewColumn, resourceGroup.viewColumn);
+    assert.ok(!hooks.playerEvents.some((event) => event.type === 'error'));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 interface Contributes {
@@ -153,6 +262,28 @@ function stepsAreBoundToTheirKeys(packageJson: unknown): void {
   const settings = vscode.workspace.getConfiguration('followalong');
   assert.equal(settings.get('shortStep'), 5, 'the short step defaults to 5 s');
   assert.equal(settings.get('longStep'), 30, 'the long step defaults to 30 s');
+}
+
+/** The speed commands' Palette entries and chord keys. */
+function speedIsBoundToItsKeys(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  for (const [name, title, key] of [
+    ['speedUp', 'Speed up', "ctrl+' up"],
+    ['speedDown', 'Speed down', "ctrl+' down"],
+  ] as const) {
+    const id = `followalong.${name}`;
+    const command = contributes?.commands?.find((entry) => entry.command === id);
+    assert.deepEqual(
+      { title: command?.title, category: command?.category },
+      { title, category: 'FollowAlong' },
+      `the Command Palette entry is "FollowAlong: ${title}"`,
+    );
+    const bindings = (contributes?.keybindings ?? []).filter((entry) => entry.command === id);
+    assert.deepEqual(
+      bindings.map(({ key: bound, when }) => ({ key: bound, when })),
+      [{ key, when: 'editorTextFocus || terminalFocus' }],
+    );
+  }
 }
 
 /** The Lesson picker: VS Code reads the manifest for the Command Palette entry and the chord. */

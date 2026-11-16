@@ -7,8 +7,19 @@ import { basename } from 'node:path';
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Disposable, type Ports } from './ports.js';
+import { openCourseData, type CourseData } from './course-data.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
+import {
+  findResource,
+  newResource,
+  noResources,
+  resourcePath,
+  resourcesFile,
+  resourcesFileExists,
+  withResource,
+  type ResourcesData,
+} from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 
 export interface FollowAlong {
@@ -16,6 +27,10 @@ export interface FollowAlong {
   openCourse(folder: string): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
+  /** Attaches a file, from anywhere on disk, as a Resource of a Lesson of the open Course. */
+  attachResource(lessonId: string, absolutePath: string): Promise<void>;
+  /** Opens a Resource of the open Course, by its tree id, in a tab beside the code. */
+  openResource(resourceId: string): Promise<void>;
   /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
   playPause(): void;
   /**
@@ -23,6 +38,8 @@ export interface FollowAlong {
    * `followalong.shortStep` and `followalong.longStep` settings are when the command runs.
    */
   seekStep(size: StepSize, direction: StepDirection): void;
+  /** The speed commands: moves the playback rate one rung up or down the speed ladder. */
+  speedStep(direction: SpeedDirection): void;
   /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
   goToLesson(): Promise<void>;
   dispose(): void;
@@ -30,6 +47,20 @@ export interface FollowAlong {
 
 export type StepSize = 'short' | 'long';
 export type StepDirection = 'back' | 'forward';
+export type SpeedDirection = 'up' | 'down';
+
+/** The fixed speed ladder (spec #12, story 41), slowest first. */
+const slowest = 0.75;
+const fastest = 2;
+const speedLadder = [slowest, 1, 1.25, 1.5, fastest] as const;
+const normalRate = 1;
+
+/** The rung one step from `rate`: the next one beyond it, or the end of the ladder. */
+function nextRate(rate: number, direction: SpeedDirection): number {
+  return direction === 'up'
+    ? (speedLadder.find((rung) => rung > rate) ?? fastest)
+    : (speedLadder.findLast((rung) => rung < rate) ?? slowest);
+}
 
 /** The settings' defaults, in seconds (spec #12, Settings). */
 const defaultStepSeconds = { short: 5, long: 30 } as const;
@@ -91,6 +122,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let playerReady = false;
   /** What the player last said about the current Lesson; starts again with every `load`. */
   let playback = freshPlayback(false);
+  /** The playback rate: what the player last reported, or what the core last asked for. */
+  let rate: number = normalRate;
+  /** Rates asked of the player that it has not reported yet, oldest first. */
+  let askedRates: number[] = [];
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -112,6 +147,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     switch (event.type) {
       case 'ready':
         playerReady = true;
+        rate = normalRate;
+        askedRates = [];
         logger.log({
           level: 'debug',
           message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
@@ -148,6 +185,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           playback = { ...freshPlayback(false), playing: event.type === 'played' };
         }
         break;
+      case 'rateChanged': {
+        // The answer to a press still counts it and every press before it; a late answer must not
+        // undo the presses after it. A rate nobody asked for (the video's own menu) replaces them.
+        const answered = askedRates.indexOf(event.rate);
+        if (answered === -1) {
+          askedRates = [];
+          rate = event.rate;
+        } else {
+          askedRates = askedRates.slice(answered + 1);
+          rate = askedRates.at(-1) ?? event.rate;
+        }
+        break;
+      }
       case 'userInteracted':
         ui.returnFocus();
         break;
@@ -160,6 +210,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
+  /** The open Course's Course data, and the Resources read from it. */
+  let courseData: CourseData | undefined;
+  let resources: ResourcesData = noResources;
+  /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
+  let attaching: Promise<unknown> = Promise.resolve();
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson): void {
@@ -173,6 +228,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       playerReady = false;
     } else if (playerReady) {
       loadCurrent();
+    }
+  }
+
+  /** The Course's Resources; a Course whose file cannot be read still opens, without them. */
+  async function readResources(data: CourseData, folder: string): Promise<ResourcesData> {
+    try {
+      return (await data.read(resourcesFile)) ?? noResources;
+    } catch (error) {
+      logger.log({
+        level: 'warn',
+        message: `Could not read the Resources of ${folder}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return noResources;
     }
   }
 
@@ -233,7 +301,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         throw error;
       }
+      // Read first, then switch, so no click sees one Course's Resources next to another's folder.
+      const data = openCourseData(folder, ports);
+      const stored = await readResources(data, folder);
       openedCourse = course;
+      courseData = data;
+      resources = stored;
       const first = lessonsInOrder(course)[0];
       if (first === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
@@ -241,7 +314,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         ui.showMessage({ severity: 'warning', text });
         return;
       }
-      ui.showLessonTree(buildLessonTree(course));
+      ui.showLessonTree(buildLessonTree(course, resources));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       play(course, first);
     },
@@ -267,6 +340,74 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
       }
     },
+    attachResource(lessonId, absolutePath) {
+      const course = openedCourse;
+      const data = courseData;
+      if (course === undefined || data === undefined) {
+        logger.log({ level: 'warn', message: `Cannot attach to ${lessonId}: no Course is open.` });
+        return Promise.resolve();
+      }
+      if (!lessonsInOrder(course).some((lesson) => lesson.id === lessonId)) {
+        logger.log({
+          level: 'warn',
+          message: `Cannot attach to ${lessonId}: it is not a Lesson of the open Course.`,
+        });
+        return Promise.resolve();
+      }
+      const attach = async (): Promise<void> => {
+        // Re-read first: another window may have attached to this Course since it was opened.
+        const read = await data.read(resourcesFile);
+        if (read === undefined && (await resourcesFileExists(ports.fileSystem, course.folder))) {
+          // The file is there but was ignored (damaged, or from a newer FollowAlong): writing
+          // would replace data the learner, or a newer version, still needs.
+          logger.log({
+            level: 'warn',
+            message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
+          });
+          ui.showMessage({
+            severity: 'warning',
+            text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+          });
+          return;
+        }
+        const stored = read ?? noResources;
+        const next = withResource(stored, lessonId, newResource(course.folder, absolutePath));
+        await data.write(resourcesFile, next);
+        logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });
+        // The Course may have been opened again while this attach was writing.
+        if (openedCourse?.folder === course.folder) {
+          resources = next;
+          ui.showLessonTree(buildLessonTree(openedCourse, resources));
+        }
+      };
+      const done = attaching.then(attach, attach);
+      attaching = done.catch(() => undefined);
+      return done;
+    },
+    async openResource(resourceId) {
+      const course = openedCourse;
+      const record = findResource(resources, resourceId);
+      if (course === undefined || record === undefined) {
+        logger.log({
+          level: 'warn',
+          message: `Cannot open ${resourceId}: it is not a Resource of the open Course.`,
+        });
+        return;
+      }
+      const path = resourcePath(course.folder, record);
+      try {
+        await ui.openResource({ kind: 'file', path });
+      } catch (error) {
+        logger.log({
+          level: 'warn',
+          message: `Could not open ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        ui.showMessage({
+          severity: 'error',
+          text: `FollowAlong could not open “${basename(path)}”. Is the file still there?`,
+        });
+      }
+    },
     playPause() {
       if (!hasPlayableLesson('Play/pause')) {
         return;
@@ -280,6 +421,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       const seconds = stepSeconds(size);
       player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
+    },
+    speedStep(direction) {
+      if (!hasPlayableLesson('Speed step')) {
+        return;
+      }
+      // Counted at once, so presses in a row climb before the player has answered the first.
+      const next = nextRate(rate, direction);
+      if (next !== rate) {
+        // The player reports only a change, so a press that changes nothing has no answer to wait for.
+        askedRates.push(next);
+      }
+      rate = next;
+      player.send({ type: 'setRate', rate });
     },
     dispose() {
       for (const subscription of subscriptions) {
