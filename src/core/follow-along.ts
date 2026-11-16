@@ -16,8 +16,13 @@ export interface FollowAlong {
   openCourse(folder: string): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
-  /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
+  /**
+   * The play/pause command: pauses the Lesson if the player reports it playing, else resumes it,
+   * first stepping back by the `followalong.resumeRewind` setting (a manual resume, ADR 0016).
+   */
   playPause(): void;
+  /** Resumes a paused Lesson with no rewind, for automatic resumes such as auto-resume. */
+  resumeWithoutRewind(): void;
   /**
    * The step commands: moves the playhead back or forward by the short or the long step, as the
    * `followalong.shortStep` and `followalong.longStep` settings are when the command runs.
@@ -39,6 +44,8 @@ const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
 interface Playback {
   /** Whether the Lesson is playing. */
   readonly playing: boolean;
+  /** Whether the Lesson played to its end; a resume then restarts it, so it is not rewound. */
+  readonly ended: boolean;
   /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
   readonly awaitingAutoplay: boolean;
   /** Set when the play/pause command sent `play`, until the player answers it. */
@@ -50,6 +57,7 @@ interface Playback {
 function freshPlayback(autoplay: boolean): Playback {
   return {
     playing: false,
+    ended: false,
     awaitingAutoplay: autoplay,
     awaitingPlayAnswer: false,
     toldToPressPlay: false,
@@ -145,7 +153,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'ended':
         if (event.lessonId === current?.id) {
           // Also ends a run of refusals: the player did what it was asked.
-          playback = { ...freshPlayback(false), playing: event.type === 'played' };
+          playback = {
+            ...freshPlayback(false),
+            playing: event.type === 'played',
+            ended: event.type === 'ended',
+          };
         }
         break;
       case 'timeUpdate':
@@ -199,6 +211,21 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return typeof value === 'number' && Number.isFinite(value) && value > 0
       ? value
       : defaultStepSeconds[size];
+  }
+
+  /** The seconds a manual resume steps back, read when the command runs; 0 when unset or invalid. */
+  function resumeRewindSeconds(): number {
+    const value = config.get('resumeRewind');
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  /** Sends `play`, after a `seekBy` back of `rewind` seconds when that is above 0. */
+  function resume(rewind: number): void {
+    playback = { ...playback, awaitingPlayAnswer: true };
+    if (rewind > 0 && !playback.ended) {
+      player.send({ type: 'seekBy', seconds: -rewind });
+    }
+    player.send({ type: 'play' });
   }
 
   /** Plays a Lesson of the open Course, by its id. */
@@ -268,8 +295,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       if (!hasPlayableLesson('Play/pause')) {
         return;
       }
-      playback = { ...playback, awaitingPlayAnswer: !playback.playing };
-      player.send({ type: playback.playing ? 'pause' : 'play' });
+      if (playback.playing) {
+        player.send({ type: 'pause' });
+        return;
+      }
+      resume(resumeRewindSeconds());
+    },
+    resumeWithoutRewind() {
+      if (!hasPlayableLesson('Resume') || playback.playing) {
+        return;
+      }
+      resume(0);
     },
     seekStep(size, direction) {
       if (!hasPlayableLesson('Seek step')) {
