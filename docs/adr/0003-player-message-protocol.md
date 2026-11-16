@@ -42,3 +42,5 @@ Two deliberate additions to the spec's shapes:
 
 Ticket #17 added `seekBy {seconds}` (extension → player, signed) and `seeked` (player → extension, with
 `lessonId`); see ADR 0013.
+
+Ticket #19 added `setResumeRewind {seconds}` (extension → player, 0 or more); see ADR 0016.
