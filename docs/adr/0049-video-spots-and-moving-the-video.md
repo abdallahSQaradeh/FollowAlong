@@ -87,7 +87,16 @@ tab into an auxiliary window (#51) was not measured here.
   then runs `workbench.view.extension.<container>`, which focuses the view; the adapter hands focus
   back to the code at once (ADR 0009), as `preserveFocus` does for the panel. If VS Code cannot
   open the view, the adapter reports the player closed, so the core does not wait for a page that
-  will not come. The view's description is the Lesson's
+  will not come.
+- **A view's page is started only once VS Code shows that view.** VS Code disposes a view its
+  `when` clause hides and resolves a new one when the spot is used again (measured with a trace in
+  CI run 43897862321), so the page goes into the view VS Code resolves, never into one it has let
+  go.
+- **The focus return can hide the bottom panel.** Measured (CI run 43898701222): right after the
+  player moved there from an editor group, handing focus back to the code editor hid the panel
+  25 ms later. The adapter then shows the view again with `WebviewView.show(true)`, which keeps
+  the focus in the code, and watches for such a hide for 1 s after the move. CI run 43899415033
+  passes the smoke step that moves back into the bottom panel on Ubuntu and Windows. The view's description is the Lesson's
   title. The learner resizes every spot with VS Code's own sashes (story 56).
 - **Closing.** Closing the player tab, or a view VS Code disposes, is a close as before; the page
   dropped for a move is not.
