@@ -16,8 +16,8 @@ interface KeepsOpen {
   readonly keepsOpen?: boolean;
 }
 
-/** A button at the end of an item's line: pressing it answers with its own intent. */
-export interface QuickPickButtonModel<Intent> extends KeepsOpen {
+/** A button, in the title bar or beside an item: pressing it answers with its own intent. */
+export interface QuickPickButtonModel<Intent> {
   /** What the button does, as its tooltip says it. */
   readonly label: string;
   /** The name of a codicon to draw it with, such as `folder-opened`. */
@@ -25,6 +25,9 @@ export interface QuickPickButtonModel<Intent> extends KeepsOpen {
   /** What pressing the button asks the core to do. */
   readonly intent: Intent;
 }
+
+/** A button at the end of an item's line. */
+export interface QuickPickItemButtonModel<Intent> extends QuickPickButtonModel<Intent>, KeepsOpen {}
 
 export interface QuickPickItemModel<Intent> extends KeepsOpen {
   readonly kind: 'item';
@@ -36,7 +39,7 @@ export interface QuickPickItemModel<Intent> extends KeepsOpen {
   /** What picking this item asks the core to do. */
   readonly intent: Intent;
   /** Buttons beside the item, each with an intent of its own. */
-  readonly buttons?: readonly QuickPickButtonModel<Intent>[];
+  readonly buttons?: readonly QuickPickItemButtonModel<Intent>[];
 }
 
 /** A heading line that groups the items after it. */
@@ -60,8 +63,8 @@ export interface QuickPickModel<Intent> {
    */
   readonly busy?: boolean;
   /**
-   * Buttons in the title bar. Pressing one never closes the quick pick, whatever its `keepsOpen`:
-   * the core is told, and may replace the model (a Refresh).
+   * Buttons in the title bar. Pressing one never closes the quick pick: the core is told, and may
+   * replace the model (a Refresh).
    */
   readonly toolbar?: readonly QuickPickButtonModel<Intent>[];
 }

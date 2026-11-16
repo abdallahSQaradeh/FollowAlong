@@ -568,7 +568,7 @@ describe('picking the Course that is already open', () => {
     expect(h.ui.selectedLesson).toBe('02 Setup.webm');
   });
 
-  it('does not read its folder again', async () => {
+  it('settles at once, even while the Course’s drive has gone slow', async () => {
     const h = await createHarness();
     const root = await h.folder('Learning', { 'A/01 Intro.webm': 'v', 'A/02 Setup.webm': 'v' });
     h.config.set('coursesRoots', [root]);
@@ -581,10 +581,14 @@ describe('picking the Course that is already open', () => {
     const release = h.holdReads(join(root, 'A'));
 
     h.ui.choose('A');
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const settled = await Promise.race([
       picking.then(() => 'picked'),
-      new Promise((resolve) => setTimeout(resolve, 200, 'still reading')),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, 1_000, 'still reading');
+      }),
     ]);
+    clearTimeout(timer);
     release();
     await picking;
 

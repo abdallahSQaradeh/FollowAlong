@@ -17,7 +17,8 @@ leaves open.
   saved in its last 5%). `playLessonFromStart` starts at 0:00. Both play right away (story 33);
   a refused autoplay shows “Press play in the player” as for any other Lesson (D3).
 - **Start from beginning is an item button on every Lesson**, from #38's generic item-button
-  model, without `staysOpen` (now `keepsOpen`, ADR 0072): it closes the picker and answers with its intent.
+  model, without `staysOpen` (now `keepsOpen`, ADR 0072): it closes the picker and answers with
+  its intent.
 - **`UiSink.pick`, not the live picker.** The Lesson's list is complete and instant (it is the
   open Course's outline and Progress), so nothing is updated while it is open; the live picker
   (ADR 0058) exists for lists that fill in the background.

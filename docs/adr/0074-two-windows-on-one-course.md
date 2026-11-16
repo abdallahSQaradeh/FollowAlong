@@ -90,7 +90,7 @@ larger `statusAt` gives the status. On equal `statusAt`, the higher status wins 
 > broken by which copy came first, so the merge is commutative, associative and idempotent. Copies
 > merge to one result whatever the order or grouping of the writes. An exhaustive property test checks
 > this (`test/unit/progress-merge.test.ts`: every pair and triple of a domain of status, `statusAt`,
-> `savedAt` and position). So does a Seam 1 test of every sequence of up to 3 steps of two windows on
+> `savedAt`, position and duration). So does a Seam 1 test of every sequence of up to 3 steps of two windows on
 > one Course (`test/unit/two-windows-sequences.test.ts`: mark done, mark not done, play past 10 s, play
 > to the end and pause, in either window).
 

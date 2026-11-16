@@ -646,7 +646,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** _Open Course…_: the Course picker, opening what the learner picks in this window. */
   const pickCourse = createCoursePickerCommand(ports, {
-    openFolder: () => openedCourse?.folder,
+    openCourseFolder: () => openedCourse?.folder,
     saveProgress: () => progress?.save() ?? Promise.resolve(),
     open: (folder, video) => openInTurn(folder, false, video),
   });
@@ -770,7 +770,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return openInTurn(folder, false);
     },
     async restoreCourse() {
-      // A window opened for a Course hand-off opens that Course, not the one it remembers.
+      // A window opened for a Course hand-off opens that Course, not the one it remembers. Awaited
+      // only when there is a note: with none, the remembered Course is queued in this same turn, so
+      // a Course the learner opens meanwhile is queued after it and wins (a plain `await` would
+      // let that open in first).
       const handOff = takeCourseHandOff(ports);
       const handedOff = handOff === undefined ? undefined : await handOff;
       if (handedOff !== undefined) {

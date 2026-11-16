@@ -16,7 +16,7 @@ import { readRecent, removeRecent } from './recent-courses.js';
 /** What the command needs of the Course open in this window, and of opening another. */
 export interface CoursePickerHost {
   /** The folder of the Course open in this window, if any: it is tagged (open). */
-  openFolder(): string | undefined;
+  openCourseFolder(): string | undefined;
   /** Saves the open Course's Progress, so what it has not saved yet moves with a Locate…. */
   saveProgress(): Promise<void>;
   /** Opens the Course in `folder` in this window; with `video`, plays that Lesson of it. */
@@ -28,7 +28,7 @@ export interface CoursePickerHost {
  * root setting entry that is not a full path, and about a Courses root it cannot read.
  */
 export function createCoursePickerCommand(
-  ports: Ports,
+  ports: Pick<Ports, 'fileSystem' | 'storage' | 'ui' | 'logger' | 'config' | 'clock'>,
   host: CoursePickerHost,
 ): () => Promise<void> {
   const { storage, ui, logger, config } = ports;
@@ -80,7 +80,7 @@ export function createCoursePickerCommand(
       scans: courseScans,
       roots,
       recent: readRecent(storage.global),
-      openFolder: () => host.openFolder(),
+      openFolder: () => host.openCourseFolder(),
       warnUnreadableRoot(root) {
         // Once per window: a drive that stays unplugged would otherwise be named at every open.
         if (!warnedUnreadable.has(root)) {
@@ -113,7 +113,7 @@ export function createCoursePickerCommand(
         await pickCourse();
         break;
       case 'locateCourse': {
-        const open = host.openFolder();
+        const open = host.openCourseFolder();
         if (open !== undefined && sameFolder(open, intent.folder)) {
           // The Course that moved is still open: what it has not saved yet is carried too.
           await host.saveProgress();

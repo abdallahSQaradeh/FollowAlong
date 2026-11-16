@@ -6,7 +6,7 @@
 import * as vscode from 'vscode';
 
 import type { LivePicker } from '../../core/ports.js';
-import type { QuickPickButtonModel, QuickPickModel } from '../../core/quick-pick.js';
+import type { QuickPickItemButtonModel, QuickPickModel } from '../../core/quick-pick.js';
 
 /** What answering with an intent does: close the quick pick, or tell the core and stay open. */
 interface Answer<Intent> {
@@ -43,7 +43,8 @@ export function openQuickPick<Intent>(
   quickPick.keepScrollPosition = true;
   /** What pressing each button answers: a VS Code button carries no data of ours. */
   const buttonAnswers = new Map<vscode.QuickInputButton, Answer<Intent>>();
-  const buttonsOf = (buttons: readonly QuickPickButtonModel<Intent>[]) =>
+  /** Draws buttons; a title bar button has no `keepsOpen`, and never closes the quick pick. */
+  const buttonsOf = (buttons: readonly QuickPickItemButtonModel<Intent>[]) =>
     buttons.map((button): vscode.QuickInputButton => {
       const drawn = { iconPath: new vscode.ThemeIcon(button.icon), tooltip: button.label };
       buttonAnswers.set(drawn, { intent: button.intent, keepsOpen: button.keepsOpen === true });
