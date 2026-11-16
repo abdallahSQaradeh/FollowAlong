@@ -36,6 +36,10 @@ _Avoid_: Playlist order, queue
 The "Next: <title>" button the player shows over the last frame when a Lesson ends and another follows. Clicking it loads that Lesson; nothing moves on without the click. The last Lesson of a Course has none.
 _Avoid_: Autoplay next, up next, end card
 
+**Lesson tree**:
+The FollowAlong view in the activity bar: the open Course's Sections and Lessons in Course order, each Lesson with its state (✓ done, ◐ in progress, ○ not started) and, when in progress, its position and length (`12:30 / 40:05`); each Section with its done/total (`3/12`); and the Course's done/total and percent (`27/140 · 19%`) beside the view's title. The Lesson the learner is on is highlighted and revealed.
+_Avoid_: Course library view, outline, playlist
+
 **Wrapper folder**:
 A folder that holds no Lessons of its own and only one other folder with Lessons. Inside a Course it is not shown as a Section: its content is shown in its place. Around a Course it gives the Course its name, the outermost wrapper winning.
 _Avoid_: Container folder, parent folder

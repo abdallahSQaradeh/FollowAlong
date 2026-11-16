@@ -225,4 +225,21 @@ describe('Progress in the Lesson tree', () => {
 
     expect(descriptionOf(h, '01 Intro.webm')).toBe('12:30 / 40:05');
   });
+
+  it('highlights and reveals the last Lesson played when the Course opens, and the first Lesson of a new Course', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', threeLessons);
+    await h.core.openCourse(course);
+    expect(h.ui.selectedLesson).toBe('01 Intro.webm');
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    playUntil(h, '02 Setup.webm', 30);
+    pause(h, '02 Setup.webm');
+    await h.settle();
+
+    h.restart();
+    await h.core.restoreCourse();
+
+    expect(h.ui.selectedLesson).toBe('02 Setup.webm');
+  });
 });

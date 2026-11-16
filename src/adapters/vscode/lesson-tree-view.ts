@@ -63,6 +63,8 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
   show(model: LessonTreeModel): void {
     this.model = model;
     this.view.message = model.message ?? '';
+    // The Course's done/total and percent sit beside the view's title.
+    this.view.description = model.summary?.description ?? '';
     this.changed.fire(undefined);
   }
 
@@ -114,6 +116,7 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.id = node.id;
       item.contextValue = 'section';
+      item.description = node.description;
       return item;
     }
     if (node.kind === 'resource') {
@@ -134,7 +137,9 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
     );
     item.id = node.id;
     item.contextValue = 'lesson';
-    item.iconPath = new vscode.ThemeIcon('play-circle');
+    // The state mark leads the label: ✓ done, ◐ in progress, ○ not started.
+    item.label = `${node.glyph} ${node.label}`;
+    item.description = node.description;
     item.command = { command: playLessonCommand, title: 'Play Lesson', arguments: [node.id] };
     return item;
   }
