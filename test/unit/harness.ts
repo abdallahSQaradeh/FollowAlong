@@ -1060,6 +1060,8 @@ export async function createHarness(): Promise<Harness> {
           storage: {
             global: globalStore,
             workspace: new MemoryStore(true),
+            // Another workspace: a window with a folder open, not a new empty one.
+            workspaceIsEmpty: false,
             folder: storage.folder,
           },
           clock: windowClock,
