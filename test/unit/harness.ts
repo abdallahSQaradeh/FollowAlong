@@ -17,6 +17,7 @@ import type { QuickPickModel } from '../../src/core/quick-pick.js';
 import type { StatusBarModel } from '../../src/core/status-bar.js';
 import {
   FileSystemError,
+  type Answer,
   type Clock,
   Config,
   ConversionRequest,
@@ -30,7 +31,9 @@ import {
   PlayerShowResult,
   Ports,
   ResourceTarget,
+  Question,
   Storage,
+  TerminalSettings,
   UiSink,
   UserMessage,
 } from '../../src/core/ports.js';
@@ -186,8 +189,34 @@ export class FakeConfig implements Config {
   }
 }
 
+/** The learner's user-level `terminal.integrated.commandsToSkipShell`, and what was written to it. */
+export class FakeTerminalSettings implements TerminalSettings {
+  /** The stored value: `undefined` until the learner sets it. */
+  value: unknown;
+  /** Every value written, in order. */
+  readonly writes: (readonly string[])[] = [];
+  /** Set to make writing fail, as VS Code does when settings.json cannot be saved. */
+  writeFailure: string | undefined;
+
+  skipShellCommands(): unknown {
+    return this.value;
+  }
+
+  setSkipShellCommands(commands: readonly string[]): Promise<void> {
+    if (this.writeFailure !== undefined) {
+      return Promise.reject(new Error(this.writeFailure));
+    }
+    this.writes.push(commands);
+    this.value = [...commands];
+    return Promise.resolve();
+  }
+}
+
 export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
+  /** Every question the core asked, in order. */
+  readonly questions: Question[] = [];
+  private questionAnswer: ((answer: Answer | undefined) => void) | undefined;
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
   /** The status bar items the learner sees now; none until the core shows some. */
@@ -208,9 +237,29 @@ export class RecordingUi implements UiSink {
   readonly folderDialogs: FolderDialog[] = [];
   /** The folders the learner will choose in the next folder dialogs; none left is a cancel. */
   readonly folderAnswers: string[] = [];
+  /** How many times the core opened the file dialog for an Attach. */
+  fileDialogs = 0;
+  private fileAnswer: ((path: string | undefined) => void) | undefined;
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
+  }
+
+  ask(question: Question): Promise<Answer | undefined> {
+    this.questions.push(question);
+    return new Promise((resolve) => {
+      this.questionAnswer = resolve;
+    });
+  }
+
+  /** The learner answers the open question: a button, or `undefined` for closing it. */
+  answerQuestion(answer: Answer | undefined): void {
+    const resolve = this.questionAnswer;
+    if (resolve === undefined) {
+      throw new Error('No question is open');
+    }
+    this.questionAnswer = undefined;
+    resolve(answer);
   }
 
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
@@ -291,6 +340,28 @@ export class RecordingUi implements UiSink {
     this.folderDialogs.push(dialog);
     return Promise.resolve(this.folderAnswers.shift());
   }
+
+  pickFile(): Promise<string | undefined> {
+    this.fileDialogs += 1;
+    return new Promise((resolve) => {
+      this.fileAnswer = resolve;
+    });
+  }
+
+  /** Whether a file dialog is open now. */
+  get fileDialogOpen(): boolean {
+    return this.fileAnswer !== undefined;
+  }
+
+  /** The learner picks this file in the open file dialog, or `undefined` for closing it. */
+  answerFileDialog(path: string | undefined): void {
+    const resolve = this.fileAnswer;
+    if (resolve === undefined) {
+      throw new Error('No file dialog is open');
+    }
+    this.fileAnswer = undefined;
+    resolve(path);
+  }
 }
 
 export class RecordingLogger implements Logger {
@@ -313,6 +384,7 @@ export interface Harness {
   readonly config: FakeConfig;
   readonly ui: RecordingUi;
   readonly logger: RecordingLogger;
+  readonly terminalSettings: FakeTerminalSettings;
   readonly storage: Storage;
   /** The temp dir every fixture lives in. */
   readonly root: string;
@@ -342,6 +414,7 @@ export async function createHarness(): Promise<Harness> {
   const config = new FakeConfig();
   const ui = new RecordingUi();
   const logger = new RecordingLogger();
+  const terminalSettings = new FakeTerminalSettings();
   const storage: Storage = {
     global: new MemoryStore(),
     workspace: new MemoryStore(),
@@ -379,6 +452,7 @@ export async function createHarness(): Promise<Harness> {
     config,
     ui,
     logger,
+    terminalSettings,
   };
   const core = createFollowAlong(ports);
   onTestFinished(async () => {
@@ -395,6 +469,7 @@ export async function createHarness(): Promise<Harness> {
     config,
     ui,
     logger,
+    terminalSettings,
     storage,
     root,
     makeUnreadable(folder) {

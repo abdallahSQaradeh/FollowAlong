@@ -5,10 +5,10 @@
  * Course; any other file is stored by its absolute path.
  */
 import { randomUUID } from 'node:crypto';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { courseDataFolderName, type CourseDataFile } from './course-data.js';
-import { FileSystemError, type FileSystem } from './ports.js';
+import { FileSystemError, type FileSystem, type ResourceTarget } from './ports.js';
 
 export interface ResourceRecord {
   readonly id: string;
@@ -134,4 +134,27 @@ export function withResource(
     course: data.course,
     lessons: { ...data.lessons, [lessonId]: [...(data.lessons[lessonId] ?? []), record] },
   };
+}
+
+/** The opener per file type, by extension without regard to case; every other type is a file. */
+const targetKinds: Readonly<Record<string, ResourceTarget['kind']>> = {
+  '.md': 'markdown',
+  '.markdown': 'markdown',
+  '.html': 'html',
+  '.htm': 'html',
+  '.png': 'image',
+  '.jpg': 'image',
+  '.jpeg': 'image',
+  '.gif': 'image',
+  '.webp': 'image',
+  '.bmp': 'image',
+  '.ico': 'image',
+  '.avif': 'image',
+  '.pdf': 'pdf',
+};
+
+/** How the file a Resource points to opens: text and code in the editor, the rest by type. */
+export function resourceTarget(path: string): ResourceTarget {
+  const kind = targetKinds[extname(path).toLowerCase()] ?? 'file';
+  return { kind, path };
 }

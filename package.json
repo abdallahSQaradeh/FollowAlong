@@ -22,7 +22,10 @@
     "out/extension.js",
     "out/player/player.js",
     "out/player/player.css",
-    "media/followalong.svg"
+    "out/pdf/pdf-viewer.js",
+    "out/pdf/pdf.worker.js",
+    "media/followalong.svg",
+    "THIRD_PARTY_NOTICES.txt"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -97,6 +100,11 @@
         "title": "Attach Resource",
         "category": "FollowAlong",
         "icon": "$(add)"
+      },
+      {
+        "command": "followalong.attachToLoadedLesson",
+        "title": "Attach Resource",
+        "category": "FollowAlong"
       },
       {
         "command": "followalong.openResource",
@@ -184,6 +192,12 @@
         "when": "editorTextFocus || terminalFocus"
       },
       {
+        "command": "followalong.attachToLoadedLesson",
+        "key": "ctrl+' a",
+        "mac": "cmd+' a",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
         "command": "followalong.openCourse",
         "key": "ctrl+' c",
         "mac": "cmd+' c",
@@ -259,6 +273,12 @@
           "default": [],
           "scope": "machine",
           "markdownDescription": "Folders that hold your Courses (Courses roots). **FollowAlong: Open Course…** (`Ctrl+'` then `C`) lists every Course under them, and can add a root for you."
+        },
+        "followalong.resumeRewind": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "Seconds the video jumps back when you resume a paused Lesson by hand, so you rehear the last words. `0` resumes where it stopped. Automatic resumes never jump back."
         }
       }
     }
@@ -292,6 +312,7 @@
     "globals": "17.14.0",
     "husky": "9.1.7",
     "lint-staged": "17.6.1",
+    "pdfjs-dist": "6.5.438",
     "prettier": "3.10.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",

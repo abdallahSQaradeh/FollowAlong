@@ -16,6 +16,10 @@ posted `ready`, and sends it again on every `ready`, so a reloaded or reopened p
 current Lesson. `resourceUri` lets the core put the exact URI into the protocol message, so Seam 1
 asserts on the messages the player really receives.
 
+A `TerminalSettings` port reads and writes the learner's user-level `terminal.integrated.commandsToSkipShell` (ADR 0020):
+`Config` is scoped to `followalong.*`, and a narrow port that touches one user setting is safer than
+widening `Config` to arbitrary settings writes.
+
 ## Considered options
 
 - **The adapter waits for `ready` and `show` returns a promise.** Rejected: the page posts `ready`

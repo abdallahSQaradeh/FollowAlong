@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { createFollowAlong } from '../../core/follow-along.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
+import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
@@ -16,12 +17,15 @@ import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
+import { ResourceViewers } from './resource-viewers.js';
 import {
   createConfig,
   createOutputLogger,
   createStorage,
+  createTerminalSettings,
   createUiSink,
   folderPath,
+  pickFileToAttach,
 } from './ports.js';
 
 export const commands = {
@@ -34,6 +38,8 @@ export const commands = {
   playLesson: playLessonCommand,
   /** The "+" on a Lesson in the tree; it is run with the Lesson's tree node. */
   attachResource: 'followalong.attachResource',
+  /** `Ctrl+'` `A`: attaches a file to the Lesson that is playing. */
+  attachToLoadedLesson: 'followalong.attachToLoadedLesson',
   /** Run by a click on a Resource in the tree, with the Resource's id. */
   openResource: openResourceCommand,
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
@@ -63,6 +69,8 @@ export const commands = {
  */
 export interface TestHooks {
   readonly playerEvents: readonly PlayerEvent[];
+  /** What the PDF viewers reported, in order. */
+  readonly pdfViewerEvents: readonly PdfViewerEvent[];
   /** The Lesson tree the learner sees now. */
   lessonTree(): LessonTreeModel;
   /** The status bar items VS Code shows now, with the command each one runs. */
@@ -76,6 +84,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
   const lessonTree = new LessonTreeView(logger);
+  const viewers = new ResourceViewers(context.extensionPath, logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
   const focus = new FocusReturn();
   const core = createFollowAlong({
@@ -89,10 +98,12 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       lessonTree,
       statusBar,
       createResourcePlacement(() => player.viewColumn),
+      viewers,
       focus,
       logger,
     ),
     logger,
+    terminalSettings: createTerminalSettings(),
   });
 
   /** Runs a command, so an unexpected failure is logged and shown instead of lost. */
@@ -112,9 +123,14 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   let testHooks: TestHooks | undefined;
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     const playerEvents: PlayerEvent[] = [];
-    context.subscriptions.push(player.onEvent((event) => playerEvents.push(event)));
+    const pdfViewerEvents: PdfViewerEvent[] = [];
+    context.subscriptions.push(
+      player.onEvent((event) => playerEvents.push(event)),
+      viewers.onPdfEvent((event) => pdfViewerEvents.push(event)),
+    );
     testHooks = {
       playerEvents,
+      pdfViewerEvents,
       lessonTree: () => lessonTree.current,
       statusBar: () => statusBar.drawn(),
       selectedLesson: () => lessonTree.selectedLesson(),
@@ -124,6 +140,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   context.subscriptions.push(
     channel,
     player,
+    viewers,
     lessonTree,
     statusBar,
     focus,
@@ -141,21 +158,13 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       if (typeof lessonId !== 'string') {
         return;
       }
-      const target =
-        file instanceof vscode.Uri
-          ? file
-          : (
-              await vscode.window.showOpenDialog({
-                canSelectFiles: true,
-                canSelectFolders: false,
-                canSelectMany: false,
-                openLabel: 'Attach',
-                title: 'Attach a file to this Lesson',
-              })
-            )?.[0];
+      const target = file instanceof vscode.Uri ? file : await pickFileToAttach();
       if (target !== undefined) {
         await core.attachResource(lessonId, target.fsPath);
       }
+    }),
+    register(commands.attachToLoadedLesson, async () => {
+      await core.attachToLoadedLesson();
     }),
     register(commands.openResource, async (resourceId) => {
       if (typeof resourceId === 'string') {

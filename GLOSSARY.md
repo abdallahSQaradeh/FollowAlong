@@ -52,6 +52,10 @@ _Avoid_: History, completion
 A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along. It is a reference to the file, never a copy.
 _Avoid_: Material, attachment
 
+**Resource tab**:
+The tab a Resource opens in, beside the code and never in the player's group, so the video stays in sight. The kind of tab follows the file's type: the editor for text and code, VS Code's image preview for images, a FollowAlong preview for HTML and Markdown, and the FollowAlong PDF viewer for PDFs.
+_Avoid_: Attachment view, Resource panel
+
 **Course data**:
 What FollowAlong keeps about a Course for itself (its Progress, its Resources, prepared sound), stored with the Course and never mixed into the Course's own files.
 _Avoid_: Metadata, cache, settings
@@ -68,9 +72,17 @@ _Avoid_: Workflow, session
 One keypress that moves the playhead back or forward by a fixed number of seconds: the short step (5 s by default) or the long step (30 s by default). Both sizes are settings.
 _Avoid_: Skip, jump, scrub
 
+**Rewind**:
+The seconds the video jumps back when the learner resumes a paused Lesson by hand, so they rehear the last words (the `resumeRewind` setting, 0 by default). Automatic resumes never rewind.
+_Avoid_: Replay, back-up
+
 **Speed ladder**:
 The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
 _Avoid_: Speed slider, rate list
+
+**One-press key**:
+A FollowAlong key that is a single keypress, not a `Ctrl+'` chord: play/pause, and the short step back and forward. The integrated terminal sends it to the shell unless the learner has VS Code keep it. A chord works in the terminal as it is.
+_Avoid_: Hotkey, shortcut, single key
 
 **Loaded Lesson**:
 The Lesson the player holds: it is set when the learner picks a Lesson or opens a Course, and gone when the learner closes the player. Controls that only make sense with a Lesson, such as the status bar items, show only while one is loaded.

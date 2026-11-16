@@ -135,13 +135,32 @@ export interface UserMessage {
   readonly text: string;
 }
 
-/** What a Resource opens as. Later tickets add targets (a URL, a preview, a PDF) beside `file`. */
-export interface FileResourceTarget {
-  readonly kind: 'file';
+/**
+ * What a Resource opens as. The core picks the kind from the file's type (`resourceTarget`); the
+ * adapter turns each kind into a tab beside the code. A URL target comes with its own ticket.
+ */
+export interface ResourceTarget {
+  /**
+   * - `file`: text and code, and any type FollowAlong has no better opener for: the editor;
+   * - `image`: VS Code's image preview;
+   * - `markdown`, `html`: a rendered preview;
+   * - `pdf`: the FollowAlong PDF viewer.
+   */
+  readonly kind: 'file' | 'image' | 'markdown' | 'html' | 'pdf';
   readonly path: string;
 }
 
-export type ResourceTarget = FileResourceTarget;
+/** The two answers to a {@link Question}: the button that agrees, and the one that declines. */
+export type Answer = 'accept' | 'decline';
+
+/** A question with two answers, put to the learner without blocking what they are doing. */
+export interface Question {
+  readonly text: string;
+  /** The label of the button that agrees. */
+  readonly accept: string;
+  /** The label of the button that declines. */
+  readonly decline: string;
+}
 
 /** A dialog in which the learner chooses one folder. */
 export interface FolderDialog {
@@ -152,6 +171,11 @@ export interface FolderDialog {
 
 export interface UiSink {
   showMessage(message: UserMessage): void;
+  /**
+   * Asks the learner a question and resolves with the button they pressed, or `undefined` when
+   * they closed it, or let it go, without answering.
+   */
+  ask(question: Question): Promise<Answer | undefined>;
   /**
    * Shows a quick pick and resolves with the intent of the item the learner picked, or
    * `undefined` when the learner closed it without picking.
@@ -172,6 +196,27 @@ export interface UiSink {
   returnFocus(): void;
   /** Asks the learner for one folder; resolves with its absolute path, or `undefined` on cancel. */
   chooseFolder(dialog: FolderDialog): Promise<string | undefined>;
+  /**
+   * Opens the file dialog for an Attach and resolves with the absolute path of the file the
+   * learner picked, or `undefined` when they closed it without picking. The dialog is not
+   * modal to the player: the Lesson keeps playing while it is open.
+   */
+  pickFile(): Promise<string | undefined>;
+}
+
+// --- Terminal settings ----------------------------------------------------------------------------
+
+/**
+ * The learner's own VS Code setting `terminal.integrated.commandsToSkipShell`: the commands whose
+ * keys VS Code keeps for itself instead of sending them to the shell (spec #12, story 45). Only
+ * the user-level value is read and written, never a workspace's: the Practice area is never
+ * changed.
+ */
+export interface TerminalSettings {
+  /** The user-level value as stored: `undefined` when the learner never set it. */
+  skipShellCommands(): unknown;
+  /** Replaces the user-level value. */
+  setSkipShellCommands(commands: readonly string[]): Promise<void>;
 }
 
 // --- All of them --------------------------------------------------------------------------------
@@ -185,4 +230,5 @@ export interface Ports {
   readonly config: Config;
   readonly ui: UiSink;
   readonly logger: Logger;
+  readonly terminalSettings: TerminalSettings;
 }
