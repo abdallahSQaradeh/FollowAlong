@@ -60,6 +60,18 @@ _Avoid_: History, completion
 A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along. It is a reference to the file, never a copy.
 _Avoid_: Material, attachment
 
+**Detach**:
+To take a Resource off a Lesson or a Course. Only the reference goes; the file stays where it is.
+_Avoid_: Delete, remove
+
+**Missing Resource**:
+A Resource whose file is no longer where it points, because the learner moved, renamed or deleted it. It shows dimmed in the tree until it is relinked or detached.
+_Avoid_: Broken link, dead Resource
+
+**Relink**:
+To point a Resource at another file, keeping it where it is in its Lesson. Offered on a missing Resource.
+_Avoid_: Re-attach, repair
+
 **Resource tab**:
 The tab a Resource opens in, beside the code and never in the player's group, so the video stays in sight. The kind of tab follows the file's type: the editor for text and code, VS Code's image preview for images, a FollowAlong preview for HTML and Markdown, and the FollowAlong PDF viewer for PDFs.
 _Avoid_: Attachment view, Resource panel

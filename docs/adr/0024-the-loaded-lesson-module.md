@@ -60,4 +60,4 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   every internal refactor.
 - **Splitting the Course side further** (a Course-session module for the open queue, Resources
   and navigation). Deferred, not rejected: #58 reshapes the Resources part (D5 amended, two
-  locations merged), and a Resources module like Progress's `openProgress` belongs there.
+  locations merged), and a Resources module like Progress's `openProgress` belongs there. (Done by #58: ADR 0040.)

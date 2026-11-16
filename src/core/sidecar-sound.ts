@@ -10,7 +10,7 @@
 import { createHash } from 'node:crypto';
 import { basename, extname, join } from 'node:path';
 
-import type { CourseData } from './course-data.js';
+import { openCourseData, type CourseData } from './course-data.js';
 import type { Lesson } from './course-model.js';
 import { FileSystemError, type FileStat, type Ports } from './ports.js';
 
@@ -49,12 +49,27 @@ async function exists(fileSystem: Ports['fileSystem'], path: string): Promise<bo
   }
 }
 
-/**
- * Resolves with the path of `lesson`'s sound as an MP3: the one prepared before, if any, else a
- * new conversion. Rejects when the conversion fails or `signal` aborts it.
- */
-export async function prepareSound(
-  ports: Pick<Ports, 'fileSystem' | 'converter' | 'config' | 'logger'>,
+type SidecarSoundPorts = Pick<Ports, 'fileSystem' | 'storage' | 'converter' | 'config' | 'logger'>;
+
+/** The audio sidecars of one Course, kept in its Course data. */
+export interface SidecarSound {
+  /**
+   * Resolves with the path of `lesson`'s sound as an MP3: the one prepared before, if any, else a
+   * new conversion. Rejects when the conversion fails or `signal` aborts it.
+   */
+  prepare(lesson: Lesson, signal: AbortSignal): Promise<string>;
+}
+
+/** `folder` is the Course folder's absolute path, which also keys the fallback storage. */
+export function openSidecarSound(folder: string, ports: SidecarSoundPorts): SidecarSound {
+  const data = openCourseData(folder, ports);
+  return {
+    prepare: (lesson, signal) => prepareSound(ports, data, lesson, signal),
+  };
+}
+
+async function prepareSound(
+  ports: SidecarSoundPorts,
   data: CourseData,
   lesson: Lesson,
   signal: AbortSignal,
