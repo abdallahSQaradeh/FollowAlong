@@ -17,7 +17,7 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   dispatch, `loadId` gating, rate reconciliation, autoplay refusal, the save timer and the status
   bar. It needs three things from the Course side, passed in as an `OpenCourseView`: the open Course's
   Progress, the Lesson after a given Lesson in Course order, and what to do when the Next overlay is
-  clicked. Ticket #41 added a fourth: `prepareSound(lesson, signal)`, the Loaded Lesson's audio
+  clicked. Ticket #41 added `prepareSound(lesson, signal)`, the Loaded Lesson's audio
   sidecar from the open Course's Course data (ADR 0034). The Loaded Lesson decides when a Lesson
   needs one and sends it to the player; the Course side knows where its Course data is.
 - **The seam is internal.** The split leaves `createFollowAlong(ports)` and its `FollowAlong`
@@ -45,6 +45,9 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
     The warning for an unusable Resources file names its Course for the same reason.
   - Each fix has a red-then-green Seam 1 test. With the narrower player root of ADR 0025, they are
     CP1's only behaviour changes.
+
+_Amended by ADR 0044: `OpenCourseView` also has `progressChanged()`, which tells the Course side
+when the Lesson tree may show something new._
 
 ## Considered options
 

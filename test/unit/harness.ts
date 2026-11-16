@@ -275,6 +275,8 @@ export class RecordingUi implements UiSink {
   private questionAnswer: ((answer: Answer | undefined) => void) | undefined;
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
+  /** How many times the core replaced the Lesson tree: each one is a redraw of the tree view. */
+  lessonTreeDraws = 0;
   /** The status bar items the learner sees now; none until the core shows some. */
   statusBar: StatusBarModel = { items: [] };
   /** The id of the Lesson the tree shows as selected. */
@@ -373,6 +375,7 @@ export class RecordingUi implements UiSink {
   }
 
   showLessonTree(model: LessonTreeModel): void {
+    this.lessonTreeDraws += 1;
     this.lessonTree = model;
   }
 
