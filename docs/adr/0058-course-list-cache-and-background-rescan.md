@@ -11,7 +11,7 @@ choices the spec leaves open.
 - **What it holds.** The Courses the last scan found, each as the scan names it: `name`, `folder`
   and `categories` (ADR 0032), so a nested Course comes back from the cache exactly as the scan gave
   it. The scan's order (A–Z) is kept; nothing is sorted again.
-- **Where.** The global storage, under the key `courseScanCache` (`src/core/course-scan-cache.ts`),
+- **Where.** The global storage, under the key `courseListCache` (`src/core/course-list-cache.ts`),
   as a plain JSON value `{ version: 1, roots, courses }`. The spec says "global storage"; it is
   per machine and never set for Settings Sync, like Recent (ADR 0041) and `coursesRoots` (ADR
   0022). It is **not** in a Course folder and not a `.followalong` file: it describes the learner's
@@ -42,9 +42,12 @@ choices the spec leaves open.
   If its folder was deleted since the last scan, opening it fails with the messages of ADR 0041 and
   the list drops it when the scan lands. A typed filter, the highlighted item and the scroll position
   stay when the list is replaced (the adapter keeps the active item by its label).
-- **Recent Courses.** Which of them are missing is looked at when the picker opens and again when a
-  scan lands, as before, not each time the busy indicator changes: pressing Refresh shows the busy
-  indicator in the same turn.
+- **Recent Courses.** The picker opens before it looks at the disk for them: they are listed named
+  and filed from the cache, none of them missing, so a Recent folder on a slow or unplugged drive
+  cannot delay it. Which are missing is looked at right after, and again when a scan lands, and the
+  list is shown again (the busy indicator stays until then). Pressing Refresh shows the busy
+  indicator in the same turn, without looking at the disk. If looking fails unexpectedly, the error is
+  logged and the list is shown as it was.
 - **Unreadable Courses roots** are named in one warning per root and window (ADR 0022) when the scan
   that found them lands, as before, now after the picker is shown.
 - **A scan that fails** (anything but a folder that cannot be read, which the scan reports as
@@ -78,6 +81,17 @@ choices the spec leaves open.
 ## Consequences
 
 - Every picker open writes the cache once its scan is done, also when nothing changed.
+- The cache holds what the last scan found _with the Recent Courses of that time as known Courses_
+  (ADR 0032). After a Course is opened or removed from Recent, the cached shape of that folder (one
+  Course, or its Sections) can differ from what a scan now gives, until the rescan of the same open
+  lands. A rescan corrects it every time.
+- A Courses root that cannot be read (an unplugged drive) has no Courses in the scan, so the cache
+  loses them too, and the picker shows none of them until the drive is back and a scan reads it. The
+  warning of ADR 0022 says why. The alternative, keeping the old Courses of an unreadable root, would
+  offer Courses that cannot be opened.
+- Refresh is also shown with no Courses root; it then scans nothing.
+- A scan that _fails_ (a bug, not an unreadable folder) while a newer one runs is dropped with the
+  rest of the older scan; the newer one decides.
 - A Course the learner deleted shows in the list until the scan lands; a Course downloaded since the
   last open shows when it does. Refresh is for when the learner does not want to wait for the
   automatic rescan to end.

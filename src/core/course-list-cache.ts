@@ -1,5 +1,5 @@
 /**
- * The scan cache (spec #12, Core modules → Course scanner; ADR 0058): the Courses the last scan
+ * The Course list cache (spec #12, Core modules → Course scanner; ADR 0058): the Courses the last scan
  * found, kept on this machine in the global storage so the Course picker opens from it at once
  * and rescans in the background. It lives outside the Course folders, and holds only what a scan
  * can find again, so a damaged or outdated copy is ignored, never repaired.
@@ -9,7 +9,7 @@ import { keyOf } from './courses-roots.js';
 import type { KeyValueStore, Ports } from './ports.js';
 
 /** Global storage key of the cache. */
-const cacheKey = 'courseScanCache';
+const cacheKey = 'courseListCache';
 
 /** The shape of the stored value; a different version is ignored, so the shape can grow. */
 const cacheVersion = 1;
@@ -41,7 +41,7 @@ function isScannedCourse(value: unknown): value is ScannedCourse {
  * none: never scanned, other roots (a root was added or removed), or a stored value that is not
  * what this version writes.
  */
-export function readScanCache(
+export function readCourseListCache(
   store: KeyValueStore,
   roots: readonly string[],
 ): readonly ScannedCourse[] | undefined {
@@ -60,7 +60,7 @@ export function readScanCache(
 }
 
 /** Replaces the cache with what a scan of these Courses roots found. */
-export async function writeScanCache(
+export async function writeCourseListCache(
   store: KeyValueStore,
   roots: readonly string[],
   courses: readonly ScannedCourse[],
@@ -92,7 +92,7 @@ export function createCourseScans(
   let running:
     { readonly roots: readonly string[]; readonly promise: Promise<CourseScan> } | undefined;
   return {
-    cached: (roots) => readScanCache(ports.storage.global, roots),
+    cached: (roots) => readCourseListCache(ports.storage.global, roots),
     scan(roots, knownFolders, options) {
       if (options?.fresh !== true && running !== undefined && sameRoots(running.roots, roots)) {
         return running.promise;
@@ -103,7 +103,7 @@ export function createCourseScans(
         .then(async (scan) => {
           if (mine === started) {
             try {
-              await writeScanCache(ports.storage.global, roots, scan.courses);
+              await writeCourseListCache(ports.storage.global, roots, scan.courses);
             } catch (error) {
               // The cache is a convenience: the picker has the scan either way.
               ports.logger.log({

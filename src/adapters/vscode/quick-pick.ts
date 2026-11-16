@@ -92,7 +92,11 @@ export function openQuickPick<Intent>(
     });
     quickPick.onDidTriggerButton((button) => {
       if (!answered && buttonIntents.has(button)) {
-        onToolbarButton(buttonIntents.get(button) as Intent);
+        buttonIntents.forEach((intent, drawn) => {
+          if (drawn === button) {
+            onToolbarButton(intent);
+          }
+        });
       }
     });
     quickPick.onDidHide(() => {

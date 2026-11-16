@@ -7,9 +7,8 @@ import { basename } from 'node:path';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
-import { buildCoursePicker } from './course-picker.js';
-import type { CourseScan } from './course-scanner.js';
-import { createCourseScans } from './course-scan-cache.js';
+import { createCourseScans } from './course-list-cache.js';
+import { showCoursePicker } from './live-course-picker.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { locateCourse } from './locate-course.js';
 import { buildLessonPicker } from './lesson-picker.js';
@@ -35,7 +34,7 @@ import {
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
-import { readRecent, recentCourses, recordOpened, removeRecent } from './recent-courses.js';
+import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
@@ -614,79 +613,23 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
     warnNotAbsolute(notAbsolute);
-    const recent = readRecent(storage.global);
-    // Shown from the cache at once; the scan below fills in what is new (ADR 0058).
-    let courses = courseScans.cached(roots) ?? [];
-    let scanning = roots.length > 0;
-    // Which Recent Courses are missing is read when the list changes, not on every redraw.
-    let recentShown = await recentCourses(ports, recent, courses);
-    const view = () =>
-      buildCoursePicker({
-        hasRoots: roots.length > 0,
-        courses,
-        recent: recentShown,
-        openFolder: openedCourse?.folder,
-        scanning,
-      });
-    let closed = false;
-    let drawn = 0;
-    let newest = 0;
-    /** Shows a scan that is done; of two redraws under way, only the later one is shown. */
-    const redraw = async (): Promise<void> => {
-      drawn += 1;
-      const mine = drawn;
-      const shown = await recentCourses(ports, recent, courses);
-      if (!closed && mine === drawn) {
-        recentShown = shown;
-        picker.update(view());
-      }
-    };
-    /** Waits for a scan, then shows it, unless the picker is closed or a newer scan was asked for. */
-    const showScan = async (scan: Promise<CourseScan>): Promise<void> => {
-      newest += 1;
-      const mine = newest;
-      try {
-        const found = await scan;
-        if (closed || mine !== newest) {
-          return;
-        }
-        courses = found.courses;
+    const intent = await showCoursePicker({
+      ports,
+      scans: courseScans,
+      roots,
+      recent: readRecent(storage.global),
+      openFolder: () => openedCourse?.folder,
+      warnUnreadableRoot(root) {
         // Once per window: a drive that stays unplugged would otherwise be named at every open.
-        for (const root of found.unreadableRoots.filter(
-          (unread) => !warnedUnreadable.has(unread),
-        )) {
+        if (!warnedUnreadable.has(root)) {
           warnedUnreadable.add(root);
           ui.showMessage({
             severity: 'warning',
             text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
           });
         }
-      } catch (error) {
-        if (closed || mine !== newest) {
-          return;
-        }
-        logger.log({
-          level: 'error',
-          message: `The Course scan failed: ${error instanceof Error ? error.message : String(error)}`,
-        });
-      }
-      scanning = false;
-      await redraw();
-    };
-    const picker = ui.openPicker(view(), (button) => {
-      if (button.type === 'refreshCourses') {
-        scanning = true;
-        drawn += 1;
-        picker.update(view());
-        void showScan(courseScans.scan(roots, recent, { fresh: true }));
-      }
+      },
     });
-    if (scanning) {
-      // A known Course is not walked into: Recent folders are passed as known (ADR 0032).
-      void showScan(courseScans.scan(roots, recent));
-    }
-    const intent = await picker.answer;
-    closed = true;
     switch (intent?.type) {
       case 'openCourse':
         await openInTurn(intent.folder, false);

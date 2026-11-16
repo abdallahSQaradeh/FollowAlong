@@ -671,6 +671,14 @@ export interface Harness {
    */
   holdReads(folder: string): () => void;
   /**
+   * Holds only the next read of `folder`'s listing until `release` is called; reads after it go
+   * through. `reached` settles once that read has started. It lets a test finish a later scan
+   * before an earlier one.
+   */
+  holdFirstRead(folder: string): { readonly reached: Promise<void>; release(): void };
+  /** Makes reading `folder`'s listing fail with an unexpected error (not a file system error). */
+  breakReads(folder: string, message: string): void;
+  /**
    * Holds every read of the file at `path` until the returned function is called, as a slow disk
    * would; `reached` settles once a read has started.
    */
@@ -723,7 +731,12 @@ export async function createHarness(): Promise<Harness> {
   };
   const nodeFileSystem = createNodeFileSystem();
   const unreadable = new Set<string>();
+  const broken = new Map<string, string>();
   const held = new Map<string, Promise<void>>();
+  const heldOnce = new Map<
+    string,
+    { readonly reach: () => void; readonly released: Promise<void> }
+  >();
   const heldFiles = new Map<
     string,
     { readonly reach: () => void; readonly released: Promise<void> }
@@ -739,11 +752,23 @@ export async function createHarness(): Promise<Harness> {
   const fileSystem: FileSystem = {
     readDirectory(path) {
       const read = (): ReturnType<FileSystem['readDirectory']> =>
-        unreadable.has(path)
-          ? Promise.reject(
-              new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
-            )
-          : nodeFileSystem.readDirectory(path);
+        broken.has(path)
+          ? Promise.reject(new Error(broken.get(path)))
+          : unreadable.has(path)
+            ? Promise.reject(
+                new FileSystemError(
+                  'readOnly',
+                  path,
+                  `EACCES: permission denied, scandir '${path}'`,
+                ),
+              )
+            : nodeFileSystem.readDirectory(path);
+      const once = heldOnce.get(path);
+      if (once !== undefined) {
+        heldOnce.delete(path);
+        once.reach();
+        return track(once.released.then(read));
+      }
       const hold = held.get(path);
       return track(hold === undefined ? read() : hold.then(read));
     },
@@ -827,6 +852,21 @@ export async function createHarness(): Promise<Harness> {
       return () => {
         release();
       };
+    },
+    holdFirstRead(folder) {
+      let reach = (): void => undefined;
+      let release = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      heldOnce.set(folder, { reach, released });
+      return { reached, release };
+    },
+    breakReads(folder, message) {
+      broken.set(folder, message);
     },
     holdFileReads(path) {
       let reach = (): void => undefined;
