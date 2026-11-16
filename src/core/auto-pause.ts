@@ -15,6 +15,20 @@ export function readAutoPauseMode(config: Pick<Config, 'get'>): AutoPauseMode {
   return value === 'pause' || value === 'pauseAndResume' ? value : 'off';
 }
 
+/** The quiet period setting of `pauseAndResume`, in seconds (spec #12, story 99). */
+export const resumeAfterSetting = 'autoPause.resumeAfter';
+const defaultResumeAfterSeconds = 2;
+
+/** The quiet period in ms: the setting, or 2 s when it is unset or not a number above 0. */
+export function readResumeAfterMs(config: Pick<Config, 'get'>): number {
+  const value = config.get(resumeAfterSetting);
+  const seconds =
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? value
+      : defaultResumeAfterSeconds;
+  return seconds * 1000;
+}
+
 /** A mode in which auto-pause acts. */
 export type AutoPauseOnMode = Exclude<AutoPauseMode, 'off'>;
 
@@ -48,10 +62,18 @@ export type AutoPauseInput =
    */
   | { readonly type: 'learnerPaused' }
   /** The Loaded Lesson is over: it ended, or the learner left it (another Lesson or Course, a closed player). */
-  | { readonly type: 'lessonOver' };
+  | { readonly type: 'lessonOver' }
+  /** The quiet period of `pauseAndResume` passed with no edit. */
+  | { readonly type: 'quiet' };
 
-/** What the Loaded Lesson does for a step: `pause` sends the player `pause`. */
-export type AutoPauseEffect = 'pause';
+/**
+ * What the Loaded Lesson does for a step:
+ * - `pause`: sends the player `pause`;
+ * - `startQuiet`: starts the quiet period of `pauseAndResume` (the `resumeAfter` setting) again
+ *   from now; when it passes, the Loaded Lesson feeds `quiet`;
+ * - `resume`: resumes the Lesson with no rewind (story 103).
+ */
+export type AutoPauseEffect = 'pause' | 'startQuiet' | 'resume';
 
 export interface AutoPauseStep {
   readonly state: AutoPauseState;
@@ -75,8 +97,13 @@ export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): Aut
       };
     case 'typed':
       return state.kind === 'armed' && input.playing
-        ? { state: { ...state, kind: 'autoPaused' }, effects: ['pause'] }
+        ? {
+            state: { ...state, kind: 'autoPaused' },
+            effects: state.mode === 'pauseAndResume' ? ['pause', 'startQuiet'] : ['pause'],
+          }
         : { state, effects: [] };
+    case 'quiet':
+      return { state, effects: state.kind === 'autoPaused' ? ['resume'] : [] };
     case 'played':
     case 'learnerPaused':
     case 'lessonOver':

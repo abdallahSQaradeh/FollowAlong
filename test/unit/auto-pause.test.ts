@@ -383,3 +383,28 @@ describe('auto-pause while typing', () => {
     });
   });
 });
+
+describe('pause and resume after a quiet period', () => {
+  /** A playing Lesson that typing paused with `pauseAndResume`; the player has reported the pause. */
+  async function pausedByTyping(h: Harness): Promise<void> {
+    await openLesson(h, 'pauseAndResume');
+    h.player.emit({ type: 'played', lessonId });
+    expect(edit(h)).toEqual([{ type: 'pause' }]);
+    h.player.emit({ type: 'paused', lessonId, byUser: false });
+  }
+
+  /** What the core sends the player while the fake clock moves on by `ms`. */
+  function after(h: Harness, ms: number): PlayerCommand[] {
+    const before = h.player.sent.length;
+    h.clock.advance(ms);
+    return h.player.sent.slice(before);
+  }
+
+  it('resumes the Lesson 2 s after the last edit by default', async () => {
+    const h = await createHarness();
+    await pausedByTyping(h);
+
+    expect(after(h, 1999)).toEqual([]);
+    expect(after(h, 1)).toEqual([{ type: 'play' }]);
+  });
+});

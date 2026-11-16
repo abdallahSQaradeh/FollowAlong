@@ -17,6 +17,7 @@ import {
   autoPauseOff,
   autoPauseView,
   readAutoPauseMode,
+  readResumeAfterMs,
   stepAutoPause,
   type AutoPauseEffect,
   type AutoPauseInput,
@@ -359,10 +360,24 @@ export function createLoadedLesson(
     mode: readAutoPauseMode(config),
   }).state;
 
+  /** The quiet period of `pauseAndResume` under way: when it passes, auto-pause resumes. */
+  let quietTimer: Disposable | undefined;
+
   /** How each thing auto-pause answers is done. */
   const autoPauseEffects: Readonly<Record<AutoPauseEffect, () => void>> = {
     pause: () => {
       player.send({ type: 'pause' });
+    },
+    startQuiet: () => {
+      quietTimer?.dispose();
+      // Read when it starts, so a changed setting counts from the next edit.
+      quietTimer = clock.schedule(readResumeAfterMs(config), () => {
+        quietTimer = undefined;
+        feedAutoPause({ type: 'quiet' });
+      });
+    },
+    resume: () => {
+      resume(0);
     },
   };
 
