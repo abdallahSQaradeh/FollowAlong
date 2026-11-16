@@ -121,8 +121,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
   const focus = new FocusReturn();
-  // [MUTATION-49] focus return disabled for the view spots, to show the smoke focus check fails.
-  const player = new PlayerPanel(context.extensionPath, logger, () => Promise.resolve('none'));
+  const player = new PlayerPanel(context.extensionPath, logger, () => focus.returnFocus());
   const lessonTree = new LessonTreeView(logger);
   const viewers = new ResourceViewers(context.extensionPath, logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
