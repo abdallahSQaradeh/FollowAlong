@@ -177,6 +177,8 @@ interface Playback {
   readonly awaitingAutoplay: boolean;
   /** Set when the play/pause command sent `play`, until the player answers it. */
   readonly awaitingPlayAnswer: boolean;
+  /** Set when the play/pause command sent `pause`, until the player answers it. */
+  readonly awaitingPauseAnswer: boolean;
   /** Whether the learner was told, in this run of refusals, to press play in the player. */
   readonly toldToPressPlay: boolean;
 }
@@ -187,6 +189,7 @@ function freshPlayback(autoplay: boolean): Playback {
     ended: false,
     awaitingAutoplay: autoplay,
     awaitingPlayAnswer: false,
+    awaitingPauseAnswer: false,
     toldToPressPlay: false,
   };
 }
@@ -575,7 +578,7 @@ export function createLoadedLesson(
         if (shown !== undefined) {
           // Ended: a resume then restarts the Lesson, so it is not rewound (ADR 0016).
           playback = { ...freshPlayback(false), ended: true };
-          feedAutoPause({ type: 'lessonLeft' });
+          feedAutoPause({ type: 'lessonOver' });
           stopSaving();
           shown.engaged = true;
           stopCountingPlay(shown);
@@ -672,7 +675,7 @@ export function createLoadedLesson(
 
   function leave(): Promise<void> {
     stopSaving();
-    feedAutoPause({ type: 'lessonLeft' });
+    feedAutoPause({ type: 'lessonOver' });
     // The sound under way is kept: the next `load` may be this Lesson again (picked once more), and
     // a `load` of another Lesson, or `unload`, stops it.
     // From now on its late events are ignored, so none is recorded into the next Course.
@@ -686,7 +689,7 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
-    feedAutoPause({ type: 'lessonLeft' });
+    feedAutoPause({ type: 'lessonOver' });
     stopSound();
     resetPlayhead(false);
     refreshStatusBar();
@@ -791,6 +794,7 @@ export function createLoadedLesson(
       return;
     }
     if (playback.playing) {
+      playback = { ...playback, awaitingPauseAnswer: true };
       player.send({ type: 'pause' });
       return;
     }
@@ -865,7 +869,9 @@ export function createLoadedLesson(
         type: 'typed',
         // Only a Lesson the player reports playing is paused: a pause sent to a page that is still
         // starting would be lost.
-        playing: current !== undefined && playerReady && playback.playing,
+        // A Lesson the learner is pausing already stays their pause: auto-pause did not cause it.
+        playing:
+          current !== undefined && playerReady && playback.playing && !playback.awaitingPauseAnswer,
       });
     },
     dispose() {

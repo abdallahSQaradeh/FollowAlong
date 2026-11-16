@@ -3,10 +3,7 @@
  * learner's edits, what the player reports, and the setting; it answers with the new state and what
  * to do. The Loaded Lesson feeds it and carries out what it answers.
  */
-import { isAbsolute, relative } from 'node:path';
-
-import { courseDataFolderName } from './course-data.js';
-import { keyOf } from './courses-roots.js';
+import { isCourseDataFile } from './course-data.js';
 import type { Config } from './ports.js';
 
 /** The `followalong.autoPause` setting. */
@@ -41,8 +38,8 @@ export type AutoPauseInput =
   | { readonly type: 'typed'; readonly playing: boolean }
   /** The player reports the Loaded Lesson playing. */
   | { readonly type: 'played' }
-  /** The Loaded Lesson ended, or the learner left it (another Lesson or Course, a closed player). */
-  | { readonly type: 'lessonLeft' };
+  /** The Loaded Lesson is over: it ended, or the learner left it (another Lesson or Course, a closed player). */
+  | { readonly type: 'lessonOver' };
 
 /** What the Loaded Lesson does for a step: `pause` sends the player `pause`. */
 export type AutoPauseEffect = 'pause';
@@ -72,7 +69,7 @@ export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): Aut
         ? { state: { ...state, kind: 'autoPaused' }, effects: ['pause'] }
         : { state, effects: [] };
     case 'played':
-    case 'lessonLeft':
+    case 'lessonOver':
       // Playing again, whoever started it, or no longer the Lesson it paused: what it paused is
       // over, and the next edit while a Lesson plays pauses it.
       return {
@@ -119,18 +116,6 @@ export function isTyping(edit: DocumentEdit, storageFolder: string): boolean {
     return true;
   }
   return (
-    edit.scheme === 'file' &&
-    edit.path !== undefined &&
-    !isFollowAlongData(edit.path, storageFolder)
+    edit.scheme === 'file' && edit.path !== undefined && !isCourseDataFile(edit.path, storageFolder)
   );
-}
-
-/** Whether `path` is a file FollowAlong writes: Course data, or anything in its own storage. */
-function isFollowAlongData(path: string, storageFolder: string): boolean {
-  const file = keyOf(path);
-  if (file.split(/[\\/]/).includes(keyOf(courseDataFolderName))) {
-    return true;
-  }
-  const inside = relative(keyOf(storageFolder), file);
-  return inside !== '' && !inside.startsWith('..') && !isAbsolute(inside);
 }

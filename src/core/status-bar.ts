@@ -6,7 +6,7 @@
  */
 import { zoomLabel } from '../protocol/player-messages.js';
 
-import type { AutoPauseMode } from './auto-pause.js';
+import type { AutoPauseOnMode, AutoPauseView } from './auto-pause.js';
 import { formatClock } from './clock-text.js';
 
 /** The commands a status bar item can run when clicked, named as the core knows them. */
@@ -54,7 +54,7 @@ export interface StatusBarModel {
 export const hiddenStatusBar: StatusBarModel = { items: [] };
 
 /** What the items show, as far as the player has reported it. */
-export interface StatusBarState {
+export interface StatusBarState extends AutoPauseView {
   readonly playing: boolean;
   /** Seconds from the start of the Lesson. */
   readonly position: number;
@@ -65,14 +65,10 @@ export interface StatusBarState {
   readonly shortStep: number;
   /** The player's zoom level: 1 is the whole picture (ADR 0037). */
   readonly zoom: number;
-  /** The `followalong.autoPause` setting (ADR 0052). */
-  readonly autoPause: AutoPauseMode;
-  /** Whether auto-pause paused the Lesson, and it has not played since. */
-  readonly pausedByTyping: boolean;
 }
 
 /** How each mode of auto-pause is named in the play/pause item's tooltip. */
-const autoPauseNames: Readonly<Record<Exclude<AutoPauseMode, 'off'>, string>> = {
+const autoPauseNames: Readonly<Record<AutoPauseOnMode, string>> = {
   pause: 'pause',
   pauseAndResume: 'pause and resume',
 };

@@ -38,12 +38,6 @@ interface SeenEvent {
 /** What `activate` returns in ExtensionMode.Test (src/adapters/vscode/extension.ts). */
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
-  /** The text edits forwarded to the core's auto-pause input (src/core/auto-pause.ts). */
-  readonly documentEdits: readonly {
-    readonly scheme: string;
-    readonly path?: string;
-    readonly inActiveEditor: boolean;
-  }[];
   /** What the PDF viewers reported (src/protocol/pdf-viewer-messages.ts). */
   readonly pdfViewerEvents: readonly { readonly type: string; readonly pages?: number }[];
   lessonTree(): { readonly nodes: readonly TreeNode[] };
@@ -167,6 +161,7 @@ export async function run(): Promise<void> {
   say(await playFromTheEditor(hooks.playerEvents));
   await aClickOnThePicture(hooks.playerEvents, code);
   say(await playFromTheEditorAfterAClick(hooks.playerEvents));
+  say(await typingPausesTheLesson(hooks, code));
 
   say(await theStatusBarRunsTheCommands(hooks));
 
@@ -199,67 +194,112 @@ export async function run(): Promise<void> {
 
   await resourcesOpenByType(extension.extensionPath, hooks);
   say('Markdown, HTML, an image and a PDF each open in their own kind of tab beside the code');
-
-  await aTextEditReachesAutoPause(hooks);
-  say(
-    "a text edit reaches the core's auto-pause input, telling the active editor from the others; a cursor move does not",
-  );
 }
 
 /**
- * Types into a file and an untitled document in the active editor, edits an untitled document no
- * editor shows, and moves the cursor: each edit reaches the core's auto-pause input with its scheme,
- * its path and whether it is in the active editor; the cursor move does not. Which edits pause the
- * Lesson is covered at Seam 1.
+ * Auto-pause in the real VS Code (ADR 0052). With `followalong.autoPause` set to `pause` and the
+ * Lesson playing: an edit in a document no editor shows, and a cursor move in the code, leave it
+ * playing; typing into a file in the active editor makes the real player pause, and the play/pause
+ * item reads "Paused (typing)" with the keyboard marker. Which edits count, and every rule of the
+ * state machine, is covered at Seam 1; this checks that VS Code's edits reach the core, and how the
+ * adapter tells the active editor from the others. The fixture Lesson is 3 s long, so each part
+ * starts it again from 0:00.
  */
-async function aTextEditReachesAutoPause(hooks: TestHooks): Promise<void> {
-  assert.equal(
-    vscode.workspace.getConfiguration('followalong').get('autoPause'),
-    'off',
-    'followalong.autoPause defaults to off',
-  );
-  const folder = mkdtempSync(join(tmpdir(), 'followalong-smoke-edits-'));
+async function typingPausesTheLesson(hooks: TestHooks, code: vscode.TextDocument): Promise<string> {
+  const events = hooks.playerEvents;
+  const settings = () => vscode.workspace.getConfiguration('followalong');
+  assert.equal(settings().get('autoPause'), 'off', 'followalong.autoPause defaults to off');
+  const folder = mkdtempSync(join(tmpdir(), 'followalong-smoke-typing-'));
+  const file = join(folder, 'practice.js');
+  writeFileSync(file, '');
+  await settings().update('autoPause', 'pause', vscode.ConfigurationTarget.Global);
   try {
-    const file = join(folder, 'practice.js');
-    writeFileSync(file, '');
-    const before = hooks.documentEdits.length;
-
-    const practice = await vscode.window.showTextDocument(vscode.Uri.file(file));
-    await practice.edit((edit) => {
-      edit.insert(new vscode.Position(0, 0), 'const a = 1;');
-    });
-    const untitled = await vscode.window.showTextDocument(
-      await vscode.workspace.openTextDocument({ content: '' }),
+    await waitFor('the auto-pause marker on the play/pause item', () =>
+      playPauseText(hooks)?.includes('$(keyboard)') === true ? true : undefined,
     );
-    await untitled.edit((edit) => {
-      edit.insert(new vscode.Position(0, 0), 'let b;');
-    });
+    // Opened now, shown later: the playing part below stays short.
+    const practiceFile = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+
+    let from = await playFromTheStart(events);
     const hidden = await vscode.workspace.openTextDocument({ content: '' });
     const elsewhere = new vscode.WorkspaceEdit();
     elsewhere.insert(hidden.uri, new vscode.Position(0, 0), 'x');
     assert.ok(await vscode.workspace.applyEdit(elsewhere), 'VS Code did not apply the edit');
-    untitled.selection = new vscode.Selection(0, 2, 0, 2);
-
-    const expected = [
-      { scheme: 'file', path: vscode.Uri.file(file).fsPath, inActiveEditor: true },
-      { scheme: 'untitled', inActiveEditor: true },
-      { scheme: 'untitled', inActiveEditor: false },
-    ];
-    await waitFor('the three edits to reach the core', () =>
-      hooks.documentEdits.length - before >= expected.length ? true : undefined,
-    );
-    // Long enough for a stray event about the cursor move to arrive too, if one were sent.
+    const editor = vscode.window.activeTextEditor;
+    assert.ok(editor?.document === code, 'the code editor is not active');
+    editor.selection = new vscode.Selection(0, 1, 0, 1);
+    // Long enough for a pause to reach the player and come back, had either counted as typing.
     await new Promise((resolve) => setTimeout(resolve, 500));
-    assert.deepEqual(hooks.documentEdits.slice(before), expected);
+    const stopped = events
+      .slice(from)
+      .find((event) => event.lessonId === lessonId && event.type !== 'timeUpdate');
+    assert.equal(
+      stopped?.type,
+      undefined,
+      'an edit outside the active editor, or a cursor move, stopped the Lesson',
+    );
+
+    from = await playFromTheStart(events);
+    const practice = await vscode.window.showTextDocument(practiceFile, vscode.ViewColumn.One);
+    await practice.edit((edit) => {
+      edit.insert(new vscode.Position(0, 0), 'const a = 1;');
+    });
+    const answer = await waitFor('the player to stop after the typing', () =>
+      events
+        .slice(from)
+        .find(
+          (event) =>
+            event.lessonId === lessonId && (event.type === 'paused' || event.type === 'ended'),
+        ),
+    );
+    assert.equal(answer.type, 'paused', 'the Lesson played to its end: typing did not pause it');
+    await waitFor('“Paused (typing)” on the play/pause item', () =>
+      playPauseText(hooks)?.includes('Paused (typing)') === true ? true : undefined,
+    );
   } finally {
-    // Nothing is saved: each changed document is reverted as it closes, so closing asks nothing.
-    for (const document of vscode.workspace.textDocuments.filter((open) => open.isDirty)) {
-      await vscode.window.showTextDocument(document);
+    await settings().update('autoPause', undefined, vscode.ConfigurationTarget.Global);
+    const practice = vscode.workspace.textDocuments.find(
+      (open) => open.uri.fsPath === vscode.Uri.file(file).fsPath,
+    );
+    if (practice !== undefined) {
+      // Reverted as it closes, so closing asks nothing; then the code is the active editor again.
+      await vscode.window.showTextDocument(practice, vscode.ViewColumn.One);
       await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
     }
-    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
     rmSync(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   }
+  return 'with auto-pause on, typing in the active editor pauses the playing Lesson ("Paused (typing)"); an edit elsewhere or a cursor move does not';
+}
+
+/** The text of the play/pause status bar item, with its icons as `$(name)`. */
+function playPauseText(hooks: TestHooks): string | undefined {
+  return hooks.statusBar().find((item) => item.id === 'playPause')?.text;
+}
+
+/**
+ * Steps the Lesson back to 0:00 and makes sure it plays, from the editor as the keys do. Resolves
+ * with the index of the next player event, once the player reports it playing from there.
+ */
+async function playFromTheStart(events: readonly SeenEvent[]): Promise<number> {
+  const from = events.length;
+  await vscode.commands.executeCommand('followalong.seekBackLong');
+  await waitFor('the player to step back to the start', () =>
+    events.slice(from).find((event) => event.lessonId === lessonId && event.type === 'seeked'),
+  );
+  const state = events.findLast(
+    (event) =>
+      event.lessonId === lessonId &&
+      (event.type === 'played' || event.type === 'paused' || event.type === 'ended'),
+  );
+  if (state?.type !== 'played') {
+    const pressed = events.length;
+    await vscode.commands.executeCommand('followalong.playPause');
+    await waitFor('the Lesson to play', () =>
+      events.slice(pressed).find((event) => event.lessonId === lessonId && event.type === 'played'),
+    );
+  }
+  return events.length;
 }
 
 /** A 1 × 1 PNG, for the image Resource. */

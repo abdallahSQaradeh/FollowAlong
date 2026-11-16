@@ -13,7 +13,6 @@ import { createFfmpegConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
 import { courseNodeId, type LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
-import type { DocumentEdit } from '../../core/auto-pause.js';
 import { watchDocumentEdits } from './document-edits.js';
 import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
@@ -84,8 +83,6 @@ export interface TestHooks {
   readonly playerEvents: readonly PlayerEvent[];
   /** What the PDF viewers reported, in order. */
   readonly pdfViewerEvents: readonly PdfViewerEvent[];
-  /** The text edits forwarded to the core's auto-pause input, in order. */
-  readonly documentEdits: readonly DocumentEdit[];
   /** The Lesson tree the learner sees now. */
   lessonTree(): LessonTreeModel;
   /** The status bar items VS Code shows now, with the command each one runs. */
@@ -147,14 +144,10 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       }
     });
 
-  /** Records each edit forwarded to the core, in tests only. */
-  let recordEdit: ((edit: DocumentEdit) => void) | undefined;
   let testHooks: TestHooks | undefined;
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     const playerEvents: PlayerEvent[] = [];
     const pdfViewerEvents: PdfViewerEvent[] = [];
-    const documentEdits: DocumentEdit[] = [];
-    recordEdit = (edit) => documentEdits.push(edit);
     context.subscriptions.push(
       player.onEvent((event) => playerEvents.push(event)),
       viewers.onPdfEvent((event) => pdfViewerEvents.push(event)),
@@ -162,7 +155,6 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     testHooks = {
       playerEvents,
       pdfViewerEvents,
-      documentEdits,
       lessonTree: () => lessonTree.current,
       statusBar: () => statusBar.drawn(),
       selectedLesson: () => lessonTree.selectedLesson(),
@@ -185,7 +177,6 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     },
     // Auto-pause's input: the learner's edits (ADR 0052).
     watchDocumentEdits((edit) => {
-      recordEdit?.(edit);
       core.documentEdited(edit);
     }),
     register(commands.openCourse, (folder) =>

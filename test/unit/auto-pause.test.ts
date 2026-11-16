@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { DocumentEdit } from '../../src/core/auto-pause.js';
 import type { StatusBarItemModel } from '../../src/core/status-bar.js';
 import type { PlayerCommand } from '../../src/protocol/player-messages.js';
-import { createHarness, type Harness } from './harness.js';
+import { createHarness, type Harness, type Tree } from './harness.js';
 
 const lessonId = '01 Intro.webm';
 
@@ -16,10 +16,17 @@ const typing: DocumentEdit = {
   inActiveEditor: true,
 };
 
-/** A Course with one Lesson, open in a ready player, with `followalong.autoPause` as given. */
-async function openLesson(h: Harness, mode: unknown): Promise<void> {
+/**
+ * A Course (one Lesson unless `tree` says otherwise), open in a ready player, with
+ * `followalong.autoPause` as given.
+ */
+async function openLesson(
+  h: Harness,
+  mode: unknown,
+  tree: Tree = { [lessonId]: 'video' },
+): Promise<void> {
   h.config.set('autoPause', mode);
-  const course = await h.folder('course', { [lessonId]: 'video' });
+  const course = await h.folder('course', tree);
   await h.core.openCourse(course);
   h.player.ready();
 }
@@ -154,6 +161,17 @@ describe('auto-pause while typing', () => {
       h.player.emit({ type: 'played', lessonId });
 
       expect([...edit(h), ...edit(h), ...edit(h)]).toEqual([{ type: 'pause' }]);
+    });
+
+    it('leaves the learner’s own pause as theirs when they type before the player reports it', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      h.core.playPause();
+
+      expect(edit(h)).toEqual([]);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
 
     it('pauses again for the first edit after the learner resumed the Lesson', async () => {
@@ -292,10 +310,7 @@ describe('auto-pause while typing', () => {
 
     /** A Course with two Lessons; auto-pause has paused the first one. */
     async function firstPausedByTyping(h: Harness): Promise<void> {
-      h.config.set('autoPause', 'pause');
-      const course = await h.folder('course', { [lessonId]: 'video', [secondId]: 'video' });
-      await h.core.openCourse(course);
-      h.player.ready();
+      await openLesson(h, 'pause', { [lessonId]: 'video', [secondId]: 'video' });
       h.player.emit({ type: 'played', lessonId });
       edit(h);
       h.player.emit({ type: 'paused', lessonId, byUser: false });
