@@ -138,6 +138,8 @@ export async function openProgress(
   let saving: Promise<void> = Promise.resolve();
   /** The learner is told about a failing or refused save once per open Course, not every 5 s. */
   let failureShown = false;
+  /** Set while saves keep failing, so a run of failures is logged once. */
+  let failing = false;
 
   async function write(): Promise<void> {
     if (!unsaved) {
@@ -146,6 +148,7 @@ export async function openProgress(
     unsaved = false;
     try {
       await data.write(progressFile, progress);
+      failing = false;
     } catch (error) {
       if (error instanceof UnreadableCourseDataError) {
         // The copy a save would replace could not be read: it stays as it is (spec #12, D5), and
@@ -163,12 +166,17 @@ export async function openProgress(
         }
         return;
       }
+      // Not written: the next save (the 5 s timer, a pause, close()) tries again.
+      unsaved = true;
       const reason = FileSystemError.is(error, 'notFound')
         ? 'the Course folder is missing'
         : error instanceof Error
           ? error.message
           : String(error);
-      logger.log({ level: 'error', message: `Could not save Progress for ${course}: ${reason}` });
+      if (!failing) {
+        failing = true;
+        logger.log({ level: 'error', message: `Could not save Progress for ${course}: ${reason}` });
+      }
       if (!failureShown) {
         failureShown = true;
         ui.showMessage({

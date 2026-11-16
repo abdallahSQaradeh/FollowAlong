@@ -266,6 +266,23 @@ describe('remembering where the learner is in each Lesson', () => {
     expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 95 });
   });
 
+  it('saves again what a failed save could not write, at the next save', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Downloads/course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 30);
+    // The pause's save fails (here: the Course folder is away for a moment).
+    const away = join(h.root, 'away');
+    await rename(course, away);
+    pause(h, '01 Intro.webm');
+    await h.settle();
+    await rename(away, course);
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 25 });
+  });
+
   it('saves when the VS Code window closes', async () => {
     const h = await createHarness();
     const course = await h.folder('course', lessons);
