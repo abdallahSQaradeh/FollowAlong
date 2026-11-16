@@ -20,7 +20,7 @@ answer. These are the choices it leaves open.
   Lessons while the question is open does not stack questions.
 - **Where it asks.** Every time a Lesson is shown in the player, not only for the first Course: the
   first Lesson that opens is the first time, and an answer ends it for every Course and window.
-- **User settings only.** A new `TerminalSettings` port reads and writes the learner's user-level
+- **User settings only.** A new `TerminalSettings` port (it extends the port list of ADR 0002, as the Logger port did) reads and writes the learner's user-level
   value (`inspect().globalValue`, written to the Global target). The workspace value is never read
   or written: the Practice area is never changed (spec #12, story 20). The value is read when the
   learner agrees, not when the question opened, so edits made meanwhile are kept.
@@ -31,14 +31,6 @@ answer. These are the choices it leaves open.
   D5: never overwrite what FollowAlong cannot read). A failed write is told once; the answer was
   stored before the write, so it is not asked for again at every Lesson.
 
-## Consequences
-
-- Until the learner agrees, a one-press key typed in the terminal reaches the shell. The chord forms
-  (`Ctrl+'` `Space`, `,`, `.`) always work. This is Manual QA (#64), together with the order of
-  events on first run: the key may reach the shell before the prompt is answered.
-- Settings changes are visible to the learner as ordinary user-settings edits; the answer is not
-  stored anywhere else, so deleting the global state asks again.
-
 ## Considered options
 
 - **Ask in a modal dialog.** Rejected: it takes focus from the code, which is the Focus change
@@ -47,3 +39,11 @@ answer. These are the choices it leaves open.
   end the offer for good.
 - **Write the setting without asking.** Rejected: it changes the learner's own settings (spec #12,
   story 45).
+
+## Consequences
+
+- Until the learner agrees, a one-press key typed in the terminal reaches the shell. The chord forms
+  (`Ctrl+'` `Space`, `,`, `.`) always work. This is Manual QA (#64), together with the order of
+  events on first run: the key may reach the shell before the prompt is answered.
+- Settings changes are visible to the learner as ordinary user-settings edits; the answer is not
+  stored anywhere else, so deleting the global state asks again.

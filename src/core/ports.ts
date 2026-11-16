@@ -140,6 +140,9 @@ export interface FileResourceTarget {
 
 export type ResourceTarget = FileResourceTarget;
 
+/** The two answers to a {@link Question}: the button that agrees, and the one that declines. */
+export type Answer = 'accept' | 'decline';
+
 /** A question with two answers, put to the learner without blocking what they are doing. */
 export interface Question {
   readonly text: string;
@@ -155,7 +158,7 @@ export interface UiSink {
    * Asks the learner a question and resolves with the button they pressed, or `undefined` when
    * they closed it, or let it go, without answering.
    */
-  ask(question: Question): Promise<'accept' | 'decline' | undefined>;
+  ask(question: Question): Promise<Answer | undefined>;
   /**
    * Shows a quick pick and resolves with the intent of the item the learner picked, or
    * `undefined` when the learner closed it without picking.

@@ -17,6 +17,7 @@ import type { QuickPickModel } from '../../src/core/quick-pick.js';
 import type { StatusBarModel } from '../../src/core/status-bar.js';
 import {
   FileSystemError,
+  type Answer,
   type Clock,
   Config,
   ConversionRequest,
@@ -208,7 +209,7 @@ export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
   /** Every question the core asked, in order. */
   readonly questions: Question[] = [];
-  private questionAnswer: ((answer: 'accept' | 'decline' | undefined) => void) | undefined;
+  private questionAnswer: ((answer: Answer | undefined) => void) | undefined;
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
   /** The status bar items the learner sees now; none until the core shows some. */
@@ -227,7 +228,7 @@ export class RecordingUi implements UiSink {
     this.messages.push(message);
   }
 
-  ask(question: Question): Promise<'accept' | 'decline' | undefined> {
+  ask(question: Question): Promise<Answer | undefined> {
     this.questions.push(question);
     return new Promise((resolve) => {
       this.questionAnswer = resolve;
@@ -235,7 +236,7 @@ export class RecordingUi implements UiSink {
   }
 
   /** The learner answers the open question: a button, or `undefined` for closing it. */
-  answerQuestion(answer: 'accept' | 'decline' | undefined): void {
+  answerQuestion(answer: Answer | undefined): void {
     const resolve = this.questionAnswer;
     if (resolve === undefined) {
       throw new Error('No question is open');

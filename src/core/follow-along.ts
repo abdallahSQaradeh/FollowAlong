@@ -27,7 +27,7 @@ import {
   type ResourcesData,
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
-import { addOnePressCommands, terminalAnswerKey, terminalQuestion } from './terminal-keys.js';
+import { createTerminalKeysOffer } from './terminal-keys.js';
 
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
@@ -136,7 +136,7 @@ function pressPlayText(lesson: Lesson): string {
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, storage, ui, logger, config, terminalSettings } = ports;
+  const { player, storage, ui, logger, config } = ports;
 
   /** The Lesson the player should show. */
   let current: Lesson | undefined;
@@ -295,46 +295,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
   let attaching: Promise<unknown> = Promise.resolve();
 
-  /** Whether the terminal question is open: more Lessons opening do not stack questions. */
-  let askingTerminalKeys = false;
-
-  /** Offers once to add the one-press commands to the terminal's skip-shell setting. */
-  async function offerTerminalKeys(): Promise<void> {
-    if (askingTerminalKeys || storage.global.get(terminalAnswerKey) !== undefined) {
-      return;
-    }
-    askingTerminalKeys = true;
-    let answer;
-    try {
-      answer = await ui.ask(terminalQuestion);
-    } finally {
-      askingTerminalKeys = false;
-    }
-    if (answer === undefined) {
-      return;
-    }
-    // Remembered before the setting is written: a failed write is told once, not at every Lesson.
-    await storage.global.set(terminalAnswerKey, answer);
-    if (answer === 'accept') {
-      const change = addOnePressCommands(terminalSettings.skipShellCommands());
-      if (change.kind === 'write') {
-        await terminalSettings.setSkipShellCommands(change.commands);
-        logger.log({
-          level: 'info',
-          message: 'Added the one-press commands to the terminal keys.',
-        });
-      } else if (change.kind === 'unreadable') {
-        logger.log({
-          level: 'warn',
-          message: 'Left terminal.integrated.commandsToSkipShell as it is: it is not a list.',
-        });
-        ui.showMessage({
-          severity: 'warning',
-          text: "FollowAlong can't read your terminal.integrated.commandsToSkipShell setting (it is not a list of commands), so it left it as it is.",
-        });
-      }
-    }
-  }
+  /** Offers, once, to add the one-press commands to the terminal's skip-shell setting. */
+  const offerTerminalKeys = createTerminalKeysOffer(ports);
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson): void {
@@ -356,16 +318,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       loadCurrent();
     }
     refreshStatusBar();
-    void offerTerminalKeys().catch((error: unknown) => {
-      logger.log({
-        level: 'warn',
-        message: `Could not add the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
-      });
-      ui.showMessage({
-        severity: 'error',
-        text: 'FollowAlong could not save your terminal.integrated.commandsToSkipShell setting. Nothing was changed.',
-      });
-    });
+    offerTerminalKeys();
   }
 
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */

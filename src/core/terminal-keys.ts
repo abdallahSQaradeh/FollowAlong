@@ -3,7 +3,7 @@
  * as they are, but the three one-press keys go to the shell unless their commands are in the
  * learner's `terminal.integrated.commandsToSkipShell`. The core asks once whether to add them.
  */
-import type { Question } from './ports.js';
+import type { Ports, Question } from './ports.js';
 
 /** The commands of the one-press keys: Ctrl+Alt+Space, and Ctrl+Alt+← / →. */
 export const onePressCommands: readonly string[] = [
@@ -47,4 +47,59 @@ export function addOnePressCommands(stored: unknown): SkipShellChange {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
+}
+
+/**
+ * The offer: `offer()` asks the learner once, whenever a Lesson opens, and does what they answered.
+ * It never blocks the caller, and it never throws.
+ */
+export function createTerminalKeysOffer(
+  ports: Pick<Ports, 'ui' | 'storage' | 'logger' | 'terminalSettings'>,
+): () => void {
+  const { ui, storage, logger, terminalSettings } = ports;
+  /** Whether the question is open, or its answer is still being stored: Lessons do not stack questions. */
+  let busy = false;
+
+  async function run(): Promise<void> {
+    const answer = await ui.ask(terminalQuestion);
+    if (answer === undefined) {
+      return;
+    }
+    // Remembered before the setting is written: a failed write is told once, not at every Lesson.
+    await storage.global.set(terminalAnswerKey, answer);
+    if (answer === 'decline') {
+      return;
+    }
+    const change = addOnePressCommands(terminalSettings.skipShellCommands());
+    if (change.kind === 'write') {
+      await terminalSettings.setSkipShellCommands(change.commands);
+      logger.log({ level: 'info', message: 'Added the one-press commands to the terminal keys.' });
+    } else if (change.kind === 'unreadable') {
+      const text =
+        "FollowAlong can't read your terminal.integrated.commandsToSkipShell setting (it is not a list of commands), so it left it as it is.";
+      logger.log({ level: 'warn', message: text });
+      ui.showMessage({ severity: 'warning', text });
+    }
+  }
+
+  return () => {
+    if (busy || storage.global.get(terminalAnswerKey) !== undefined) {
+      return;
+    }
+    busy = true;
+    run()
+      .catch((error: unknown) => {
+        logger.log({
+          level: 'warn',
+          message: `Could not add the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        ui.showMessage({
+          severity: 'error',
+          text: 'FollowAlong could not add its keys to your terminal settings. Nothing was changed.',
+        });
+      })
+      .finally(() => {
+        busy = false;
+      });
+  };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { createFollowAlong } from '../../src/core/follow-along.js';
 import { createHarness, type Harness } from './harness.js';
@@ -21,10 +22,10 @@ async function answer(h: Harness, answered: 'accept' | 'decline' | undefined): P
 }
 
 /** Lets the core's pending promises run. */
-async function flush(): Promise<void> {
-  for (let turn = 0; turn < 10; turn++) {
-    await Promise.resolve();
-  }
+function flush(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 const onePressCommands = [
@@ -157,7 +158,9 @@ describe('the one-time terminal prompt', () => {
 
 describe('the keys the prompt is about', () => {
   it('are exactly the commands the manifest binds to a one-press key, not a chord', () => {
-    const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as {
+    const manifest = JSON.parse(
+      readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8'),
+    ) as {
       contributes: { keybindings: { command: string; key: string }[] };
     };
     const onePress = manifest.contributes.keybindings
