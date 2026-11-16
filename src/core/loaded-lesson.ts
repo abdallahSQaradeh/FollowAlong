@@ -361,6 +361,8 @@ export function createLoadedLesson(
    * otherwise.
    */
   function newPage(ready: boolean): void {
+    // A pause auto-pause caused stays with the page that held it (ADR 0049, #12 D3).
+    feedAutoPause({ type: 'pageReplaced' });
     playerReady = ready;
     rate = normalRate;
     askedRates = [];
@@ -386,7 +388,11 @@ export function createLoadedLesson(
       // Read when it starts, so a changed setting counts from the next edit.
       quietTimer = clock.schedule(readResumeAfterMs(config), () => {
         quietTimer = undefined;
-        feedAutoPause({ type: 'quiet' });
+        feedAutoPause({
+          type: 'quiet',
+          canResume:
+            current !== undefined && playerReady && currentLoad !== undefined && !playback.playing,
+        });
       });
     },
     cancelQuiet: () => {
@@ -712,8 +718,12 @@ export function createLoadedLesson(
         // A pause the learner did not ask for after a `load` with autoplay, or after the command's
         // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         const after = afterPause(playback, event.byUser);
+        feedAutoPause(
+          event.byUser
+            ? { type: 'learnerPaused' }
+            : { type: 'paused', refused: playback.awaitingPlayAnswer || playback.awaitingAutoplay },
+        );
         playback = after.playback;
-        feedAutoPause({ type: event.byUser ? 'learnerPaused' : 'paused' });
         if (after.tellToPressPlay) {
           ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
         }

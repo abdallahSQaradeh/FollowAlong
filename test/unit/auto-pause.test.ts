@@ -9,6 +9,9 @@ import { createHarness, type Harness, type Tree } from './harness.js';
 
 const lessonId = '01 Intro.webm';
 
+/** The quiet period setting of `pauseAndResume`, in seconds. */
+const resumeAfter = 'autoPause.resumeAfter';
+
 /** A keystroke in the active editor's file: the edit auto-pause is for. */
 const typing: DocumentEdit = {
   scheme: 'file',
@@ -470,6 +473,136 @@ describe('pause and resume after a quiet period', () => {
 
     expect(after(h, 10_000)).toEqual([]);
     expect(playPauseItem(h)).toMatchObject({ text: 'Paused (typing)' });
+  });
+
+  it('waits the quiet period the learner set', async () => {
+    const h = await createHarness();
+    h.config.set(resumeAfter, 0.5);
+    await pausedByTyping(h);
+
+    expect(after(h, 499)).toEqual([]);
+    expect(after(h, 1)).toEqual([{ type: 'play' }]);
+  });
+
+  it('never rewinds, even with resume-with-rewind set (story 103)', async () => {
+    const h = await createHarness();
+    h.config.set('resumeRewind', 3);
+    await pausedByTyping(h);
+
+    expect(after(h, 2000)).toEqual([{ type: 'play' }]);
+  });
+
+  it('waits 2 s when the quiet period setting is not a number above 0', async () => {
+    const h = await createHarness();
+    h.config.set(resumeAfter, 0);
+    await pausedByTyping(h);
+
+    expect(after(h, 1999)).toEqual([]);
+    expect(after(h, 1)).toEqual([{ type: 'play' }]);
+  });
+
+  describe('only the Lesson it paused, in the page that holds it', () => {
+    const secondId = '02 Setup.webm';
+
+    it('never resumes a Lesson that ended', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      h.player.emit({ type: 'ended', lessonId });
+
+      expect(after(h, 10_000)).toEqual([]);
+    });
+
+    it('never resumes a Lesson the learner left', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pauseAndResume', { [lessonId]: 'video', [secondId]: 'video' });
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.core.nextLesson();
+
+      expect(after(h, 10_000)).toEqual([]);
+    });
+
+    it('never resumes once the learner turns auto-pause off', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      h.config.set('autoPause', 'off');
+
+      expect(after(h, 10_000)).toEqual([]);
+    });
+
+    it('ignores a late pause of the learner’s from an earlier load of the Lesson', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pauseAndResume', { [lessonId]: 'video', [secondId]: 'video' });
+      h.core.nextLesson();
+      h.player.emit({ type: 'played', lessonId: secondId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId: secondId, byUser: false });
+      // The `load` of the first Lesson was load 1; the page's click on it comes in late.
+      h.player.emit({ type: 'paused', lessonId: secondId, loadId: 1, byUser: true });
+
+      expect(playPauseItem(h)).toMatchObject({ text: 'Paused (typing)' });
+      expect(after(h, 2000)).toEqual([{ type: 'play' }]);
+    });
+
+    it('drops the pause when the video moves, and leaves the Lesson paused', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      const moving = h.core.moveVideo('bottomPanel');
+      h.player.emit({
+        type: 'snapshot',
+        snapshot: {
+          rate: 1,
+          zoom: { level: 1, left: 0, top: 0 },
+          lesson: { lessonId, position: 1, playing: false },
+        },
+      });
+      await moving;
+
+      expect(after(h, 10_000)).toEqual([]);
+      h.player.ready();
+      expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+
+    it('drops the pause when the player page reloads', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      h.player.ready();
+
+      expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+  });
+
+  describe('when VS Code refuses its play', () => {
+    it('ends the auto-pause and tells the learner once to press play', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      expect(after(h, 2000)).toEqual([{ type: 'play' }]);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+      expect(h.ui.messages).toEqual([
+        {
+          severity: 'info',
+          text: 'VS Code did not let “Intro” start by itself. Press play in the player to start it.',
+        },
+      ]);
+      edit(h);
+      expect(after(h, 10_000)).toEqual([]);
+    });
+  });
+
+  it('starts the quiet period when the learner switches from `pause` during an auto-pause', async () => {
+    const h = await createHarness();
+    await openLesson(h, 'pause');
+    h.player.emit({ type: 'played', lessonId });
+    edit(h);
+    h.player.emit({ type: 'paused', lessonId, byUser: false });
+    h.config.set('autoPause', 'pauseAndResume');
+
+    expect(after(h, 2000)).toEqual([{ type: 'play' }]);
   });
 
   it('starts the quiet period again with every edit', async () => {

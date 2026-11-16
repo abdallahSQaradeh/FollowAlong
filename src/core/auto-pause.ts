@@ -62,8 +62,16 @@ export type AutoPauseInput =
   | { readonly type: 'typed'; readonly playing: boolean }
   /** The player reports the Loaded Lesson playing; `source`: who started it (ADR 0052). */
   | { readonly type: 'played'; readonly source: PlaySource }
-  /** The player reports the Loaded Lesson paused, whoever paused it. */
-  | { readonly type: 'paused' }
+  /**
+   * The player reports the Loaded Lesson paused, whoever paused it. `refused`: VS Code refused the
+   * `play` sent to it (#12 D3), auto-pause's own resume or the learner's.
+   */
+  | { readonly type: 'paused'; readonly refused: boolean }
+  /**
+   * A new player page replaces the one that held the Lesson: a move (ADR 0049) or a reload. It
+   * has had no click, so VS Code would refuse a resume there (#12 D3).
+   */
+  | { readonly type: 'pageReplaced' }
   /**
    * The learner paused the Lesson themselves: the play/pause command sent `pause`, or the player
    * reports a pause of theirs (`paused {byUser: true}`). Spec: "a manual pause during `autoPaused`
@@ -72,8 +80,11 @@ export type AutoPauseInput =
   | { readonly type: 'learnerPaused' }
   /** The Loaded Lesson is over: it ended, or the learner left it (another Lesson or Course, a closed player). */
   | { readonly type: 'lessonOver' }
-  /** The quiet period of `pauseAndResume` passed with no edit. */
-  | { readonly type: 'quiet' };
+  /**
+   * The quiet period of `pauseAndResume` passed with no edit. `canResume`: the page that holds the
+   * Lesson is ready and has reported it paused.
+   */
+  | { readonly type: 'quiet'; readonly canResume: boolean };
 
 /**
  * What the Loaded Lesson does for a step:
@@ -94,7 +105,9 @@ export interface AutoPauseStep {
  * Whether the quiet period runs in `state`: while auto-pause holds a pause it caused, in
  * `pauseAndResume`. It starts when such a state begins, and stops when it ends.
  */
-function quietRuns(state: AutoPauseState): boolean {
+function quietRuns(
+  state: AutoPauseState,
+): state is { readonly kind: 'autoPaused'; readonly mode: 'pauseAndResume' } {
   return state.kind === 'autoPaused' && state.mode === 'pauseAndResume';
 }
 
@@ -134,7 +147,13 @@ function transition(state: AutoPauseState, input: AutoPauseInput): AutoPauseStep
         ? { state: { ...state, kind: 'autoPaused' }, effects: ['pause'] }
         : { state, effects: [] };
     case 'quiet':
-      return { state, effects: quietRuns(state) ? ['resume'] : [] };
+      if (!quietRuns(state)) {
+        return { state, effects: [] };
+      }
+      // A pause it cannot resume is left as a plain pause: "Paused (typing)" goes.
+      return input.canResume
+        ? { state, effects: ['resume'] }
+        : { state: { ...state, kind: 'armed' }, effects: [] };
     case 'played':
       // The learner playing a Lesson auto-pause paused lets typing play through (story 102). Its
       // own resume, or a `load`'s autoplay, ends the pause it caused: the next edit pauses again.
@@ -146,13 +165,15 @@ function transition(state: AutoPauseState, input: AutoPauseInput): AutoPauseStep
         effects: [],
       };
     case 'paused':
-      // The next pause of any kind ends `overridden`. A pause while `autoPaused` is the one it sent.
-      return {
-        state: state.kind === 'overridden' ? { ...state, kind: 'armed' } : state,
-        effects: [],
-      };
+      // The next pause of any kind ends `overridden`. A pause while `autoPaused` is the one it
+      // sent, unless it answers a refused `play`: then the Lesson stays paused, a plain pause.
+      if (state.kind === 'overridden' || (state.kind === 'autoPaused' && input.refused)) {
+        return { state: { ...state, kind: 'armed' }, effects: [] };
+      }
+      return { state, effects: [] };
     case 'learnerPaused':
     case 'lessonOver':
+    case 'pageReplaced':
       // Paused by the learner, so the pause is theirs; or no longer the Lesson it paused: what it
       // paused or let play through is over, and the next edit while a Lesson plays pauses it.
       return { state: state.kind === 'off' ? state : { ...state, kind: 'armed' }, effects: [] };
