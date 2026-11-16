@@ -6,12 +6,8 @@
  */
 import { join } from 'node:path';
 
-export function bundledFfmpegPath(
-  extensionPath: string,
-  platform: string = process.platform,
-  arch: string = process.arch,
-): string | undefined {
-  return platform === 'win32' && arch === 'x64'
+export function bundledFfmpegPath(extensionPath: string): string | undefined {
+  return process.platform === 'win32' && process.arch === 'x64'
     ? join(extensionPath, 'bin', 'ffmpeg.exe')
     : undefined;
 }

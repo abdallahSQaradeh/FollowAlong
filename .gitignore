@@ -1,6 +1,7 @@
 node_modules/
 out/
 bin/
+vsix-unpacked/
 .logs/
 .claude/logs/
 .vscode-test/

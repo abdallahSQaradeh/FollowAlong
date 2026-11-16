@@ -27,6 +27,9 @@ const positional = argv.filter((_, index) => index !== runAt && index !== runAt 
 const exe = resolve(positional[0] ?? join(root, 'bin', 'ffmpeg.exe'));
 const program = runAt >= 0 ? resolve(argv[runAt + 1] ?? exe) : exe;
 const input = join(root, 'test', 'fixtures', 'media', 'sidecar.mp4');
+/** @type {unknown} */
+const pinnedJson = JSON.parse(readFileSync(join(root, 'scripts', 'bundled-ffmpeg.json'), 'utf8'));
+const pinned = /** @type {{ ffmpeg: { version: string } }} */ (pinnedJson);
 
 /**
  * What ffmpeg printed, both streams, and its exit code.
@@ -61,7 +64,12 @@ console.log(buildconf.text);
 const licence = ffmpegRun(['-hide_banner', '-L']);
 console.log(licence.text);
 check(version.code === 0, 'ffmpeg -version runs');
-check(/^ffmpeg version 7\.1\.1\b/m.test(version.text), 'it is ffmpeg 7.1.1');
+check(
+  new RegExp(`^ffmpeg version ${pinned.ffmpeg.version.replaceAll('.', '\\.')}\\b`, 'm').test(
+    version.text,
+  ),
+  `it is ffmpeg ${pinned.ffmpeg.version} (scripts/bundled-ffmpeg.json)`,
+);
 check(
   /GNU Lesser General Public\s+License/.test(licence.text) &&
     !/GNU General Public\s+License/.test(licence.text),

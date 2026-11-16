@@ -163,25 +163,13 @@ jobs:
       - name: Package the .vsix
         run: npm run package
 
-      - name: The .vsix holds ffmpeg.exe, its licences and its source offer
-        shell: bash
-        run: |
-          tar -tf ./*.vsix | tee vsix-files.txt
-          for file in extension/bin/ffmpeg.exe extension/bin/FFMPEG-LICENSE-LGPL-2.1.txt \
-            extension/bin/LAME-LICENSE-LGPL.txt extension/bin/FFMPEG-BUILD.txt \
-            extension/scripts/build-ffmpeg.mjs extension/scripts/bundled-ffmpeg.json \
-            extension/THIRD_PARTY_NOTICES.txt; do
-            grep -qxF "$file" vsix-files.txt || { echo "::error::$file is not in the .vsix"; exit 1; }
-          done
+      - name: Unpack the .vsix, and check it holds ffmpeg.exe, its licences and its source offer
+        run: node scripts/check-vsix.mjs
 
       # The file that ships, run from the unpacked .vsix: the LGPL gate (ffmpeg -L and -buildconf),
       # then the extension's own converter adapter turns the AAC sound of an MP4 into an MP3.
       - name: Run the ffmpeg.exe from the .vsix (LGPL gate, AAC to MP3 through the converter adapter)
-        shell: bash
-        run: |
-          mkdir vsix-unpacked
-          tar -xf ./*.vsix -C vsix-unpacked
-          node scripts/check-bundled-ffmpeg.mjs vsix-unpacked/extension/bin/ffmpeg.exe
+        run: node scripts/check-bundled-ffmpeg.mjs vsix-unpacked/extension/bin/ffmpeg.exe
 
       - name: Upload .vsix
         uses: actions/upload-artifact@v6

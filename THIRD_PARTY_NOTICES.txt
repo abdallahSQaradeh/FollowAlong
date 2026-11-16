@@ -216,16 +216,19 @@ Source, and how to build it again. The exact sources are these tarballs, with th
 build checks them against:
 
   FFmpeg 7.1.1  https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz
+                (the same file: http://archive.ubuntu.com/ubuntu/pool/universe/f/ffmpeg/ffmpeg_7.1.1.orig.tar.xz)
                 733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
   LAME 3.100    https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
                 ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
 
 The build is `scripts/build-ffmpeg.mjs` with `scripts/bundled-ffmpeg.json` (versions, checksums and
 every configure option), both included in this package: on Linux with mingw-w64, `node
-scripts/build-ffmpeg.mjs` produces the same `ffmpeg.exe`. Everything needed to rebuild it is the
-two public tarballs above plus those two files, which are in this package. This is also
-FollowAlong's written offer: for as long as this version of FollowAlong is distributed, and for at
-least three years after, anyone who has this package can ask the publisher for a copy of those
-tarballs on a medium customarily used for software interchange, for the cost of making it. You may
+scripts/build-ffmpeg.mjs` builds an `ffmpeg.exe` from the same sources with the same options (the
+compiler versions it used are in `bin/FFMPEG-BUILD.txt`). Everything needed to rebuild it is the two
+public tarballs above plus those two files, which are in this package. This is also FollowAlong's
+written offer: for as long as this version of FollowAlong is distributed, and for at least three
+years after, anyone who has this package can ask the publisher for a copy of those tarballs on a
+medium customarily used for software interchange, for the cost of making it, by opening an issue at
+https://github.com/abdallahSQaradeh/FollowAlong. You may
 replace the bundled program with an ffmpeg of your own, built from modified sources: set
 `followalong.ffmpegPath` to it, and FollowAlong runs that one instead.

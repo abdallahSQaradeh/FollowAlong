@@ -150,6 +150,28 @@ function importedLibraries(exe) {
 }
 
 /**
+ * The versions of the tools and runtime the build used, one per line, for the build record the
+ * .vsix ships (the exact versions of what made the file).
+ * @returns {string[]}
+ */
+function toolVersions() {
+  /** @param {string} program */
+  const firstLine = (program) =>
+    run(program, ['--version'], { capture: true }).split('\n')[0] ?? '';
+  const runtime = spawnSync(`${pinned.target}-gcc`, ['-dM', '-E', '-'], {
+    input: '#include <_mingw.h>\n',
+    encoding: 'utf8',
+  });
+  const mingw = /__MINGW64_VERSION_STR "([^"]+)"/.exec(runtime.stdout)?.[1] ?? 'unknown';
+  return [
+    firstLine(`${pinned.target}-gcc`),
+    firstLine(`${pinned.target}-strip`),
+    firstLine('nasm'),
+    `mingw-w64 runtime ${mingw}`,
+  ];
+}
+
+/**
  * Lists the DLLs `exe` imports and its size, and throws when it needs one that does not ship with
  * Windows (libgcc, winpthread and LAME are linked in statically, so a standalone file runs
  * anywhere).
@@ -276,7 +298,8 @@ async function main() {
       `  source: ${pinned.lame.urls.join('\n          ')}`,
       `  SHA-256: ${pinned.lame.sha256}`,
       '',
-      `Cross-compiled for ${target} with mingw-w64 by scripts/build-ffmpeg.mjs, from the sources above.`,
+      `Cross-compiled for ${target} by scripts/build-ffmpeg.mjs, from the sources above, with:`,
+      ...toolVersions().map((line) => `  ${line}`),
       '',
       'ffmpeg configure options (scripts/bundled-ffmpeg.json):',
       ...pinned.ffmpeg.configure.map((flag) => `  ${flag}`),

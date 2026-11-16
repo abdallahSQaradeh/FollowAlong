@@ -47,21 +47,25 @@ async function ffmpegProgram(ports: SidecarSoundPorts, warned: Set<string>): Pro
   const { config, ui, logger, fileSystem, bundledFfmpeg } = ports;
   const setting = config.get('ffmpegPath');
   const value = typeof setting === 'string' ? setting.trim() : '';
-  if (value !== '' && isFullPath(value)) {
-    return value;
-  }
-  // A relative path would resolve against whatever folder VS Code runs in (as for Courses roots).
-  // Said once per window and value, not at every Lesson.
-  if (value !== '' && !warned.has(value)) {
-    warned.add(value);
-    logger.log({
-      level: 'warn',
-      message: `Ignoring followalong.ffmpegPath ${value}: not a full path.`,
-    });
-    ui.showMessage({
-      severity: 'warning',
-      text: `FollowAlong ignores the followalong.ffmpegPath setting “${value}”: it must be a full path, such as C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe. It uses ${bundledFfmpeg === undefined ? 'ffmpeg on PATH' : 'the ffmpeg that comes with FollowAlong'} instead.`,
-    });
+  if (value !== '') {
+    if (isFullPath(value)) {
+      return value;
+    }
+    // A relative path would resolve against whatever folder VS Code runs in (as for Courses
+    // roots). Said once per window and value, not at every Lesson.
+    if (!warned.has(value)) {
+      warned.add(value);
+      const instead =
+        bundledFfmpeg === undefined ? 'ffmpeg on PATH' : 'the ffmpeg that comes with FollowAlong';
+      logger.log({
+        level: 'warn',
+        message: `Ignoring followalong.ffmpegPath ${value}: not a full path.`,
+      });
+      ui.showMessage({
+        severity: 'warning',
+        text: `FollowAlong ignores the followalong.ffmpegPath setting “${value}”: it must be a full path, such as C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe. It uses ${instead} instead.`,
+      });
+    }
   }
   if (bundledFfmpeg === undefined) {
     return pathProgram;

@@ -1,8 +1,8 @@
 /**
  * The Converter port over ffmpeg (the audio sidecar, ADR 0034). It runs the program the core
- * chose (`followalong.ffmpegPath`, the ffmpeg the .vsix ships, or ffmpeg on PATH; ADR 0071), always
- * with an argument array and never through a shell. It reads which sound a Lesson has, and converts the
- * first sound track to MP3. ffmpeg writes a temp file beside the output, renamed over it once
+ * chose (`followalong.ffmpegPath`, the ffmpeg the .vsix ships, or ffmpeg on PATH; ADR 0071),
+ * always with an argument array and never through a shell. It reads which sound a Lesson has, and
+ * converts the first sound track to MP3. ffmpeg writes a temp file beside the output, renamed over it once
  * whole, so a conversion cut short never looks like a finished one. It stops an ffmpeg it was told
  * to stop, with SIGKILL when SIGTERM is not enough, and gives up waiting for one that cannot be
  * killed (ADR 0056). What it throws never names its temp file (ADR 0057).

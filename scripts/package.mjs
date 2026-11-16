@@ -6,7 +6,7 @@
  *
  * Usage: npm run package   → followalong-win32-x64-<version>.vsix in the repository root
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,12 +21,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * travel with it. The .vsix is never made without them, so it can never ship the program with no
  * licence, or a Lesson with no sound.
  */
-const bundledFfmpegFiles = [
-  'ffmpeg.exe',
-  'FFMPEG-LICENSE-LGPL-2.1.txt',
-  'LAME-LICENSE-LGPL.txt',
-  'FFMPEG-BUILD.txt',
-];
+/** @type {unknown} */
+const pinnedJson = JSON.parse(readFileSync(join(root, 'scripts', 'bundled-ffmpeg.json'), 'utf8'));
+const bundledFfmpegFiles = /** @type {{ outputs: string[] }} */ (pinnedJson).outputs;
 const missing = bundledFfmpegFiles.filter((name) => !existsSync(join(root, 'bin', name)));
 if (missing.length > 0) {
   throw new Error(

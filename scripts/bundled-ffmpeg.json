@@ -1,6 +1,12 @@
 {
   "description": "The exact sources and flags of the ffmpeg.exe in the Windows x64 .vsix (ADR 0070). scripts/build-ffmpeg.mjs builds from this file; CI keys its cache on it; the .vsix ships it as part of the written offer of source.",
   "target": "x86_64-w64-mingw32",
+  "outputs": [
+    "ffmpeg.exe",
+    "FFMPEG-LICENSE-LGPL-2.1.txt",
+    "LAME-LICENSE-LGPL.txt",
+    "FFMPEG-BUILD.txt"
+  ],
   "ffmpeg": {
     "version": "7.1.1",
     "archive": "ffmpeg-7.1.1.tar.xz",

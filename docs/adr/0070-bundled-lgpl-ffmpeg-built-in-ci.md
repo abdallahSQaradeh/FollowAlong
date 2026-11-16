@@ -3,12 +3,11 @@
 Ticket #43 (user story 73). Spec #12 (_Further Notes_): "ship an LGPL ffmpeg build limited to AAC
 decode and MP3 encode, with its license notice in the .vsix". ADR 0034 made the sidecar run ffmpeg;
 this ADR is where that ffmpeg comes from, and what the `.vsix` carries so shipping it is lawful.
-Approved by the orchestrator's answer to the plan for #43 (with the six conditions listed at the end).
+Plan and conditions were approved by the orchestrator (session answer on #43); the rationale is below.
 
 ## What ships
 
-`bin/ffmpeg.exe` in the `win32-x64` `.vsix`, **3.45 MiB** (3,622,400 bytes; the whole `.vsix` is
-2.03 MB), with `bin/FFMPEG-LICENSE-LGPL-2.1.txt`, `bin/LAME-LICENSE-LGPL.txt`, `bin/FFMPEG-BUILD.txt`
+`bin/ffmpeg.exe` in the `win32-x64` `.vsix` (about 3.5 MB; the whole `.vsix` about 2 MB), with `bin/FFMPEG-LICENSE-LGPL-2.1.txt`, `bin/LAME-LICENSE-LGPL.txt`, `bin/FFMPEG-BUILD.txt`
 (versions, sources, checksums, configure options, what ffmpeg reports about itself), the build script
 `scripts/build-ffmpeg.mjs` and `scripts/bundled-ffmpeg.json`, and an entry in `THIRD_PARTY_NOTICES.txt`
 next to pdf.js's (decision D8 on #12). `npm run package` stops with a message naming the build script
@@ -17,7 +16,7 @@ when `bin/` lacks any of the four files, so a `.vsix` never ships the program wi
 ## How it is made
 
 - **Pinned sources, checked.** FFmpeg 7.1.1 (`ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz`, SHA-256
-  `733984395e0d…3a03b1`) and LAME 3.100 (SourceForge, SHA-256 `ddfe36cab873…b1da1e`). The script tries
+  in `scripts/bundled-ffmpeg.json`) and LAME 3.100 (SourceForge, also pinned there). The script tries
   each URL of `scripts/bundled-ffmpeg.json` in order and accepts the first whose bytes match; a changed
   tarball fails the build, it is never trusted. The ffmpeg hash was taken from the byte-identical
   `ffmpeg_7.1.1.orig.tar.xz` in the Ubuntu pool, the second URL, because `ffmpeg.org` cannot be reached
@@ -69,7 +68,8 @@ when `bin/` lacks any of the four files, so a `.vsix` never ships the program wi
 
 ## Considered options
 
-- **Commit the binary.** Rejected by the orchestrator's brief (never commit a large binary).
+- **Commit the binary.** Rejected: a binary in git stays in every clone for ever, cannot be reviewed,
+  and nothing would tie it to the sources and flags the notice names.
 - **Download a ready-made Windows build in CI.** Rejected: unknown flags and licence (most are GPL),
   and a checksum of a binary says nothing about how it was made.
 - **Shared libraries (`ffmpeg.exe` and DLLs).** Rejected for one standalone file; the sources, the build
@@ -79,12 +79,3 @@ when `bin/` lacks any of the four files, so a `.vsix` never ships the program wi
   ADR 0034), so changing the encoder would change the sound the tests and the player were made for.
 - **Other platforms.** The `.vsix` is Windows x64 (ADR 0004). On Linux and macOS the bundled path is
   absent and the sidecar uses `followalong.ffmpegPath` or ffmpeg on PATH (ADR 0071).
-
-## The conditions the orchestrator set
-
-(1) LGPL checked by a CI step that fails otherwise; (2) a standalone exe with its DLL imports checked and
-its size reported; (3) the shipped exe proven to convert, through the real converter adapter, as a step
-after packaging that runs it from the unpacked `.vsix`; (4) the Windows job `needs:` the build job, the
-cache key holds the compiler's version, and no existing job or check was loosened; (5) `npm run package`
-without `bin/ffmpeg.exe` fails naming the build script, and the README says how to get it; (6) the
-selection rule `ffmpegPath` → bundled → PATH, covered in Seam 1 (ADR 0071).
