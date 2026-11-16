@@ -72,6 +72,8 @@ export function createUiSink(
           await viewers.openPreview(target.kind, target.path, column);
           break;
         case 'pdf':
+          await viewers.openPdf(target.path, column);
+          break;
         case 'image':
         case 'file':
           // VS Code picks the editor for the file: text and code in the text editor, an image in

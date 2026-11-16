@@ -1,28 +1,98 @@
 /**
- * The Resource tabs FollowAlong draws itself (ADR 0021): the preview of an HTML or Markdown file.
- * Each file has at most one tab; opening it again brings that tab forward. Like every Resource, a
+ * The Resource tabs FollowAlong draws itself (ADR 0021): the preview of an HTML or Markdown file,
+ * and the PDF viewer. Each file has at most one tab; opening it again brings that tab forward. Like every Resource, a
  * tab opens in the editor group the placement names and never takes focus.
  */
+import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import * as vscode from 'vscode';
 
 import type { Logger } from '../../core/logger.js';
+import { renderPdfViewerPage } from '../../player/pdf-page.js';
+import { parsePdfViewerEvent, type PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { renderHtmlPreviewPage, renderMarkdownPreviewPage } from './preview-pages.js';
 
 /** The view type of the preview tab (VS Code prefixes it for a tab's input). */
 export const previewViewType = 'followalong.preview';
 
+/** The view type of the PDF viewer tab. */
+export const pdfViewType = 'followalong.pdf';
+
 /** Whether a tab's webview is one of FollowAlong's Resource tabs. */
 export function isResourceViewType(viewType: string): boolean {
-  return viewType.endsWith(previewViewType);
+  return viewType.endsWith(previewViewType) || viewType.endsWith(pdfViewType);
 }
 
 export class ResourceViewers implements vscode.Disposable {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
+  private readonly pdfEvents = new vscode.EventEmitter<PdfViewerEvent>();
+  private pdfScripts: { readonly script: string; readonly worker: string } | undefined;
 
-  constructor(private readonly logger: Logger) {}
+  /** What the PDF viewers report: a first page drawn, or a PDF that could not be shown. */
+  readonly onPdfEvent = this.pdfEvents.event;
+
+  constructor(
+    private readonly extensionPath: string,
+    private readonly logger: Logger,
+  ) {}
+
+  /** Opens `path`, a PDF, in the FollowAlong viewer in the editor group `column`. */
+  openPdf(path: string, column: vscode.ViewColumn): Promise<void> {
+    const key = `pdf:${path}`;
+    const existing = this.panels.get(key);
+    if (existing !== undefined) {
+      existing.reveal(undefined, true);
+      return Promise.resolve();
+    }
+    const folder = vscode.Uri.file(dirname(path));
+    const panel = vscode.window.createWebviewPanel(
+      pdfViewType,
+      basename(path),
+      { viewColumn: column, preserveFocus: true },
+      {
+        enableScripts: true,
+        // The PDF's own folder is all the viewer may read: its script and the pdf.js worker are
+        // inlined in the page (ADR 0004), so no root of the extension is needed.
+        localResourceRoots: [folder],
+      },
+    );
+    this.panels.set(key, panel);
+    panel.onDidDispose(() => this.panels.delete(key));
+    panel.webview.onDidReceiveMessage((raw: unknown) => {
+      const event = parsePdfViewerEvent(raw);
+      if (event === undefined) {
+        this.logger.log({
+          level: 'warn',
+          message: `Unknown message from the PDF viewer: ${JSON.stringify(raw)}`,
+        });
+        return;
+      }
+      if (event.type === 'failed') {
+        this.logger.log({ level: 'warn', message: `Could not show ${path}: ${event.message}` });
+      }
+      this.pdfEvents.fire(event);
+    });
+    const { script, worker } = this.loadPdfScripts();
+    panel.webview.html = renderPdfViewerPage({
+      cspSource: panel.webview.cspSource,
+      nonce: randomBytes(18).toString('base64'),
+      pdfUri: panel.webview.asWebviewUri(vscode.Uri.file(path)).toString(),
+      script,
+      worker,
+    });
+    return Promise.resolve();
+  }
+
+  private loadPdfScripts(): { readonly script: string; readonly worker: string } {
+    this.pdfScripts ??= {
+      script: readFileSync(join(this.extensionPath, 'out', 'pdf', 'pdf-viewer.js'), 'utf8'),
+      worker: readFileSync(join(this.extensionPath, 'out', 'pdf', 'pdf.worker.js'), 'utf8'),
+    };
+    return this.pdfScripts;
+  }
 
   /** Opens `path`, an HTML or Markdown file, as a preview in the editor group `column`. */
   async openPreview(
@@ -87,5 +157,6 @@ export class ResourceViewers implements vscode.Disposable {
       panel.dispose();
     }
     this.panels.clear();
+    this.pdfEvents.dispose();
   }
 }
