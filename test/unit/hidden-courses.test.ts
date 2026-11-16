@@ -109,7 +109,7 @@ describe('hiding a stray folder from the Course picker', () => {
     expect(rows(h.ui.picker)).toEqual(['Gamma', 'Add Courses root…']);
   });
 
-  it('hides a Recent Course from Recent as well, and does not change the Recent list', async () => {
+  it('hides a Recent Course from Recent as well, and Unhide gives it back its place in Recent', async () => {
     const h = await createHarness();
     const learning = await libraryWithStray(h);
     await h.core.openCourse(join(learning, 'Stray'));
@@ -126,7 +126,20 @@ describe('hiding a stray folder from the Course picker', () => {
     h.ui.press('Stray', 'Hide');
 
     expect(rows(h.ui.picker)).toEqual(['Alpha', 'Add Courses root…']);
-    expect(h.storage.global.get('recentCourses')).toEqual([join(learning, 'Stray')]);
+    h.ui.dismissPicker();
+    const unhiding = h.core.unhideCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('Stray');
+    await unhiding;
+    void h.core.pickCourse();
+    await h.ui.pickerShown();
+    expect(rows(h.ui.picker)).toEqual([
+      '── Recent Courses',
+      'Stray',
+      '── Other Courses',
+      'Alpha',
+      'Add Courses root…',
+    ]);
   });
 
   it('hides the open Course too, and it is still open', async () => {
