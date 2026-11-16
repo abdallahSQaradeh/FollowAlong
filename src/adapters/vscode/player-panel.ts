@@ -64,11 +64,13 @@ interface Host {
   /** Shows the Lesson's title: the panel's tab title, or the view's description. */
   setTitle(title: string): void;
   reveal(): void;
+  /** Drops the page and stops forwarding what it posts; the core is not told (it asked: a move). */
+  drop(): void;
   /**
-   * Drops the page and stops forwarding what it posts; the core is not told (it asked: a move).
-   * Resolves once VS Code has closed what showed it, where that needs closing.
+   * Closes the panel or sidebar that showed the page, where it needs closing, once the page is
+   * dropped. Never rejects: a close VS Code refuses is logged.
    */
-  drop(): Promise<void>;
+  closeContainer(): Promise<void>;
 }
 
 /** Where the player is, and whether VS Code shows it. */
@@ -88,6 +90,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private readonly events = new vscode.EventEmitter<PlayerEvent>();
   private readonly closed = new vscode.EventEmitter<undefined>();
   private readonly subscriptions: vscode.Disposable[] = [];
+  /**
+   * The spot changes in the order they were asked: each waits for the one before it, so the
+   * context key the views' `when` clauses read ends at the spot asked for last (review of #49,
+   * item 2).
+   */
+  private placing: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly extensionPath: string,
@@ -144,24 +152,55 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       this.awaitedView = { spot, title };
       return 'created';
     }
-    // Another spot: a new page there (a panel and a view cannot share one, ADR 0049).
-    const left = this.host?.drop() ?? Promise.resolve();
-    this.host = undefined;
+    // Another spot (or none yet): a new page there (a panel and a view cannot share one, ADR 0049).
+    // The spot is set at once; what VS Code has to do for it waits for the move before.
+    const left = this.leave();
     this.awaitedView = undefined;
-    this.stopWatching();
-    // The old view's container is closed before its `when` clause hides it (`drop`).
-    const shown = left.then(() => this.showSpot(spot));
+    // The old view's container is closed before its `when` clause hides it.
+    const shown = this.after(left, () => this.showSpot(spot));
     if (spot === 'editorSplit') {
       this.host = this.openPanel(title);
-      void shown;
     } else {
       this.awaitedView = { spot, title };
       // The view shows only once its `when` clause holds: set the key first, then open it.
-      void shown.then(() => {
+      void this.after(shown, () => {
         this.openView(spot);
       });
     }
     return 'created';
+  }
+
+  /** Collapses the player: its page goes, and the panel or sidebar that showed it closes (ADR 0092). */
+  collapse(): void {
+    this.awaitedView = undefined;
+    const left = this.leave();
+    void this.after(left, () => this.showSpot(undefined));
+  }
+
+  /**
+   * Drops the page there is, and queues the close of what showed it. Resolves once that is done,
+   * after the closes queued before it.
+   */
+  private leave(): Promise<void> {
+    const { host } = this;
+    this.host = undefined;
+    this.stopWatching();
+    if (host === undefined) {
+      return this.placing;
+    }
+    host.drop();
+    return this.after(this.placing, () => host.closeContainer());
+  }
+
+  /** Runs `step` once `before` is done, and makes it the last of the queue; a failure is logged. */
+  private after(before: Promise<void>, step: () => void | Promise<void>): Promise<void> {
+    this.placing = before.then(step).catch((error: unknown) => {
+      this.logger.log({
+        level: 'error',
+        message: `Could not change where the video shows: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
+    return this.placing;
   }
 
   resourceUri(absolutePath: string): string {
@@ -186,8 +225,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   }
 
   dispose(): void {
-    void this.host?.drop();
+    // The learner's layout is theirs: nothing is closed on deactivate or reload (review of #49, item 3).
+    this.host?.drop();
     this.host = undefined;
+    this.stopWatching();
     for (const subscription of this.subscriptions) {
       subscription.dispose();
     }
@@ -240,8 +281,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           subscription.dispose();
         }
         panel.dispose();
-        return Promise.resolve();
       },
+      closeContainer: () => Promise.resolve(),
     };
     panel.onDidDispose(() => {
       // A panel dropped for a move is not a close: the Lesson is still there.
@@ -265,6 +306,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       // Moved on meanwhile.
       return;
     }
+    // A second open for the same spot must not leave the first one's timer running.
+    this.stopWatching();
     const existing = this.views.get(spot);
     const watching = existing?.onDidChangeVisibility(() => {
       if (existing.visible) {
@@ -387,6 +430,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private viewHost(spot: ViewSpot, view: vscode.WebviewView, title: string): Host {
     /** What the page posts is forwarded until the host is dropped. */
     const forwarding: vscode.Disposable[] = [];
+    let shownWhenDropped = false;
     const host: Host = {
       spot,
       webview: view.webview,
@@ -400,19 +444,31 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       reveal: () => {
         view.show(true);
       },
-      drop: async () => {
+      drop: () => {
         for (const subscription of forwarding) {
           subscription.dispose();
         }
-        const shown = view.visible;
+        shownWhenDropped = view.visible;
         // The `when` clause hides the view once the context key names another spot; until then
         // it must not play on.
         view.webview.html = '';
-        if (shown) {
-          // Close the panel or sidebar that showed the video first. Otherwise the bottom panel
-          // falls back to the Terminal view, which starts a shell and takes the focus (gate
-          // round 1 of #49, CI run 43906351106), and the sidebar stays open and empty.
+      },
+      closeContainer: async () => {
+        // Close the panel or sidebar that showed the video first. Otherwise the bottom panel
+        // falls back to the Terminal view, which starts a shell and takes the focus (gate
+        // round 1 of #49, CI run 43906351106), and the sidebar stays open and empty. But a panel
+        // that holds a terminal the learner has is theirs: it stays (#52, routed finding 1).
+        if (!shownWhenDropped || (spot === 'bottomPanel' && vscode.window.terminals.length > 0)) {
+          return;
+        }
+        try {
           await vscode.commands.executeCommand(closeCommands[spot]);
+        } catch (error) {
+          // The view still hides with its `when` clause; the move goes on (review of #49, item 4).
+          this.logger.log({
+            level: 'warn',
+            message: `Could not close the ${spot}: ${error instanceof Error ? error.message : String(error)}`,
+          });
         }
       },
     };

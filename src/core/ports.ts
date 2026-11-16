@@ -42,6 +42,12 @@ export type PlayerShowResult = 'created' | 'revealed';
 export interface PlayerPort {
   /** Shows the player beside the code without taking focus. */
   show(options: PlayerShowOptions): PlayerShowResult;
+  /**
+   * Collapses the player: its page is dropped and nothing shows, but this is not a close, so
+   * `onDidClose` stays quiet and the Lesson is still loaded. The next `show` brings a new page
+   * back (ADR 0092).
+   */
+  collapse(): void;
   /** The URI under which the player can fetch a file inside one of its resource roots. */
   resourceUri(absolutePath: string): string;
   send(command: PlayerCommand): void;

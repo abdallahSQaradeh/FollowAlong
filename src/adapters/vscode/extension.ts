@@ -79,6 +79,8 @@ export const commands = {
   goToLesson: 'followalong.goToLesson',
   /** _Move video to…_: asks for a spot; run with a spot's name, moves the video there. */
   moveVideo: 'followalong.moveVideo',
+  /** `Ctrl+'` `V`: collapses the video where it is, or brings it back in the same spot. */
+  toggleVideo: 'followalong.toggleVideo',
   /** `Ctrl+'` `D`: marks the Lesson that is playing done, or not done when it already is. */
   toggleLessonDone: 'followalong.toggleLessonDone',
   /** The tree's context menu on a Lesson: Mark done, Mark not done; run with its tree node. */
@@ -281,6 +283,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.goToLesson, () => core.goToLesson()),
     register(commands.moveVideo, (spot) => core.moveVideo(isVideoSpot(spot) ? spot : undefined)),
+    register(commands.toggleVideo, () => core.toggleVideo()),
     register(commands.toggleLessonDone, () => core.toggleLessonDone()),
     register(commands.markLessonDone, async (node) => {
       const lessonId = nodeId(node);

@@ -147,6 +147,11 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.toggleVideo",
+        "title": "Toggle video",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.toggleLessonDone",
         "title": "Mark done / not done",
         "category": "FollowAlong"
@@ -266,6 +271,12 @@
         "command": "followalong.toggleLessonDone",
         "key": "ctrl+' d",
         "mac": "cmd+' d",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.toggleVideo",
+        "key": "ctrl+' v",
+        "mac": "cmd+' v",
         "when": "editorTextFocus || terminalFocus"
       },
       {

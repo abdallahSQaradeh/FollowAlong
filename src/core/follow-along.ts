@@ -121,6 +121,8 @@ export interface FollowAlong {
    * speed, play or pause, and zoom. Without `to` it asks which spot with a quick pick.
    */
   moveVideo(to?: VideoSpot): Promise<void>;
+  /** Collapses the video where it is, or brings it back in the same spot (ADR 0092). */
+  toggleVideo(): Promise<void>;
   /**
    * `FollowAlong: Unhide a Course…`: lists the Courses hidden from the Course picker and shows the
    * one the learner picks in it again (ADR 0072).
@@ -1050,6 +1052,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       if (target !== undefined) {
         await loaded.move(target);
       }
+    },
+    async toggleVideo() {
+      if (loaded.spot() === undefined) {
+        ui.showMessage({ severity: 'info', text: noLessonText });
+        return;
+      }
+      await loaded.toggleVideo();
     },
     documentEdited(edit) {
       if (isTyping(edit, storage.folder)) {
