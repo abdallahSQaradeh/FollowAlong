@@ -20,6 +20,10 @@ _Avoid_: Episode, clip, lecture
 The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, add a Courses root, or _Browse…_ folders (the **Folder browser**). It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
 _Avoid_: Course list, library view
 
+**Course hand-off**:
+The short-lived note, in this machine's global storage, with which _Open in new window_ tells the new, empty window which Course to open: the Course folder and the time it was written. The new window takes it once, within 30 seconds; an older note is ignored. It is not the Course remembered for a workspace.
+_Avoid_: Pending Course, launch note
+
 **Folder browser**:
 The list behind _Browse…_ in the Course picker, shown inside the same quick pick. It walks folders from the Courses roots (or the drives or home folder when there is no root), with a way back up. A folder that holds videos can be opened as a Course; picking a video opens its folder as the Course and plays that video.
 _Avoid_: File explorer, folder dialog, tree
