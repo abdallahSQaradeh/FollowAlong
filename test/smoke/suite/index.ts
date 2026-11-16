@@ -80,6 +80,8 @@ export async function run(): Promise<void> {
     'followalong.playLesson',
     'followalong.attachResource',
     'followalong.openResource',
+    'followalong.detachResource',
+    'followalong.relinkResource',
     'followalong.playPause',
     'followalong.seekBackShort',
     'followalong.seekForwardShort',
@@ -138,6 +140,11 @@ export async function run(): Promise<void> {
   stepsAreBoundToTheirKeys(extension.packageJSON);
   say(
     'the four step commands are in the Command Palette, bound to their keys, with 5 s / 30 s steps',
+  );
+
+  resourceMenusAreDeclared(extension.packageJSON);
+  say(
+    'the tree offers Detach on a Resource and Relink… on a missing one, and hides both from the Palette',
   );
 
   everyKeyWorksInTheTerminal(extension.packageJSON);
@@ -558,12 +565,41 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
 
 interface Contributes {
   readonly commands?: readonly { command?: string; title?: string; category?: string }[];
+  readonly menus?: Readonly<Record<string, readonly { command?: string; when?: string }[]>>;
   readonly keybindings?: readonly {
     command?: string;
     key?: string;
     mac?: string;
     when?: string;
   }[];
+}
+
+/**
+ * Stories 96 and 97: the Lesson tree's context menu offers Detach on every Resource and Relink… on
+ * the missing ones (`contextValue` `resourceMissing`); neither is a Command Palette command, since
+ * both need the Resource they were run on.
+ */
+function resourceMenusAreDeclared(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  const inTree = (command: string): (string | undefined)[] =>
+    (contributes?.menus?.['view/item/context'] ?? [])
+      .filter((entry) => entry.command === command)
+      .map((entry) => entry.when);
+  assert.deepEqual(inTree('followalong.detachResource'), [
+    'view == followalong.lessons && viewItem =~ /^resource/',
+  ]);
+  assert.deepEqual(inTree('followalong.relinkResource'), [
+    'view == followalong.lessons && viewItem == resourceMissing',
+    'view == followalong.lessons && viewItem == resourceMissing',
+  ]);
+  for (const command of ['followalong.detachResource', 'followalong.relinkResource']) {
+    assert.ok(
+      (contributes?.menus?.commandPalette ?? []).some(
+        (entry) => entry.command === command && entry.when === 'false',
+      ),
+      `${command} is not hidden from the Command Palette`,
+    );
+  }
 }
 
 /** Story 44: the learner controls the Lesson from the integrated terminal, so no key is editor-only. */
