@@ -102,6 +102,11 @@ function afterPause(
   };
 }
 
+/** A seconds setting: any finite number above 0, else `fallback` (a hand-edited value may be bad). */
+function positiveSetting(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 function pressPlayText(lesson: Lesson): string {
   return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
 }
@@ -265,16 +270,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** The step in seconds, read when the command runs so a changed setting counts at once. */
   function stepSeconds(size: StepSize): number {
-    const value = config.get(stepSettings[size]);
-    return typeof value === 'number' && Number.isFinite(value) && value > 0
-      ? value
-      : defaultStepSeconds[size];
+    return positiveSetting(config.get(stepSettings[size]), defaultStepSeconds[size]);
   }
 
   /** The seconds a manual resume steps back, read when the command runs; 0 when unset or invalid. */
   function resumeRewindSeconds(): number {
-    const value = config.get('resumeRewind');
-    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+    return positiveSetting(config.get('resumeRewind'), 0);
   }
 
   /** Sends `play`, after a `seekBy` back of `rewind` seconds when that is above 0. */
