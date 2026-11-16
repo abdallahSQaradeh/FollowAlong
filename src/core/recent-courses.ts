@@ -88,23 +88,38 @@ async function isMissing(ports: Pick<Ports, 'fileSystem'>, folder: string): Prom
   }
 }
 
+/**
+ * The Recent Courses as the Course picker first shows them, without looking at the disk: named and
+ * filed as the scan has them, none of them missing yet. {@link recentCourses} adds which are.
+ */
+export function recentCoursesUnchecked(
+  folders: readonly string[],
+  scanned: readonly ScannedCourse[],
+): RecentCourse[] {
+  const byFolder = new Map(scanned.map((course) => [keyOf(course.folder), course]));
+  return folders.map((folder) => {
+    const found = byFolder.get(keyOf(folder));
+    return {
+      folder,
+      name: found?.name ?? folderLabel(folder),
+      categories: found?.categories ?? [],
+      missing: false,
+    };
+  });
+}
+
 /** The Recent Courses as the Course picker shows them: named and filed as the scan has them. */
 export async function recentCourses(
   ports: Pick<Ports, 'fileSystem'>,
   folders: readonly string[],
   scanned: readonly ScannedCourse[],
 ): Promise<RecentCourse[]> {
-  const byFolder = new Map(scanned.map((course) => [keyOf(course.folder), course]));
+  const found = new Set(scanned.map((course) => keyOf(course.folder)));
   return Promise.all(
-    folders.map(async (folder): Promise<RecentCourse> => {
-      const found = byFolder.get(keyOf(folder));
-      return {
-        folder,
-        name: found?.name ?? folderLabel(folder),
-        categories: found?.categories ?? [],
-        // A Course the scan found is there; any other is looked for.
-        missing: found === undefined && (await isMissing(ports, folder)),
-      };
-    }),
+    recentCoursesUnchecked(folders, scanned).map(async (course): Promise<RecentCourse> => ({
+      ...course,
+      // A Course the scan found is there; any other is looked for.
+      missing: !found.has(keyOf(course.folder)) && (await isMissing(ports, course.folder)),
+    })),
   );
 }
