@@ -69,8 +69,9 @@ export type AutoPauseInput =
   | { readonly type: 'lessonOver' }
   /**
    * The Quiet period of `pauseAndResume` passed with no edit. `canResume`: the page auto-pause
-   * paused the Lesson in still holds it, is ready, has reported it paused, and is not being moved. `playAsked`: a `play` is on its way to the player
-   * (the learner's), whose answer ends the auto-pause.
+   * paused the Lesson in still holds it, is ready, has reported it paused, and is not being
+   * moved. `playAsked`: a `play` is on its way to the player (the learner's), whose answer ends
+   * the auto-pause.
    */
   | { readonly type: 'quiet'; readonly canResume: boolean; readonly playAsked: boolean };
 

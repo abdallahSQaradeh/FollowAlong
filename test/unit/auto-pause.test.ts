@@ -765,6 +765,7 @@ describe('pause and resume after a quiet period', () => {
       await moving;
       h.player.ready();
 
+      expect(playPauseItem(h)).toMatchObject({ text: '' });
       expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
@@ -794,6 +795,7 @@ describe('pause and resume after a quiet period', () => {
       await pausedByTyping(h);
       h.player.ready();
 
+      expect(playPauseItem(h)).toMatchObject({ text: '' });
       expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
