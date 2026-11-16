@@ -398,6 +398,54 @@ test.describe('the player', () => {
       expect((await player.video()).currentTime).toBeCloseTo(1, 1);
     });
 
+    test('steps forward past the buffered end of a WebM that states no length', async ({
+      page,
+    }) => {
+      // The 3 s quota stops the stream before its end, as a Lesson larger than the MediaSource
+      // quota does, so the file's length is still unknown (it has no Duration element).
+      const player = await openPlayer(page, {
+        tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+      });
+      await player.post(load({ videoUri: media.noDuration, autoplay: false }));
+      await expect
+        .poll(async () => (await player.video()).buffered.at(-1)?.[1] ?? 0, { timeout: 10_000 })
+        .toBeGreaterThan(2.5);
+      expect(Number.isFinite((await player.video()).duration)).toBe(false);
+
+      await player.post({ type: 'seekBy', seconds: 5 });
+      await player.post({ type: 'play' });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      await expect
+        .poll(
+          async () =>
+            (await player.events()).some(
+              (event) => event.type === 'timeUpdate' && event.position > 5.3,
+            ),
+          { message: 'the playhead plays on from 0:05', timeout: 10_000 },
+        )
+        .toBe(true);
+      expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+
+    test('stops at the end of a WebM that states no length once all of it has streamed', async ({
+      page,
+    }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: media.noDuration, autoplay: false }));
+      await expect
+        .poll(async () => Number.isFinite((await player.video()).duration), {
+          message: 'the stream ended, so the length is known',
+        })
+        .toBe(true);
+      const { duration } = await player.video();
+
+      await player.post({ type: 'seekBy', seconds: 30 });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      expect((await player.video()).currentTime).toBe(duration);
+    });
+
     test('steps back past media the buffer evicted, and plays on from there', async ({ page }) => {
       // A 3 s quota makes the 8 s fixture behave like a Lesson larger than Chromium's MSE quota.
       const player = await openPlayer(page, {
