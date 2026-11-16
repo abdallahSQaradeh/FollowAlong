@@ -120,6 +120,10 @@ _Avoid_: Metadata, cache, settings
 An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
 _Avoid_: Soundtrack, audio copy, audio cache
 
+**Bundled ffmpeg**:
+The minimal LGPL ffmpeg that comes inside the Windows x64 `.vsix`, and makes the Audio sidecar of an MP4 Lesson with nothing for the learner to install. It is used unless the learner's own `followalong.ffmpegPath` names another; where there is none (Linux and macOS), ffmpeg on PATH is.
+_Avoid_: Embedded ffmpeg, default ffmpeg, ffmpeg binary
+
 **Sound notice**:
 The words over the first frame of an MP4 Lesson that waits for its Audio sidecar: "Preparing sound… N%" while the sound is converted (the status bar says the same), or the error and the _Play without sound_ button when preparing failed. The Lesson starts by itself when the sound is ready, or when the learner presses play if that is later.
 _Avoid_: Loading screen, spinner, splash

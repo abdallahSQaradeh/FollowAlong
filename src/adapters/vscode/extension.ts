@@ -8,6 +8,7 @@ import { createFollowAlong } from '../../core/follow-along.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
+import { bundledFfmpegPath } from '../node/bundled-ffmpeg.js';
 import { createSystemClock } from '../node/clock.js';
 import { createFfmpegConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
@@ -137,6 +138,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     ),
     logger,
     terminalSettings: createTerminalSettings(),
+    bundledFfmpeg: bundledFfmpegPath(context.extensionPath),
   });
 
   closeCore = () => core.close();
