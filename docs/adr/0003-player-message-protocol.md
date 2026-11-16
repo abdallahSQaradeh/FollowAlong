@@ -42,3 +42,6 @@ Two deliberate additions to the spec's shapes:
 - **`userInteracted`** (no `lessonId`) is posted when the learner finishes an interaction with
   the player page: a click on the picture, a key, a native control, or the release of a
   seek-bar drag (never during it). The extension then hands focus back (ADR 0009).
+
+Ticket #17 added `seekBy {seconds}` (extension → player, signed) and `seeked` (player → extension, with
+`lessonId`); see ADR 0013.

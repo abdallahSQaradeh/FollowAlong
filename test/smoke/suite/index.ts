@@ -52,6 +52,10 @@ export async function run(): Promise<void> {
     'followalong.openCourse',
     'followalong.playLesson',
     'followalong.playPause',
+    'followalong.seekBackShort',
+    'followalong.seekForwardShort',
+    'followalong.seekBackLong',
+    'followalong.seekForwardLong',
     'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
@@ -68,6 +72,11 @@ export async function run(): Promise<void> {
   say('FollowAlong: Play/Pause is in the Command Palette and bound to its default keys');
   goToLessonIsBoundToItsChord(extension.packageJSON);
   say("FollowAlong: Go to Lesson… is in the Command Palette and bound to Ctrl+' L");
+
+  stepsAreBoundToTheirKeys(extension.packageJSON);
+  say(
+    'the four step commands are in the Command Palette, bound to their keys, with 5 s / 30 s steps',
+  );
 
   const code = await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
@@ -115,6 +124,35 @@ function playPauseIsBoundToItsKeys(packageJson: unknown): void {
       { key: "ctrl+' space", mac: "cmd+' space", when: 'editorTextFocus || terminalFocus' },
     ],
   );
+}
+
+/** The step commands' Palette entries and keys, and the step settings VS Code reads from the manifest. */
+function stepsAreBoundToTheirKeys(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  const steps = [
+    ['seekBackShort', 'Back (Short Step)', ['ctrl+alt+left', "ctrl+' ,"]],
+    ['seekForwardShort', 'Forward (Short Step)', ['ctrl+alt+right', "ctrl+' ."]],
+    ['seekBackLong', 'Back (Long Step)', ["ctrl+' left"]],
+    ['seekForwardLong', 'Forward (Long Step)', ["ctrl+' right"]],
+  ] as const;
+  for (const [name, title, keys] of steps) {
+    const id = `followalong.${name}`;
+    const command = contributes?.commands?.find((entry) => entry.command === id);
+    assert.deepEqual(
+      { title: command?.title, category: command?.category },
+      { title, category: 'FollowAlong' },
+      `the Command Palette entry is "FollowAlong: ${title}"`,
+    );
+    const bindings = (contributes?.keybindings ?? []).filter((entry) => entry.command === id);
+    assert.deepEqual(
+      bindings.map(({ key, when }) => ({ key, when })),
+      keys.map((key) => ({ key, when: 'editorTextFocus || terminalFocus' })),
+    );
+  }
+  // VS Code answers with the manifest's defaults until the learner changes a setting.
+  const settings = vscode.workspace.getConfiguration('followalong');
+  assert.equal(settings.get('shortStep'), 5, 'the short step defaults to 5 s');
+  assert.equal(settings.get('longStep'), 30, 'the long step defaults to 30 s');
 }
 
 /** The Lesson picker: VS Code reads the manifest for the Command Palette entry and the chord. */

@@ -48,6 +48,26 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.seekBackShort",
+        "title": "Back (Short Step)",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.seekForwardShort",
+        "title": "Forward (Short Step)",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.seekBackLong",
+        "title": "Back (Long Step)",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.seekForwardLong",
+        "title": "Forward (Long Step)",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.goToLesson",
         "title": "Go to Lesson…",
         "category": "FollowAlong"
@@ -64,6 +84,42 @@
         "command": "followalong.playPause",
         "key": "ctrl+' space",
         "mac": "cmd+' space",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekBackShort",
+        "key": "ctrl+alt+left",
+        "mac": "ctrl+cmd+left",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekForwardShort",
+        "key": "ctrl+alt+right",
+        "mac": "ctrl+cmd+right",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekBackShort",
+        "key": "ctrl+' ,",
+        "mac": "cmd+' ,",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekForwardShort",
+        "key": "ctrl+' .",
+        "mac": "cmd+' .",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekBackLong",
+        "key": "ctrl+' left",
+        "mac": "cmd+' left",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekForwardLong",
+        "key": "ctrl+' right",
+        "mac": "cmd+' right",
         "when": "editorTextFocus || terminalFocus"
       },
       {
@@ -103,6 +159,23 @@
           "when": "false"
         }
       ]
+    },
+    "configuration": {
+      "title": "FollowAlong",
+      "properties": {
+        "followalong.shortStep": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "markdownDescription": "Seconds the short step moves back or forward: `Ctrl+Alt+←` / `→`, `Ctrl+'` then `,` / `.`."
+        },
+        "followalong.longStep": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "markdownDescription": "Seconds the long step moves back or forward: `Ctrl+'` then `←` / `→`."
+        }
+      }
     }
   },
   "scripts": {

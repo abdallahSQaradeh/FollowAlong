@@ -121,6 +121,17 @@ function play(media: HTMLVideoElement): void {
   });
 }
 
+/**
+ * Moves the playhead by `seconds`, stopping at the start and at the end of the Lesson. Setting
+ * `currentTime` is what the native seek bar does too, so a WebM seek into media the buffer
+ * dropped takes the re-stream path (ADR 0006). While a seek is under way `currentTime` is
+ * already its target, so steps pressed in a row add up.
+ */
+function seekBy(seconds: number, media: HTMLVideoElement): void {
+  const end = Number.isFinite(media.duration) ? media.duration : Number.POSITIVE_INFINITY;
+  media.currentTime = Math.min(Math.max(media.currentTime + seconds, 0), end);
+}
+
 function run(command: PlayerCommand, media: HTMLVideoElement): void {
   switch (command.type) {
     case 'load':
@@ -134,6 +145,9 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
         pauseBy = 'extension';
         media.pause();
       }
+      break;
+    case 'seekBy':
+      seekBy(command.seconds, media);
       break;
   }
 }
@@ -183,6 +197,9 @@ function reportMediaEvents(media: HTMLVideoElement): void {
       interactions.ended();
     }
     playRequested = false;
+  });
+  on('seeked', ({ lessonId }) => {
+    post({ type: 'seeked', lessonId });
   });
   on('ended', (lesson) => {
     lesson.playing = false;

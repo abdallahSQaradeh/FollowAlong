@@ -21,6 +21,11 @@ export const commands = {
   playLesson: playLessonCommand,
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
   playPause: 'followalong.playPause',
+  /** The step commands; their sizes are the `followalong.shortStep` and `longStep` settings. */
+  seekBackShort: 'followalong.seekBackShort',
+  seekForwardShort: 'followalong.seekForwardShort',
+  seekBackLong: 'followalong.seekBackLong',
+  seekForwardLong: 'followalong.seekForwardLong',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
 } as const;
@@ -107,6 +112,18 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.playPause, () => {
       core.playPause();
+    }),
+    register(commands.seekBackShort, () => {
+      core.seekStep('short', 'back');
+    }),
+    register(commands.seekForwardShort, () => {
+      core.seekStep('short', 'forward');
+    }),
+    register(commands.seekBackLong, () => {
+      core.seekStep('long', 'back');
+    }),
+    register(commands.seekForwardLong, () => {
+      core.seekStep('long', 'forward');
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );
