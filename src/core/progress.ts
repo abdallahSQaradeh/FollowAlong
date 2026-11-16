@@ -80,7 +80,24 @@ export const progressFile: CourseDataFile<CourseProgress> = {
       last: { lessonId: last.lessonId, savedAt: last.savedAt },
     };
   },
+  merge: mergeProgress,
 };
+
+/** Per Lesson, and for the last Lesson played, the entry saved later wins. */
+export function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
+  const lessons: Record<string, LessonProgress> = { ...a.lessons };
+  for (const [lessonId, lesson] of Object.entries(b.lessons)) {
+    const other = Object.hasOwn(lessons, lessonId) ? lessons[lessonId] : undefined;
+    if (other === undefined || lesson.savedAt > other.savedAt) {
+      lessons[lessonId] = lesson;
+    }
+  }
+  const last =
+    a.last === undefined || (b.last !== undefined && b.last.savedAt > a.last.savedAt)
+      ? b.last
+      : a.last;
+  return last === undefined ? { lessons } : { lessons, last };
+}
 
 /** Where a Lesson starts when the learner comes back to it: 5 s before its saved position. */
 export function resumePosition(progress: CourseProgress, lessonId: string): number {

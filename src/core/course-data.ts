@@ -23,6 +23,12 @@ export interface CourseDataFile<T> {
   readonly version: number;
   /** Turns stored data of `version` (at most the current one) into `T`, or `undefined`. */
   parse(data: unknown, version: number): T | undefined;
+  /**
+   * Combines the copies in `.followalong` and in the fallback storage, when both hold the file
+   * (a Course that turned read-only after FollowAlong wrote to it). Without it, `read` returns the
+   * copy of the location written last in this session, else the one in `.followalong`.
+   */
+  merge?(inCourse: T, inFallback: T): T;
 }
 
 export interface CourseData {
@@ -117,6 +123,13 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
 
   return {
     async read<T>(file: CourseDataFile<T>): Promise<T | undefined> {
+      if (file.merge !== undefined) {
+        const inCourseCopy = (await readFrom(inCourse, file)) as T | undefined;
+        const fallbackCopy = (await readFrom(fallback, file)) as T | undefined;
+        return inCourseCopy === undefined || fallbackCopy === undefined
+          ? (inCourseCopy ?? fallbackCopy)
+          : file.merge(inCourseCopy, fallbackCopy);
+      }
       // After a fall back, the fallback copy is the newer one; .followalong may still hold the rest.
       const locations = target === fallback ? [fallback, inCourse] : [inCourse, fallback];
       for (const location of locations) {

@@ -291,6 +291,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       this.dispose();
     },
     dispose() {
+      saveTimer?.dispose();
       for (const subscription of subscriptions) {
         subscription.dispose();
       }

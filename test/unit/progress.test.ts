@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createHarness, type Harness } from './harness.js';
+import { makeReadOnly } from './read-only.js';
 
 const lessons = {
   '01 Intro.webm': 'video',
@@ -25,6 +26,7 @@ function pause(h: Harness, lessonId: string): void {
 async function reopen(h: Harness, course: string) {
   await h.settle();
   h.restart();
+  h.clock.advance(60_000);
   await h.core.openCourse(course);
   h.player.ready();
   return h.player.sent.at(-1);
@@ -287,5 +289,32 @@ describe('Progress kept with the Course', () => {
         text: 'FollowAlong could not save your Progress in “course”: the Course folder is missing.',
       },
     ]);
+  });
+
+  it('reads both copies, newest Lesson wins, when the Course turned read-only after a save', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 50);
+    h.core.playLesson('02 Setup.webm');
+    playTo(h, '02 Setup.webm', 20);
+    pause(h, '02 Setup.webm');
+    await h.settle();
+    makeReadOnly(join(course, '.followalong'));
+
+    // The next session can only write to the fallback storage.
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '02 Setup.webm', startAt: 15 });
+    playTo(h, '02 Setup.webm', 300);
+    pause(h, '02 Setup.webm');
+
+    // The session after it finds the old copy in .followalong and the newer one in the fallback.
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '02 Setup.webm', startAt: 295 });
+    expect(await h.listFiles(course)).toEqual([
+      '.followalong/progress.json',
+      ...Object.keys(lessons),
+    ]);
+    h.core.playLesson('01 Intro.webm');
+    expect(h.player.sent.at(-1)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 45 });
   });
 });
