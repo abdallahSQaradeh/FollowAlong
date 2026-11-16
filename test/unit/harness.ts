@@ -101,18 +101,30 @@ export class FakePlayer implements PlayerPort {
   }
 
   /**
-   * The page reports an event. An event about a Lesson carries the `loadId` of the page's last
-   * `load`, as the real page echoes it, unless the test gives one (a late event from an earlier
-   * load).
+   * The page reports an event. An event about a Lesson (and the Lesson in a `snapshot`) carries
+   * the `loadId` of the page's last `load`, as the real page echoes it, unless the test gives one
+   * (a late event from an earlier load).
    */
   emit(event: PlayerEvent): void {
-    const stamped =
-      'lessonId' in event && !('loadId' in event) && this.loadId !== undefined
-        ? { ...event, loadId: this.loadId }
-        : event;
+    const stamped = this.stamped(event);
     for (const listener of this.listeners) {
       listener(stamped);
     }
+  }
+
+  /** `event` with the page's last `loadId`, where it is about a Lesson and gives none. */
+  private stamped(event: PlayerEvent): PlayerEvent {
+    const { loadId } = this;
+    if (loadId === undefined) {
+      return event;
+    }
+    if (event.type === 'snapshot') {
+      const { lesson } = event.snapshot;
+      return lesson === undefined || 'loadId' in lesson
+        ? event
+        : { ...event, snapshot: { ...event.snapshot, lesson: { ...lesson, loadId } } };
+    }
+    return 'lessonId' in event && !('loadId' in event) ? { ...event, loadId } : event;
   }
 
   /** The player page finished loading (stock Chromium in VS Code cannot play AAC). */

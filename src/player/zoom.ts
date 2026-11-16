@@ -6,17 +6,10 @@
  * when the player is resized or moved to another spot (#49), and can be stored as it is.
  */
 
-import { maxZoomLevel, shownZoomLevel } from '../protocol/player-messages.js';
+import { maxZoomLevel, shownZoomLevel, type ZoomView } from '../protocol/player-messages.js';
 
-/** What part of the whole picture is shown. */
-export interface ZoomView {
-  /** 1 shows the whole picture; 2 shows half its width and half its height. */
-  readonly level: number;
-  /** The left edge of the shown area, as a fraction of the picture's width. */
-  readonly left: number;
-  /** The top edge of the shown area, as a fraction of the picture's height. */
-  readonly top: number;
-}
+export type { ZoomView } from '../protocol/player-messages.js';
+export { isZoomView } from '../protocol/player-messages.js';
 
 export const wholePicture: ZoomView = { level: 1, left: 0, top: 0 };
 
@@ -64,26 +57,6 @@ export function zoomToBox(view: ZoomView, box: Box): ZoomView {
 export function zoomBy(view: ZoomView, factor: number): ZoomView {
   const span = 1 / view.level;
   return centredView(view.level * factor, view.left + span / 2, view.top + span / 2);
-}
-
-/** Whether `value` is a view the player can show; stored state comes back as plain data. */
-export function isZoomView(value: unknown): value is ZoomView {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { level, left, top } = value as Readonly<Record<string, unknown>>;
-  return (
-    typeof level === 'number' &&
-    typeof left === 'number' &&
-    typeof top === 'number' &&
-    // 1, or a level that reads above 1×: the player never makes a view between them.
-    (level === 1 || shownZoomLevel(level) > 1) &&
-    level <= maxZoomLevel &&
-    left >= 0 &&
-    top >= 0 &&
-    left <= 1 - 1 / level &&
-    top <= 1 - 1 / level
-  );
 }
 
 /** The CSS transform of the video that shows `view` (its transform origin is its top left). */

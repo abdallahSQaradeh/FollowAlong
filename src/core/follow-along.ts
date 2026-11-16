@@ -36,6 +36,7 @@ import { openProgress, resumePosition, type ProgressRecorder } from './progress.
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
 import { readRecent, recentCourses, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
+import { buildSpotPicker, type VideoSpot } from './video-placement.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
 const openCourseKey = 'openCourse';
@@ -112,6 +113,11 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * _Move video to…_: moves the player to another spot (ADR 0049), keeping the Lesson's time,
+   * speed, play or pause, and zoom. Without `to` it asks which spot with a quick pick.
+   */
+  moveVideo(to?: VideoSpot): Promise<void>;
   /** The window is closing: saves Progress, then stops. */
   close(): Promise<void>;
   /** Stops at once, without saving (tests use it as a crash). */
@@ -857,6 +863,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     statusBarClick(command) {
       loaded.statusBarClick(command);
+    },
+    async moveVideo(to) {
+      const from = loaded.spot();
+      if (from === undefined) {
+        ui.showMessage({ severity: 'info', text: noLessonText });
+        return;
+      }
+      const target = to ?? (await ui.pick(buildSpotPicker(from)));
+      if (target !== undefined) {
+        await loaded.move(target);
+      }
     },
     async close() {
       // An open under way leaves its Lesson and saves it first; then this window's Lesson.
