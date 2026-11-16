@@ -184,6 +184,12 @@ export interface UiSink {
    * the player is not a Focus change (ADR 0009).
    */
   returnFocus(): void;
+  /**
+   * Opens the file dialog for an Attach and resolves with the absolute path of the file the
+   * learner picked, or `undefined` when they closed it without picking. The dialog is not
+   * modal to the player: the Lesson keeps playing while it is open.
+   */
+  pickFile(): Promise<string | undefined>;
 }
 
 // --- Terminal settings ----------------------------------------------------------------------------

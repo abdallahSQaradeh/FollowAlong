@@ -37,6 +37,11 @@ export interface FollowAlong {
   playLesson(lessonId: string): void;
   /** Attaches a file, from anywhere on disk, as a Resource of a Lesson of the open Course. */
   attachResource(lessonId: string, absolutePath: string): Promise<void>;
+  /**
+   * The attach command from the chord or the Command Palette: asks for a file and attaches it to
+   * the Loaded Lesson when the command runs. The Lesson keeps playing meanwhile.
+   */
+  attachToLoadedLesson(): Promise<void>;
   /** Opens a Resource of the open Course, by its tree id, in a tab beside the code. */
   openResource(resourceId: string): Promise<void>;
   /**
@@ -530,7 +535,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
-  return {
+  const followAlong: FollowAlong = {
     async openCourse(folder) {
       let course: Course;
       try {
@@ -635,6 +640,27 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       attaching = done.catch(() => undefined);
       return done;
     },
+    async attachToLoadedLesson() {
+      // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
+      // learner means the Lesson they were watching, even if the next one starts meanwhile.
+      const lesson = current;
+      if (lesson === undefined) {
+        ui.showMessage({
+          severity: 'info',
+          text: 'Open a Lesson first, then attach a Resource to it.',
+        });
+        return;
+      }
+      try {
+        const path = await ui.pickFile();
+        if (path !== undefined) {
+          await followAlong.attachResource(lesson.id, path);
+        }
+      } finally {
+        // The dialog took keyboard focus: hand it back, also when the attach failed (ADR 0023).
+        ui.returnFocus();
+      }
+    },
     async openResource(resourceId) {
       const course = openedCourse;
       const record = findResource(resources, resourceId);
@@ -703,4 +729,5 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
     },
   };
+  return followAlong;
 }
