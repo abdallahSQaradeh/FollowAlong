@@ -84,13 +84,12 @@ interface CurrentLesson {
    * where FollowAlong put it, and nothing is saved, so opening a Lesson never moves its position.
    */
   engaged: boolean;
+  /**
+   * Set by a `load` with a start position, until the player's next `seeked`: that seek is the one
+   * applying `startAt`, FollowAlong's own, wherever it lands (gate review of #25, H1).
+   */
+  startSeekPending: boolean;
 }
-
-/**
- * How close to the start position a seek lands when it is the one that applies `startAt` (the
- * player moves a WebM seek onto the first buffered frame, under 0.1 s away; ADR 0006).
- */
-const startSeekToleranceSeconds = 0.5;
 
 export type StepSize = 'short' | 'long';
 export type StepDirection = 'back' | 'forward';
@@ -227,6 +226,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay,
     };
     player.send(command);
+    // The player seeks to a start position once it can: that `seeked` is not the learner's.
+    current.startSeekPending = startAt > 0;
     resetPlayhead(command.autoplay);
   }
 
@@ -265,7 +266,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         if (current?.engaged === true) {
           // A page that reloaded mid-Lesson starts again where the playhead was, not where the
           // Lesson first started: its start seek then saves nothing and moves nothing back.
-          current = { ...current, startAt: position, autoplay: playback.playing, engaged: false };
+          current = {
+            ...current,
+            startAt: position,
+            autoplay: playback.playing,
+            engaged: false,
+          };
         }
         loadCurrent();
         break;
@@ -333,18 +339,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       case 'seeked': {
         // A seek is the learner moving the playhead, playing or not: it counts, and saves now.
-        // The player's timeUpdate at the new position comes before it (HTML seek steps). One seek
-        // is FollowAlong's own: the one that puts a Lesson that has not played yet at its start.
+        // The player's timeUpdate at the new position comes before it (HTML seek steps).
         const shown = shownLesson(event);
-        const isStartSeek =
-          shown !== undefined &&
-          !shown.engaged &&
-          Math.abs(position - shown.startAt) < startSeekToleranceSeconds;
-        if (shown !== undefined && !isStartSeek) {
-          shown.engaged = true;
-          progress?.record(shown.lesson.id, position, duration);
-          void progress?.save();
+        if (shown === undefined) {
+          break;
         }
+        if (shown.startSeekPending) {
+          // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
+          shown.startSeekPending = false;
+          break;
+        }
+        shown.engaged = true;
+        progress?.record(shown.lesson.id, position, duration);
+        void progress?.save();
         break;
       }
       case 'nextClicked':
@@ -462,7 +469,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
-    current = { lesson, startAt, autoplay, engaged: false };
+    current = { lesson, startAt, autoplay, engaged: false, startSeekPending: false };
     // Nothing is known about this Lesson until the player loads it and reports.
     resetPlayhead(false);
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });

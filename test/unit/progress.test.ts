@@ -250,6 +250,22 @@ describe('remembering where the learner is in each Lesson', () => {
     expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 115 });
   });
 
+  it('saves nothing for a start seek that lands far from where FollowAlong put the Lesson', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 100);
+    pause(h, '01 Intro.webm');
+    await reopen(h, course);
+    // A WebM whose start seek the browser could not honour yet lands near 0:00 (gate review H1).
+    h.player.emit({ type: 'timeUpdate', lessonId: '01 Intro.webm', position: 0.1, duration: 0 });
+    h.player.emit({ type: 'seeked', lessonId: '01 Intro.webm' });
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 95 });
+  });
+
   it('saves when the VS Code window closes', async () => {
     const h = await createHarness();
     const course = await h.folder('course', lessons);
