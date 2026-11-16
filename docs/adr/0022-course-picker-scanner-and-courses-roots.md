@@ -81,9 +81,11 @@ Later tickets add intents and entries to this model: Recent and _(open)_ (#35), 
 
 ## Overlapping opens: the latest one wins
 
-`openCourse` counts the opens it starts. An open whose folder and Resources reads finish after a
-later open started changes nothing (logged), so two quick picks can never leave the earlier Course
-open with the later one's player.
+Opens run one after another (#25's queue, which its Progress saving relies on), and each is
+numbered when it is asked for. An open that a later one superseded is dropped when its turn comes,
+before it reads anything, or right after its folder read, before it leaves the Lesson that plays.
+A failure of a superseded open's read is not shown. So a quick second pick, or a slow drive, never
+leaves the earlier Course open or shows it for a moment.
 
 ## The player keeps its page across Courses under the Courses roots
 
