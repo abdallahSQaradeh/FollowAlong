@@ -4,7 +4,13 @@
  */
 import { basename } from 'node:path';
 
-import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
+import {
+  buildCourse,
+  findSection,
+  lessonsInOrder,
+  type Course,
+  type Lesson,
+} from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
@@ -112,6 +118,11 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * Marks every Lesson of a Section of the open Course done, nested Sections included: the
+   * Section's "Mark all done" in the tree. Resolves once the marks are saved.
+   */
+  markSectionDone(sectionId: string): Promise<void>;
   /** The window is closing: saves Progress, then stops. */
   close(): Promise<void>;
   /** Stops at once, without saving (tests use it as a crash). */
@@ -608,6 +619,32 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     });
   }
 
+  /**
+   * Changes the Progress of the Lessons of a Section of the open Course, then saves it and lets
+   * the tree show it. The Course and its Progress are fixed when the command runs.
+   */
+  async function changeSection(
+    sectionId: string,
+    what: string,
+    change: (recorder: ProgressRecorder, lessons: readonly Lesson[]) => void,
+  ): Promise<void> {
+    if (refusedWhileOpening()) {
+      return;
+    }
+    const section = openedCourse && findSection(openedCourse, sectionId);
+    if (section === undefined || progress === undefined) {
+      logger.log({
+        level: 'warn',
+        message: `Cannot ${what} in ${sectionId}: it is not a Section of the open Course.`,
+      });
+      return;
+    }
+    const recorder = progress;
+    change(recorder, lessonsInOrder(section));
+    refreshTree();
+    await recorder.save();
+  }
+
   /** The Course picker. */
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
@@ -707,6 +744,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           });
         }
       }
+    },
+    markSectionDone(sectionId) {
+      return changeSection(sectionId, 'mark all done', (recorder, lessons) => {
+        recorder.markDone(lessons.map((lesson) => lesson.id));
+      });
     },
     async attachResource(lessonId, absolutePath) {
       const course = openedCourse;

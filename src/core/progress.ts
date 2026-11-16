@@ -119,6 +119,15 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
   return last === undefined ? { lessons } : { lessons, last };
 }
 
+/**
+ * The `savedAt` for a change made now to a Lesson's entry: never at or before the entry's own, so
+ * the change wins the per-Lesson merge of two copies even when the clock has not moved (or went
+ * back).
+ */
+function savedAfter(before: LessonProgress | undefined, now: number): number {
+  return before === undefined ? now : Math.max(now, before.savedAt + 1);
+}
+
 /** A Lesson's state: not started, in progress or done (ADR 0030). */
 export function lessonStatus(progress: CourseProgress, lessonId: string): LessonStatus {
   return lessonEntry(progress.lessons, lessonId)?.status ?? 'notStarted';
@@ -141,6 +150,11 @@ export interface ProgressRecorder {
    * whether it ended. The Lesson's status follows (ADR 0030); it is written by the next `save`.
    */
   record(lessonId: string, seen: PlayheadSeen): void;
+  /**
+   * Marks these Lessons done by hand, keeping each one's position. A Lesson with nothing saved gets
+   * a done mark at 0:00. Written by the next `save`.
+   */
+  markDone(lessonIds: readonly string[]): void;
   /** Writes what was recorded since the last save, after any save already under way. */
   save(): Promise<void>;
 }
@@ -244,6 +258,20 @@ export async function openProgress(
         },
         last: { lessonId, savedAt },
       };
+      unsaved = true;
+    },
+    markDone(lessonIds) {
+      const lessons: Record<string, LessonProgress> = { ...progress.lessons };
+      for (const lessonId of lessonIds) {
+        const before = lessonEntry(lessons, lessonId);
+        lessons[lessonId] = {
+          position: before?.position ?? 0,
+          duration: before?.duration ?? 0,
+          savedAt: savedAfter(before, clock.now()),
+          status: 'done',
+        };
+      }
+      progress = { ...progress, lessons };
       unsaved = true;
     },
     save() {
