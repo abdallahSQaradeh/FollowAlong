@@ -104,6 +104,9 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  rmSync(workspace, { recursive: true, force: true });
-  rmSync(userData, { recursive: true, force: true });
+  // On Windows a VS Code process can hold its log files for a moment after the run ends (seen
+  // once the suite had a DevTools connection open), so removal retries on EBUSY.
+  const retry = { recursive: true, force: true, maxRetries: 10, retryDelay: 500 };
+  rmSync(workspace, retry);
+  rmSync(userData, retry);
 }
