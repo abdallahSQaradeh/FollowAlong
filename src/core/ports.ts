@@ -115,6 +115,11 @@ export interface FileSystem {
   /** Writes the whole file at once: readers see the old or the new content, never a mix. */
   writeText(path: string, content: string): Promise<void>;
   /**
+   * Deletes the file at `path` (never a folder): `notFound` when nothing is there, `readOnly` when
+   * it may not be deleted. On Windows a file another process holds open may refuse for a moment.
+   */
+  remove(path: string): Promise<void>;
+  /**
    * Takes the lock of the file at `path`, so that two VS Code windows reading and rewriting it take
    * turns (ADR 0074): makes `<path>.lock` beside it, waiting a moment while another window holds
    * it, and taking over a lock left behind by a window that stopped. Resolves with the function

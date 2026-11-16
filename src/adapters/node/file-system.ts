@@ -4,7 +4,7 @@
  */
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -278,6 +278,8 @@ export function createNodeFileSystem(): FileSystem {
           throw error;
         }
       }),
+
+    remove: (path) => wrap(path, () => unlink(path)),
 
     lock: (path) => wrap(path, () => lock(path)),
 

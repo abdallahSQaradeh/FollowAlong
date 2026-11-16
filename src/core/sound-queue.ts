@@ -15,6 +15,16 @@ import type { Logger } from './logger.js';
 /** How many Lessons after the opened one get their sound ahead of time. */
 const aheadCount = 3;
 
+/** The Lessons that get their sound ahead of time: the next 3 after `opened` in Course order. */
+export function lessonsAhead(
+  opened: Lesson | undefined,
+  lessonsInOrder: readonly Lesson[],
+): readonly Lesson[] {
+  const here =
+    opened === undefined ? -1 : lessonsInOrder.findIndex((lesson) => lesson.id === opened.id);
+  return here === -1 ? [] : lessonsInOrder.slice(here + 1, here + 1 + aheadCount);
+}
+
 /**
  * What an MP4 Lesson's sound needs:
  * - `sidecar`: its sound as an MP3 at `path`;
@@ -314,13 +324,11 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
     },
 
     prepareAhead(opened, lessonsInOrder, pageDecodes) {
-      const here =
-        opened === undefined ? -1 : lessonsInOrder.findIndex((lesson) => lesson.id === opened.id);
       if (opened?.id !== openedId) {
         openedId = opened?.id;
         prepared.clear();
       }
-      ahead = here === -1 ? [] : lessonsInOrder.slice(here + 1, here + 1 + aheadCount);
+      ahead = lessonsAhead(opened, lessonsInOrder);
       aheadDecodes = pageDecodes;
       dropUnneeded();
       schedule();

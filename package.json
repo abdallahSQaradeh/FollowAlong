@@ -55,6 +55,11 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.clearAudioCache",
+        "title": "Clear audio cache",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.playLesson",
         "title": "Play Lesson",
         "category": "FollowAlong"
@@ -510,6 +515,12 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "The ffmpeg program FollowAlong uses to prepare the sound of MP4 Lessons, which VS Code cannot play (their sound is AAC). Leave it empty to use the ffmpeg that comes with FollowAlong (Windows x64), or `ffmpeg` on your PATH on other systems. Only user settings can set it, never a workspace."
+        },
+        "followalong.audioCacheLimit": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "markdownDescription": "The most disk space, in GB, that the prepared sound of MP4 Lessons may take, in all your Courses together. Past it, the sound of the Lessons you opened longest ago is deleted first; the Lesson you play and the next ones are kept. Deleted sound is prepared again when you open the Lesson. **FollowAlong: Clear audio cache** deletes it at once."
         },
         "followalong.videoLocation": {
           "type": "string",
