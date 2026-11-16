@@ -223,6 +223,9 @@ async function opensACourseBesideTheCode(extensionPath: string): Promise<vscode.
   return code;
 }
 
+/** The fixture Course's first Lesson, which the click and the commands after it act on. */
+const lessonId = 'lesson.webm';
+
 /**
  * Clicks the middle of the picture in the real player page, as the learner's mouse would, then
  * checks that the click played (or paused) the Lesson and that keyboard focus came back to the
@@ -233,7 +236,6 @@ async function aClickOnThePicture(
   events: readonly SeenEvent[],
   code: vscode.TextDocument,
 ): Promise<void> {
-  const lessonId = 'lesson.webm';
   const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
   assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
   const wasPlaying = lastPlayState(events, lessonId) === 'played';
@@ -296,7 +298,7 @@ async function aClickOnThePicture(
     const tab = vscode.window.tabGroups.activeTabGroup.activeTab?.label ?? 'none';
     throw new Error(`${String(error)}; active text editor: ${active}; active tab: ${tab}`);
   });
-  say('with focus in the player, the click handed it back to the code editor');
+  say('with focus in the player, the click handed it back to the code editor in the Practice area');
 }
 
 /**
@@ -305,7 +307,6 @@ async function aClickOnThePicture(
  * (sticky user activation, ADR 0008). Measured and reported either way.
  */
 async function playFromTheEditorAfterAClick(events: readonly SeenEvent[]): Promise<string> {
-  const lessonId = 'lesson.webm';
   if (lastPlayState(events, lessonId) === 'played') {
     const from = events.length;
     await vscode.commands.executeCommand('followalong.playPause');

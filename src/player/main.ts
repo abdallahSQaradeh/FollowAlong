@@ -169,14 +169,12 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   });
   on('pause', (lesson) => {
     lesson.playing = false;
-    const fromControlBar = pauseBy === undefined && !media.ended;
-    post({
-      type: 'paused',
-      lessonId: lesson.lessonId,
-      byUser: pauseBy !== 'extension' && !media.ended,
-    });
+    const byUser = pauseBy !== 'extension' && !media.ended;
+    // The learner's, and not already reported by the click on the picture that asked for it.
+    const byControlBar = byUser && pauseBy !== 'picture';
+    post({ type: 'paused', lessonId: lesson.lessonId, byUser });
     pauseBy = undefined;
-    if (fromControlBar) {
+    if (byControlBar) {
       interactions.ended();
     }
   });

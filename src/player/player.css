@@ -24,7 +24,10 @@ video {
 
 /*
  * Catches clicks on the picture, which the native video would otherwise take (and toggle only
- * after waiting for a double-click). It stops above the native control bar, which stays usable.
+ * after waiting for a double-click). It stops above Chromium's native control bar (its buttons
+ * sit about 48 px above the bottom, its timeline about 22 px), which stays usable. The page turns
+ * off the control bar's overflow menu, which would open above this line, under the overlay
+ * (ADR 0009). test/player/player-page.ts `spots()` uses the same geometry.
  */
 .overlay {
   position: absolute;

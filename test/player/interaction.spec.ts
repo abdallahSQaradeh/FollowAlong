@@ -25,6 +25,12 @@ async function revealControls(page: Page): Promise<void> {
   await page.mouse.move(picture.x + 10, picture.y + 10);
 }
 
+/** Loads the Lesson without autoplay, and waits until its length is known. */
+async function loadPaused(player: PlayerHarness): Promise<void> {
+  await player.post(load({ autoplay: false }));
+  await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+}
+
 async function interactions(player: PlayerHarness): Promise<number> {
   return (await player.events()).filter((event) => event.type === 'userInteracted').length;
 }
@@ -47,8 +53,7 @@ test.describe('a click on the picture', () => {
 
   test('plays a paused Lesson at once, and hands focus back', async ({ page }) => {
     const player = await openPlayer(page);
-    await player.post(load({ autoplay: false }));
-    await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+    await loadPaused(player);
     const { picture } = await spots(page);
 
     await page.mouse.click(picture.x, picture.y);
@@ -80,8 +85,7 @@ test.describe('a click on the picture', () => {
 test.describe('the native control bar', () => {
   test('hands focus back after its play button is clicked', async ({ page }) => {
     const player = await openPlayer(page);
-    await player.post(load({ autoplay: false }));
-    await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+    await loadPaused(player);
     await revealControls(page);
     const { playButton } = await spots(page);
 
@@ -93,8 +97,7 @@ test.describe('the native control bar', () => {
 
   test('hands focus back after its mute button is clicked', async ({ page }) => {
     const player = await openPlayer(page);
-    await player.post(load({ autoplay: false }));
-    await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+    await loadPaused(player);
     await revealControls(page);
     const { muteButton } = await spots(page);
 
@@ -108,8 +111,7 @@ test.describe('the native control bar', () => {
     page,
   }) => {
     const player = await openPlayer(page);
-    await player.post(load({ autoplay: false }));
-    await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+    await loadPaused(player);
     await revealControls(page);
     const { timeline } = await spots(page);
 
@@ -128,11 +130,32 @@ test.describe('the native control bar', () => {
   });
 });
 
+test.describe('a seek-bar drag while the Lesson plays', () => {
+  test('keeps focus until the learner lets go, then hands it back', async ({ page }) => {
+    const player = await openPlayer(page);
+    await player.post(load());
+    await player.waitForEvent({ type: 'played', lessonId });
+    await revealControls(page);
+    const { timeline } = await spots(page);
+
+    // Chromium pauses while the seek bar is scrubbed, and plays on when it is let go.
+    await page.mouse.move(timeline(0.1).x, timeline(0.1).y);
+    await page.mouse.down();
+    await page.mouse.move(timeline(0.5).x, timeline(0.5).y, { steps: 5 });
+    await page.waitForTimeout(300);
+    expect(await interactions(player)).toBe(0);
+
+    await page.mouse.up();
+
+    await player.waitForEvent({ type: 'userInteracted' });
+    await expect.poll(async () => (await player.video()).paused).toBe(false);
+  });
+});
+
 test.describe('the keyboard in the player', () => {
   test('hands focus back once a key is released', async ({ page }) => {
     const player = await openPlayer(page);
-    await player.post(load({ autoplay: false }));
-    await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+    await loadPaused(player);
 
     // Tab to the native controls, as the learner might after a click in the player.
     await page.keyboard.down('Tab');

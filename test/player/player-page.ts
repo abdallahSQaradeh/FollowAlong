@@ -230,7 +230,8 @@ function matches(event: PlayerEvent, expected: Partial<PlayerEvent>): boolean {
 
 /**
  * Where things are on the player page. Chromium's native control bar sits along the bottom of
- * the video: its timeline about 22 px above the bottom edge, its buttons about 48 px above it.
+ * the video: its timeline about 22 px above the bottom edge, its buttons about 48 px above it
+ * (play on the left; mute, then fullscreen, on the right, as the page turns the overflow menu off).
  */
 export async function spots(page: Page) {
   const box = await page.locator('video').boundingBox();
@@ -241,7 +242,7 @@ export async function spots(page: Page) {
   return {
     picture: { x: box.x + box.width / 2, y: box.y + box.height / 3 },
     playButton: { x: box.x + 24, y: bottom - 48 },
-    muteButton: { x: box.x + box.width - 120, y: bottom - 48 },
+    muteButton: { x: box.x + box.width - 72, y: bottom - 48 },
     timeline: (fraction: number) => ({
       x: box.x + 16 + (box.width - 32) * fraction,
       y: bottom - 22,

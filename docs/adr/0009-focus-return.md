@@ -64,9 +64,14 @@ line is allowlisted.
   and any other layout.
 - **Post `userInteracted` on `pointerdown`, or on the webview's `focus`.** Rejected: this fires at
   the start of a seek-bar drag and would end the drag.
-- **Keep the last focus target in the core**, fed by adapter events through a new port. Rejected
-  for now: where focus is is a fact about the workbench that only the adapter can observe, as
-  `asWebviewUri` is. The core would only store one value the adapter hands it.
+- **Keep the last focus target and the choice of where to return in the core**, fed by adapter
+  events and asking the adapter which targets are visible, through a new port. Rejected for now.
+  The choice is small (terminal or editor, then which visible editor), but every input to it is
+  workbench state that only the adapter can read: which part was used last, which editors are
+  visible, in which group. The core would mirror that state through a port the spec does not
+  list, and Seam 1 would then test a copy of VS Code's focus model rather than VS Code. So this is
+  a recorded exception to "decisions live in the core", like `asWebviewUri`. If the choice grows
+  (for example per video spot, #49–#52), it moves into the core behind that port.
 - **Replace the native controls with our own.** Then every pointer event would be ours. Rejected
   for this ticket: it is far larger, and spec #12 keeps the native control bar.
 
@@ -75,9 +80,25 @@ line is allowlisted.
 - Known gap: if the learner clicks into a terminal that is already active and types without
   running a command (or the shell has no shell integration), the API reports nothing. A click in
   the player then returns focus to the editor. This is on the Manual QA list.
-- The native overflow menu (playback speed, picture-in-picture) and the fullscreen button are not
-  reported as interactions. Opening the menu must not close it by moving focus away. Speed has
-  FollowAlong's own controls.
+- **The native overflow menu is turned off** (`controlslist="nodownload noplaybackrate
+noremoteplayback"`, `disablepictureinpicture`, `disableremoteplayback`). It opens about 120 px
+  above the bottom, above the overlay's lower edge, so the overlay would cover its items and a
+  click on "Playback speed" would toggle playback instead. Speed has FollowAlong's own controls
+  (stories 41, 47), and the core must know the rate. The floating-window spot replaces
+  picture-in-picture. Download does not apply to a local file. The control bar keeps play, time,
+  mute, volume, fullscreen and the seek bar. The fullscreen button is not reported as an
+  interaction.
+- Chromium pauses a playing Lesson while the seek bar is scrubbed and plays it on release. The
+  core receives `paused {byUser: true}` and then `played`, and the release can post
+  `userInteracted` twice (the gesture's end, then the `play`). Focus returns twice to the same
+  target, which is harmless. A Space on a focused native control posts twice in the same way.
+- Any key released in the player returns focus, so the learner cannot tab through the native
+  controls. FollowAlong's own controls are keybindings used from the Practice area, so nothing
+  depends on that.
+- `onDidChangeActiveTerminal` also fires for terminals that a task or another extension
+  creates, so the target can become a terminal the learner never typed in. Returning focus to a
+  terminal also reopens the panel if the learner has hidden it since. Both are on the Manual QA
+  list.
 - The prototype found that in the floating-window spot, returning focus raises the main window
   over the floating one. The ticket for that spot decides whether focus returns there.
 - When a later ticket makes the player change the volume itself, it must mark that change as the

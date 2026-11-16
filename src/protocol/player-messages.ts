@@ -38,8 +38,9 @@ export type PlayerEvent =
   | { readonly type: 'ended'; readonly lessonId: string }
   | { readonly type: 'error'; readonly lessonId: string; readonly message: string }
   /**
-   * The learner finished a click or a drag anywhere in the player page, so the extension hands
-   * keyboard focus back to the code (ADR 0009). Not about a Lesson: it carries no `lessonId`.
+   * The learner finished an interaction with the player page (a click, a key, a native control,
+   * the release of a seek-bar drag), so the extension hands keyboard focus back to the Practice
+   * area (Focus return, ADR 0009). Not about a Lesson: it carries no `lessonId`.
    */
   | { readonly type: 'userInteracted' };
 

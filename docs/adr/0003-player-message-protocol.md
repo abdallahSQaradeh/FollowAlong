@@ -39,3 +39,6 @@ Two deliberate additions to the spec's shapes:
   length becomes known (`durationchange`). The extension therefore has the length before the
   Lesson plays, even when autoplay is refused. `timeUpdate.duration` is 0 while a MediaSource
   stream's length is not yet known, so both numbers are always finite.
+- **`userInteracted`** (no `lessonId`) is posted when the learner finishes an interaction with
+  the player page: a click on the picture, a key, a native control, or the release of a
+  seek-bar drag (never during it). The extension then hands focus back (ADR 0009).

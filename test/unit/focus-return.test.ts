@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createHarness } from './harness.js';
 
 describe('focus return', () => {
-  it('hands focus back to the code when the learner interacts with the player', async () => {
+  it('hands focus back to the Practice area when the learner interacts with the player', async () => {
     const h = await createHarness();
     const course = await h.folder('course', { '01 Intro.webm': 'video' });
     await h.core.openCourse(course);
@@ -14,7 +14,7 @@ describe('focus return', () => {
     expect(h.ui.focusReturns).toBe(1);
   });
 
-  it('keeps focus where it is while the learner does not touch the player', async () => {
+  it('returns focus only on userInteracted, not on other player events', async () => {
     const h = await createHarness();
     const course = await h.folder('course', { '01 Intro.webm': 'video' });
     await h.core.openCourse(course);
