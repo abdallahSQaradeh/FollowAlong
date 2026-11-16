@@ -70,7 +70,8 @@ export class FocusReturn implements vscode.Disposable {
 
   /**
    * Focuses the editor or terminal used last. An editor only while it is still visible, so a tab
-   * behind the player is never brought in front of it.
+   * behind the player is never brought in front of it; otherwise any visible code editor, so focus
+   * does not stay in the player. With no code editor in sight, focus stays where it is.
    */
   async returnFocus(): Promise<void> {
     const target = this.target;
@@ -78,14 +79,14 @@ export class FocusReturn implements vscode.Disposable {
       target.terminal.show(false);
       return;
     }
-    if (target === undefined) {
-      return;
-    }
-    const visible = vscode.window.visibleTextEditors.filter(
-      (editor) => editor.document === target.document,
-    );
+    const visible = vscode.window.visibleTextEditors.filter(isCode);
     const editor =
-      visible.find((candidate) => candidate.viewColumn === target.viewColumn) ?? visible[0];
+      visible.find(
+        (candidate) =>
+          candidate.document === target?.document && candidate.viewColumn === target.viewColumn,
+      ) ??
+      visible.find((candidate) => candidate.document === target?.document) ??
+      visible[0];
     if (editor !== undefined) {
       await vscode.window.showTextDocument(editor.document, {
         ...(editor.viewColumn === undefined ? {} : { viewColumn: editor.viewColumn }),
