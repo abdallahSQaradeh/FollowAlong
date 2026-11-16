@@ -123,6 +123,8 @@ try {
     input,
     output,
     signal,
+    // As the core asks, so the real process priority call runs on this machine too.
+    lowPriority: true,
     onProgress: (percent) => percents.push(percent),
   });
   check(
