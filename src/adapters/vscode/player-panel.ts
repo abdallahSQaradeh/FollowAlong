@@ -234,8 +234,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   }
 
   /**
-   * Shows the view of the spot the player is awaited in: the view VS Code resolved before takes
-   * a new page, or VS Code makes the view container visible and resolves the view.
+   * Shows the view of the spot the player is awaited in. A view VS Code resolved before takes a new
+   * page at once; otherwise VS Code resolves the view when its container opens. Either way the
+   * container is opened with its command: `WebviewView.show` does not bring back a container that
+   * its `when` clause hid (smoke test, CI run 43894818485).
    */
   private openView(spot: ViewSpot): void {
     const awaited = this.awaitedView;
@@ -247,8 +249,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     if (existing !== undefined) {
       this.awaitedView = undefined;
       this.host = this.viewHost(spot, existing, awaited.title);
-      this.host.reveal();
-      return;
     }
     // Opening the container focuses the view: focus goes back to the code once it is open.
     vscode.commands
@@ -258,9 +258,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           level: 'error',
           message: `Could not open the ${spot} view: ${error instanceof Error ? error.message : String(error)}`,
         });
-        // No player will come: the core must not wait for it.
-        if (this.awaitedView?.spot === spot) {
+        // No player will show: the core must not wait for it.
+        if (this.awaitedView?.spot === spot || this.host?.spot === spot) {
           this.awaitedView = undefined;
+          this.host?.drop();
           this.playerGone();
         }
       });
