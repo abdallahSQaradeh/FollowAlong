@@ -6,7 +6,14 @@
  */
 import { buildCoursePicker, type CoursePickerIntent } from './course-picker.js';
 import type { CourseScans } from './course-list-cache.js';
-import { buildFolderBrowser, type FolderBrowserIntent } from './folder-browser.js';
+import {
+  buildFolderBrowser,
+  type FolderBrowserIntent,
+  type FolderBrowserView,
+} from './folder-browser.js';
+import { folderLabel } from './course-scanner.js';
+import { FileSystemError } from './ports.js';
+import { readBrowsedFolder } from './read-browsed-folder.js';
 import type { QuickPickModel } from './quick-pick.js';
 import type { CourseScan, ScannedCourse } from './course-scanner.js';
 import type { Ports } from './ports.js';
@@ -51,11 +58,13 @@ export async function showCoursePicker(
   let newestScan = 0;
 
   /** Set while the learner walks folders (Browse…, ADR 0066): the quick pick shows them, not the Courses. */
-  let browsing = false;
+  let browsing: FolderBrowserView | undefined;
+  /** Counts the folders the learner asked for: of two, only the later one is shown. */
+  let newestFolder = 0;
 
   const view = (): QuickPickModel<PickerIntent> =>
-    browsing
-      ? buildFolderBrowser({ roots: roots.map((path) => ({ path })) })
+    browsing !== undefined
+      ? buildFolderBrowser(browsing)
       : buildCoursePicker({
           hasRoots: roots.length > 0,
           courses,
@@ -106,6 +115,42 @@ export async function showCoursePicker(
     await redraw();
   };
 
+  /** Shows what is in `folder`, or the top of the Folder browser; the picker stays open. */
+  const browseTo = async (folder: string | undefined): Promise<void> => {
+    newestFolder += 1;
+    const mine = newestFolder;
+    if (folder === undefined) {
+      browsing = { kind: 'top', roots: roots.map((path) => ({ path })) };
+      picker.update(view());
+      return;
+    }
+    // Busy while the folder is read, the list the learner picked from still in view.
+    const before = view();
+    picker.update({ ...before, busy: true });
+    try {
+      const content = await readBrowsedFolder(ports, folder);
+      if (!closed && mine === newestFolder) {
+        browsing = { kind: 'folder', folder, ...content };
+        picker.update(view());
+      }
+    } catch (error) {
+      if (!(error instanceof FileSystemError)) {
+        throw error;
+      }
+      ports.logger.log({
+        level: 'warn',
+        message: `Cannot browse ${folder} (${error.message}).`,
+      });
+      ports.ui.showMessage({
+        severity: 'warning',
+        text: `FollowAlong can't read the folder “${folderLabel(folder)}”.`,
+      });
+      if (!closed && mine === newestFolder) {
+        picker.update(before);
+      }
+    }
+  };
+
   const picker = ports.ui.openPicker<PickerIntent>(view(), (intent) => {
     switch (intent.type) {
       case 'refreshCourses':
@@ -115,12 +160,15 @@ export async function showCoursePicker(
         void showScan(scans.scan(roots, recent, { fresh: true }));
         break;
       case 'browse':
-        browsing = true;
-        picker.update(view());
+        void browseTo(undefined);
         break;
       case 'backToCourses':
-        browsing = false;
+        newestFolder += 1;
+        browsing = undefined;
         picker.update(view());
+        break;
+      case 'browseTo':
+        void browseTo(intent.folder);
         break;
       default:
         break;

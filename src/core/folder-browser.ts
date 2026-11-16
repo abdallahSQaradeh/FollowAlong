@@ -3,6 +3,8 @@
  * from where the learner is, and what is there, to the quick pick behind “Browse…” in the Course
  * picker. Picking returns an intent; the core carries it out.
  */
+import { dirname } from 'node:path';
+
 import { folderLabel } from './course-scanner.js';
 import type { QuickPickEntry, QuickPickModel } from './quick-pick.js';
 
@@ -11,42 +13,95 @@ export type FolderBrowserIntent =
   /** Shows what is in `folder`; `undefined` is the top of the browser: the roots, or drives/home. */
   | { readonly type: 'browseTo'; readonly folder: string | undefined }
   /** Leaves the Folder browser for the Course picker's list of Courses. */
-  | { readonly type: 'backToCourses' };
+  | { readonly type: 'backToCourses' }
+  /** Plays a video: its folder opens as the Course, and this video is the Lesson that plays. */
+  | { readonly type: 'playVideo'; readonly folder: string; readonly video: string };
 
 type Entry = QuickPickEntry<FolderBrowserIntent>;
 
 /** A folder the browser lists. */
 export interface BrowsedFolder {
+  /** The folder's own name (a drive's root has none). */
+  readonly name?: string;
+  /** Absolute path. */
+  readonly path: string;
+}
+
+/** A video the browser lists. */
+export interface BrowsedVideo {
+  readonly name: string;
   /** Absolute path. */
   readonly path: string;
 }
 
 /** Where the learner is in the browser, and what is there. */
-export interface FolderBrowserView {
-  /** Where the browser starts: the Courses roots the learner named. */
-  readonly roots: readonly BrowsedFolder[];
+export type FolderBrowserView =
+  | {
+      /** The top: the Courses roots the learner named. */
+      readonly kind: 'top';
+      readonly roots: readonly BrowsedFolder[];
+    }
+  | {
+      /** Inside `folder`: its subfolders, then its videos, in the order to show them. */
+      readonly kind: 'folder';
+      readonly folder: string;
+      readonly folders: readonly BrowsedFolder[];
+      readonly videos: readonly BrowsedVideo[];
+    };
+
+/** The folder above `folder`, or `undefined` (the top of the browser) above a drive or `/`. */
+function parentOf(folder: string): string | undefined {
+  const parent = dirname(folder);
+  return parent === folder ? undefined : parent;
+}
+
+function folderItem(folder: BrowsedFolder, withPath: boolean): Entry {
+  return {
+    kind: 'item',
+    label: folder.name ?? folderLabel(folder.path),
+    ...(withPath ? { description: folder.path } : {}),
+    intent: { type: 'browseTo', folder: folder.path },
+    keepsOpen: true,
+  };
 }
 
 export function buildFolderBrowser(view: FolderBrowserView): QuickPickModel<FolderBrowserIntent> {
-  const folders = view.roots.map((root): Entry => ({
-    kind: 'item',
-    label: folderLabel(root.path),
-    description: root.path,
-    intent: { type: 'browseTo', folder: root.path },
-    keepsOpen: true,
-  }));
+  if (view.kind === 'top') {
+    return {
+      title: 'Browse folders',
+      placeholder: 'Pick a folder to look inside it',
+      matchOnDescription: true,
+      entries: [
+        {
+          kind: 'item',
+          label: 'Back to Courses',
+          intent: { type: 'backToCourses' },
+          keepsOpen: true,
+        },
+        // A root's name alone can be the same for two roots: the path tells them apart.
+        ...view.roots.map((root) => folderItem(root, true)),
+      ],
+    };
+  }
+  const parent = parentOf(view.folder);
   return {
-    title: 'Browse folders',
-    placeholder: 'Pick a folder to look inside it',
-    matchOnDescription: true,
+    title: `Browse: ${view.folder}`,
+    placeholder: 'Pick a folder to look inside it, or a video to play it',
+    matchOnDescription: false,
     entries: [
       {
         kind: 'item',
-        label: 'Back to Courses',
-        intent: { type: 'backToCourses' },
+        label: 'Up',
+        ...(parent === undefined ? {} : { description: parent }),
+        intent: { type: 'browseTo', folder: parent },
         keepsOpen: true,
       },
-      ...folders,
+      ...view.folders.map((folder) => folderItem(folder, false)),
+      ...view.videos.map((video): Entry => ({
+        kind: 'item',
+        label: video.name,
+        intent: { type: 'playVideo', folder: view.folder, video: video.path },
+      })),
     ],
   };
 }
