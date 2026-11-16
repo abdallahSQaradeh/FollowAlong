@@ -41,8 +41,9 @@ open. #60 (resume after a quiet period, `overridden`) and #61 (the toggle) build
   pause", "Auto-pause: pause and resume"). Like every status bar item, it shows only while a Lesson
   is loaded.
 - **`pauseAndResume` is in the setting now.** The ticket names all three values. Until #60 lands,
-  it pauses like `pause` and does not resume, and its description in the Settings editor says so.
-  #60 rewrites that description.
+  it pauses like `pause` and does not resume. Its description in the Settings editor says only that:
+  no learner-facing text promises a resume yet (orchestrator answer to the #59 consult). #60
+  rewrites it.
 - **The smoke test checks what the learner sees.** With the setting on, in the real VS Code: an edit
   in a document no editor shows and a cursor move leave the Lesson playing, and typing into a file in
   the active editor makes the real player pause and the item read "Paused (typing)". No test hook
