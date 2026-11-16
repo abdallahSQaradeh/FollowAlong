@@ -71,6 +71,8 @@ export async function readProgressLines(
         try {
           lines.set(keyOf(folder), await progressLineOf(ports, folder));
         } catch (error) {
+          // Not read: an older line must not stay up for a Progress that cannot be read now.
+          lines.set(keyOf(folder), undefined);
           ports.logger.log({
             level: 'error',
             message: `Could not read the Progress of ${folder}: ${error instanceof Error ? error.message : String(error)}`,

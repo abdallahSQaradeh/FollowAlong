@@ -27,3 +27,7 @@ Course picker (ADR 0058). These are the choices the spec leaves open.
 - **Busy until the lines are in.** The picker's busy indicator stays on while Progress lines (or the
   Recent check) are being read, so "complete" still means complete. The learner can pick a Course at
   any time while it is busy.
+- **Refresh keeps the old lines until the new ones are in**, so the list does not flicker; a Course
+  whose Progress cannot be read on the re-read loses its line.
+- **`last` names the Lesson played last, even one reset since** (Reset Section leaves `last`, ADR
+  0061): it is still where the Course reopens. Only an empty or unknown `last` leaves out `last:`.

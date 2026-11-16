@@ -235,4 +235,20 @@ describe('the Progress line in the Course picker', () => {
     expect(h.ui.picker?.entries[0]).toMatchObject({ kind: 'separator', label: 'Recent Courses' });
     expect(detailOf(h.ui.picker, 'Seen')).toBe('1/2 · 50% · last: a');
   });
+
+  it('drops a Progress line when Refresh cannot read the Course any more', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Flaky/a.mp4': 'v',
+      'Flaky/.followalong/progress.json': progressFile({ 'a.mp4': saved(600, 'done') }),
+    });
+    await openPicker(h, learning);
+    expect(detailOf(h.ui.picker, 'Flaky')).toBe('1/1 · 100%');
+
+    h.breakReads(join(learning, 'Flaky'), 'disk error');
+    h.ui.pressToolbar('Refresh');
+    await h.ui.pickerShown();
+
+    expect(detailOf(h.ui.picker, 'Flaky')).toBeUndefined();
+  });
 });
