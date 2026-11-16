@@ -11,16 +11,19 @@ import type { QuickPickModel } from './quick-pick.js';
  * - `editorSplit`: an editor group beside the code (the default);
  * - `bottomPanel`: a view in the bottom panel, beside the terminal;
  * - `secondarySidebar`: a view in the secondary sidebar;
+ * - `miniStrip`: a short editor group above the code (ADR 0100);
  * - `floatingWindow`: an editor tab in its own compact, always-on-top window (ADR 0102). Opt-in
  *   only, never the default: a click in it moves focus out of the main window (story 58).
  */
-export type VideoSpot = 'editorSplit' | 'bottomPanel' | 'secondarySidebar' | 'floatingWindow';
+export type VideoSpot =
+  'editorSplit' | 'bottomPanel' | 'secondarySidebar' | 'miniStrip' | 'floatingWindow';
 
 /** Every spot, in the order _Move video to…_ lists them. */
 export const videoSpots: readonly VideoSpot[] = [
   'editorSplit',
   'bottomPanel',
   'secondarySidebar',
+  'miniStrip',
   'floatingWindow',
 ];
 
@@ -41,6 +44,7 @@ export const spotLabels: Readonly<Record<VideoSpot, string>> = {
   editorSplit: 'Editor group beside the code',
   bottomPanel: 'Bottom panel',
   secondarySidebar: 'Secondary sidebar',
+  miniStrip: 'Mini strip above the code',
   floatingWindow: 'Floating window',
 };
 

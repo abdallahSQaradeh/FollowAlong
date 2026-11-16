@@ -296,9 +296,11 @@ export async function run(): Promise<void> {
 }
 
 /**
- * The spots of #49 and #51 (ADR 0049, ADR 0102): `followalong.videoLocation` opens the Lesson in
- * the bottom panel, and _Move video to…_ moves it to the secondary sidebar, a floating window,
- * beside the code, and back to the panel. In each spot VS Code shows the player, a new page loads the Lesson through asWebviewUri,
+ * The spots of #49, #50 and #51 (ADR 0049, ADR 0100, ADR 0102): `followalong.videoLocation` opens
+ * the Lesson in the bottom panel, and _Move video to…_ moves it to the mini strip above the code,
+ * the secondary sidebar, a floating window, the mini strip again, beside the code, the mini strip
+ * once more, and back to the panel; a last player opens in the mini strip from the setting. In
+ * each spot VS Code shows the player, a new page loads the Lesson through asWebviewUri,
  * the CSP and localResourceRoots, and the code keeps the focus. What a move carries (time, speed, play,
  * zoom) is covered at Seam 1 and Seam 2.
  */
@@ -326,17 +328,30 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
 
     // Back into the bottom panel at the end: a view spot used before takes a new page.
     for (const spot of [
+      'miniStrip',
       'secondarySidebar',
       'floatingWindow',
+      'miniStrip',
       'editorSplit',
+      'miniStrip',
       'bottomPanel',
     ] as const) {
       const left = hooks.playerSpot()?.spot;
       from = hooks.playerEvents.length;
       await vscode.commands.executeCommand('followalong.moveVideo', spot);
       say(await theLessonLoadsIn(hooks, spot, from, code));
+      if (spot === 'miniStrip') {
+        say(await theStripIsAboveTheCode(code));
+      }
       if (spot === 'floatingWindow') {
         say(await theFloatingWindowHoldsThePlayer());
+      }
+      if (left === 'miniStrip') {
+        // The strip's group goes with its tab: the code alone, or the code and the group beside it.
+        const groups = spot === 'editorSplit' ? 2 : 1;
+        await waitFor(`the strip's group to go after the move to ${spot}`, () =>
+          vscode.window.tabGroups.all.length === groups ? true : undefined,
+        );
       }
       if (left === 'floatingWindow') {
         await noFloatingWindowIsLeft(`moving the video from the floating window to ${spot}`);
@@ -357,6 +372,7 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
       'secondarySidebar',
       'floatingWindow',
       'editorSplit',
+      'miniStrip',
     ] as const) {
       await vscode.commands.executeCommand('followalong.moveVideo', spot);
       from = hooks.playerEvents.length;
@@ -387,11 +403,105 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
     say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
     say(await closingTheFloatingWindowClosesTheLesson(hooks, code));
     say(await doesAMoveIntoANewWindowKeepThePage(hooks));
+    say(await aPlayerOpensInTheStripFromTheSetting(hooks, course, code));
   } finally {
     await settings.update('videoLocation', undefined, vscode.ConfigurationTarget.Global);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   }
+}
+
+/** The view type of the player's webview panel (`src/adapters/vscode/player-panel.ts`). */
+const playerViewType = 'followalong.player';
+
+/** The editor groups that hold the player's tab. */
+function playerGroups(): vscode.TabGroup[] {
+  return vscode.window.tabGroups.all.filter((group) =>
+    group.tabs.some(
+      (tab) =>
+        tab.input instanceof vscode.TabInputWebview && tab.input.viewType.includes(playerViewType),
+    ),
+  );
+}
+
+/** The editor groups in layout order with their tabs, for a failure message. */
+function layout(): string {
+  return vscode.window.tabGroups.all
+    .map(
+      (group) =>
+        `[${String(group.viewColumn)}${group.isActive ? ' active' : ''}: ${group.tabs.map((tab) => tab.label).join(', ')}]`,
+    )
+    .join(' ');
+}
+
+/**
+ * The mini strip is its own editor group above the code (ADR 0100): it comes first in the layout,
+ * VS Code draws its page above the code editor, and it is shorter than the code.
+ */
+async function theStripIsAboveTheCode(code: vscode.TextDocument): Promise<string> {
+  const [group, ...others] = playerGroups();
+  assert.ok(group !== undefined && others.length === 0, 'no editor group holds the strip');
+  assert.equal(
+    group.viewColumn,
+    vscode.ViewColumn.One,
+    `the strip is not the first group; the layout is ${layout()}`,
+  );
+  const codeColumn = vscode.window.visibleTextEditors.find(
+    (editor) => editor.document === code,
+  )?.viewColumn;
+  assert.equal(codeColumn, vscode.ViewColumn.Two, 'the code is not in the group below the strip');
+  const shapes = await inWorkbench(() => {
+    const boxes = (selector: string) =>
+      [...document.querySelectorAll(selector)]
+        .map((element) => element.getBoundingClientRect())
+        .filter((box) => box.width > 0 && box.height > 0)
+        .map(({ top, bottom, height, width }) => ({ top, bottom, height, width }));
+    return { strip: boxes('.webview'), code: boxes('.monaco-editor') };
+  });
+  const strip = shapes.strip.at(0);
+  const editor = shapes.code.at(0);
+  assert.ok(strip !== undefined && editor !== undefined, `no strip or code on screen`);
+  assert.ok(strip.bottom <= editor.top + 2, 'the strip is not above the code');
+  assert.ok(strip.height < editor.height, 'the strip is not shorter than the code');
+  assert.ok(strip.width >= editor.width, 'the strip is not as wide as the code');
+  return `the mini strip is the group above the code (${String(Math.round(strip.height))} px high, the code ${String(Math.round(editor.height))} px)`;
+}
+
+/**
+ * A player the learner closed opens again in the spot `followalong.videoLocation` names (ADR
+ * 0049): here the mini strip. The terminal the learner types in keeps the focus (#12 D12).
+ */
+async function aPlayerOpensInTheStripFromTheSetting(
+  hooks: TestHooks,
+  course: string,
+  code: vscode.TextDocument,
+): Promise<string> {
+  await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+  await waitFor('the player in the editor group', () =>
+    hooks.playerSpot()?.spot === 'editorSplit' ? true : undefined,
+  );
+  // The tab API hears of the new tab a moment after the panel shows.
+  const tab = await waitFor('the player tab', () =>
+    playerGroups()
+      .flatMap((group) => group.tabs)
+      .find(
+        (candidate) =>
+          candidate.input instanceof vscode.TabInputWebview &&
+          candidate.input.viewType.includes(playerViewType),
+      ),
+  );
+  await vscode.window.tabGroups.close(tab);
+  await waitFor('the player to be gone', () =>
+    hooks.playerSpot() === undefined ? true : undefined,
+  );
+  await vscode.workspace
+    .getConfiguration('followalong')
+    .update('videoLocation', 'miniStrip', vscode.ConfigurationTarget.Global);
+  const from = hooks.playerEvents.length;
+  await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+  const loaded = await theLessonLoadsIn(hooks, 'miniStrip', from, code);
+  await theStripIsAboveTheCode(code);
+  return `with the setting on miniStrip, a new player opens there: ${loaded}`;
 }
 
 /** Runs `read` in the VS Code workbench page over the DevTools protocol, which the extension API cannot do. */
@@ -502,9 +612,18 @@ async function theFloatingWindowHoldsThePlayer(): Promise<string> {
 
 /** Waits until no floating VS Code window is left after `what`. */
 async function noFloatingWindowIsLeft(what: string): Promise<void> {
-  await waitForAsync(`no floating window left after ${what}`, async () =>
-    (await floatingWindows()).length === 0 ? true : undefined,
-  );
+  await waitForAsync(`no floating window left after ${what}`, async () => {
+    try {
+      return (await floatingWindows()).length === 0 ? true : undefined;
+    } catch (error) {
+      // The window closes while its page is read: that page goes with it, so look again. Any other
+      // failure is a real one.
+      if (/has been closed|Target closed/.test(String(error))) {
+        return undefined;
+      }
+      throw error;
+    }
+  });
 }
 
 /**

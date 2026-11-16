@@ -34,6 +34,10 @@ The list is grouped by Section, and typing a Section name narrows it to that Sec
 Press `Ctrl+'` then `V` (or run **FollowAlong: Toggle video**) to collapse the video and get space for
 code. Press it again to bring the video back in the same spot, at the same place.
 
+**FollowAlong: Move video to…** → _Mini strip above the code_ puts the video in a short group above
+your code; drag its edge to resize it. It keeps its time, speed and zoom, like the other
+spots. `followalong.videoLocation` set to `miniStrip` opens it there.
+
 **FollowAlong: Move video to…** → _Floating window_ puts the video in a small window of its own that
 stays on top of VS Code; resize it with its edges. It is never the default, because a click in it
 moves the focus out of the main window. Closing that window closes the Lesson's player, as closing its
