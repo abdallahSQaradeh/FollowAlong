@@ -7,6 +7,7 @@ import { basename, extname, join } from 'node:path';
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { FileSystemError, type Disposable, type FileSystem, type Ports } from './ports.js';
 import { buildCourse } from './course-model.js';
+import { buildLessonTree } from './lesson-tree.js';
 import { readFolderListing } from './folder-listing.js';
 
 export interface FollowAlong {
@@ -160,9 +161,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const tree = buildCourse(await readFolderListing(fileSystem, course, basename(course)));
-      ui.showLessonTree({
-        nodes: tree.lessons.map((l) => ({ id: l.id, kind: 'lesson', label: l.title })),
-      });
+      ui.showLessonTree(buildLessonTree(tree));
       current = lesson;
       logger.log({ level: 'info', message: `Opened Course ${course}; playing ${lesson.id}` });
       const shown = player.show({ title: lesson.title, resourceRoots: [course, storage.folder] });

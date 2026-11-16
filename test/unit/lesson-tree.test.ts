@@ -19,4 +19,20 @@ describe('the Lesson tree of an opened Course', () => {
 
     expect(outline(h.ui.lessonTree?.nodes)).toEqual(['intro', 'setup']);
   });
+
+  it('shows a subfolder that holds videos as a Section', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'Section 1/01 Welcome.webm': 'v',
+      'Section 1/02 Setup.mp4': 'v',
+      'Section 2/03 Tools.mp4': 'v',
+    });
+
+    await h.core.openCourse(course);
+
+    expect(outline(h.ui.lessonTree?.nodes)).toEqual([
+      { 'Section 1': ['01 Welcome', '02 Setup'] },
+      { 'Section 2': ['03 Tools'] },
+    ]);
+  });
 });

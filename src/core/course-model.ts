@@ -24,10 +24,21 @@ export interface Lesson {
   readonly container: Container;
 }
 
-export interface Course {
+/** Lessons and Sections in the order the Course presents them: Lessons first, then Sections. */
+export interface Outline {
+  readonly lessons: readonly Lesson[];
+  readonly sections: readonly Section[];
+}
+
+export interface Section extends Outline {
+  /** The Section folder's path in the Course, with `/` separators and a trailing `/`. */
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface Course extends Outline {
   /** Absolute path of the Course folder. */
   readonly folder: string;
-  readonly lessons: readonly Lesson[];
 }
 
 function containerOf(fileName: string): Container | undefined {
@@ -41,18 +52,46 @@ function containerOf(fileName: string): Container | undefined {
   }
 }
 
+/** "lesson2" before "lesson10"; a fixed locale, so the order does not depend on the machine. */
+const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+function naturalOrder(a: string, b: string): number {
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+function outlineOf(listing: FolderListing, idPrefix: string): Outline {
+  const lessons = listing.files
+    .flatMap((file): Lesson[] => {
+      const container = containerOf(file);
+      return container === undefined
+        ? []
+        : [
+            {
+              id: `${idPrefix}${file}`,
+              path: `${listing.path}/${file}`,
+              title: file.slice(0, file.length - extname(file).length),
+              container,
+            },
+          ];
+    })
+    .sort((a, b) => naturalOrder(a.id, b.id));
+  const sections = [...listing.folders]
+    .sort((a, b) => naturalOrder(a.name, b.name))
+    .flatMap((folder): Section[] => {
+      const id = `${idPrefix}${folder.name}/`;
+      const inside = outlineOf(folder, id);
+      return inside.lessons.length === 0 && inside.sections.length === 0
+        ? []
+        : [{ id, name: folder.name, ...inside }];
+    });
+  return { lessons, sections };
+}
+
 export function buildCourse(listing: FolderListing): Course {
-  const lessons: Lesson[] = [];
-  for (const file of listing.files) {
-    const container = containerOf(file);
-    if (container !== undefined) {
-      lessons.push({
-        id: file,
-        path: `${listing.path}/${file}`,
-        title: file.slice(0, file.length - extname(file).length),
-        container,
-      });
-    }
-  }
-  return { folder: listing.path, lessons };
+  return { folder: listing.path, ...outlineOf(listing, '') };
+}
+
+/** Every Lesson of the Course in play order: a folder's own Lessons, then its Sections'. */
+export function lessonsInOrder(outline: Outline): Lesson[] {
+  return [...outline.lessons, ...outline.sections.flatMap(lessonsInOrder)];
 }
