@@ -105,7 +105,11 @@ describe('resume with rewind', () => {
     h.config.set('resumeRewind', 3);
     h.core.playPause();
 
-    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([{ type: 'play' }]);
+    expect(
+      sentBy(h, () => {
+        h.core.playPause();
+      }),
+    ).toEqual([{ type: 'play' }]);
   });
 
   it('rewinds a Lesson that was stepped back from its end', async () => {
@@ -117,10 +121,11 @@ describe('resume with rewind', () => {
     h.core.seekStep('short', 'back');
     h.player.emit({ type: 'seeked', lessonId });
 
-    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([
-      { type: 'seekBy', seconds: -3 },
-      { type: 'play' },
-    ]);
+    expect(
+      sentBy(h, () => {
+        h.core.playPause();
+      }),
+    ).toEqual([{ type: 'seekBy', seconds: -3 }, { type: 'play' }]);
   });
 
   describe('the automatic resume path', () => {
