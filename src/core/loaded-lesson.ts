@@ -5,7 +5,14 @@
  * commands, the rate it plays at, and saving Progress while the Lesson plays. The Course side
  * (`follow-along.ts`) decides which Lesson to load and from which Course.
  */
-import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
+import {
+  wholePicture,
+  type AboutLesson,
+  type PlayerCommand,
+  type PlayerEvent,
+  type PlayerSnapshot,
+  type ZoomView,
+} from '../protocol/player-messages.js';
 import {
   autoPauseOff,
   autoPauseView,
@@ -17,15 +24,32 @@ import {
 } from './auto-pause.js';
 import type { Lesson } from './course-model.js';
 import type { PreparedSound, SoundRequest } from './sidecar-sound.js';
-import type { Disposable, Ports } from './ports.js';
+import type { Disposable, PlayerShowResult, Ports } from './ports.js';
 import type { PlayheadSeen } from './lesson-status.js';
 import { lessonStatus, type ProgressRecorder } from './progress.js';
+import { settingSpot, type VideoSpot } from './video-placement.js';
 import {
   buildStatusBar,
   hiddenStatusBar,
   type StatusBarCommand,
   type StatusBarModel,
 } from './status-bar.js';
+
+/**
+ * How long a move waits for the page it leaves to say what it shows (`snapshot`), in ms. A page
+ * answers at once; one that does not (hung, or gone) must not hold the move up (ADR 0049).
+ */
+const snapshotWaitMs = 1000;
+
+/**
+ * What a page that starts in a new spot takes over from the page it replaces, once it is ready:
+ * its speed and zoom, and whether the Lesson was at its end (ADR 0049).
+ */
+interface PageRestore {
+  readonly rate: number;
+  readonly zoom: ZoomView;
+  readonly ended: boolean;
+}
 
 /** How often Progress is saved while a Lesson plays (spec #12, Progress store). */
 const saveIntervalMs = 5000;
@@ -87,6 +111,11 @@ export interface LoadedLesson {
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   load(lesson: Lesson, options: LoadOptions): void;
   /**
+   * Brings the player of the Loaded Lesson to the front, in the spot it sits in, without loading
+   * the Lesson again. Does nothing while no Lesson is loaded.
+   */
+  reveal(resourceRoots: readonly string[]): void;
+  /**
    * Leaves the Loaded Lesson (another Lesson, another Course, the window closes): no more saves
    * on the clock, its late events are ignored, and the Course's Progress is saved. Resolves once
    * that save, and any save still under way, is written.
@@ -117,6 +146,17 @@ export interface LoadedLesson {
   speedStep(direction: SpeedDirection): void;
   /** Runs the command a status bar item names, then hands focus back (ADR 0009, ADR 0018). */
   statusBarClick(command: StatusBarCommand): void;
+  /**
+   * The spot the player of the Loaded Lesson sits in; `undefined` while no Lesson is loaded or no
+   * player is open.
+   */
+  spot(): VideoSpot | undefined;
+  /**
+   * Moves the player of the Loaded Lesson to `to` (_Move video to…_, ADR 0049). The page it leaves
+   * says what it shows, and the page in `to` carries on from it: the playhead, play or pause, the
+   * speed and the zoom. Resolves once the page in `to` is starting.
+   */
+  move(to: VideoSpot): Promise<void>;
   /** The learner typed in the Practice area: an edit auto-pause counts (ADR 0052). */
   typed(): void;
   /** Stops listening to the player and the settings, and cancels the next save. */
@@ -282,6 +322,25 @@ export function createLoadedLesson(
    * the Lesson (ADR 0037): it stays from Lesson to Lesson, and a new page starts at 1×.
    */
   let zoom = 1;
+  /**
+   * The spot the open player sits in, or `undefined` while no player is open: a new player opens
+   * in the spot the `followalong.videoLocation` setting names (ADR 0049).
+   */
+  let spot: VideoSpot | undefined;
+  /** The folders the open player may read media from, as last shown (ADR 0022). */
+  let shownRoots: readonly string[] = [];
+  /**
+   * What a page that is starting in a new spot takes over from the page it replaces, once it is
+   * ready: its speed and its zoom (ADR 0049).
+   */
+  let pendingRestore: PageRestore | undefined;
+  /**
+   * The spot the learner asked for last while a move waited for its snapshot: the move goes there
+   * (review of #49, item 7).
+   */
+  let requestedSpot: VideoSpot | undefined;
+  /** Set while a move waits for the `snapshot` of the page it leaves. */
+  let awaitingSnapshot: ((snapshot: PlayerSnapshot | undefined) => void) | undefined;
   /**
    * What a player page that has just started is like (one that posted `ready`, or one that is
    * starting or gone): it plays at normal speed and shows the whole picture, until it says
@@ -595,6 +654,7 @@ export function createLoadedLesson(
           };
         }
         loadCurrent();
+        restorePage();
         break;
       case 'error': {
         logger.log({
@@ -683,17 +743,18 @@ export function createLoadedLesson(
         if (shown === undefined) {
           break;
         }
-        if (playback.ended) {
-          // A Lesson moved off its end (a step back, the seek bar) is no longer ended.
-          playback = { ...playback, ended: false };
-        }
         // The player says which seek applied `startAt`. One that does not say is taken to be the
         // first `seeked` after a `load` with a start position (ADR 0010).
         const isStartSeek = event.startSeek ?? shown.startSeekPending;
         shown.startSeekPending = false;
         if (isStartSeek) {
-          // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
+          // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position. It
+          // leaves a Lesson moved at its end ended (ADR 0049).
           break;
+        }
+        if (playback.ended) {
+          // A Lesson moved off its end (a step back, the seek bar) is no longer ended.
+          playback = { ...playback, ended: false };
         }
         shown.engaged = true;
         stopCountingPlay(shown);
@@ -744,6 +805,9 @@ export function createLoadedLesson(
       case 'zoomChanged':
         zoom = event.level;
         break;
+      case 'snapshot':
+        awaitingSnapshot?.(event.snapshot);
+        break;
     }
     refreshStatusBar();
   }
@@ -786,6 +850,9 @@ export function createLoadedLesson(
   /** The learner closed the player: a new page starts from scratch, at normal speed. */
   function onPlayerClosed(): void {
     newPage(false);
+    spot = undefined;
+    pendingRestore = undefined;
+    awaitingSnapshot?.(undefined);
     // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
     void leave();
     // The Lesson shows where it was left, saved with it.
@@ -830,13 +897,151 @@ export function createLoadedLesson(
     };
     // Nothing is known about this Lesson until the player loads it and reports.
     resetPlayhead(false);
-    const shown = player.show({ title: lesson.title, resourceRoots });
-    if (shown === 'created') {
-      newPage(false);
-    } else if (playerReady) {
+    if (showPlayer(lesson, resourceRoots) === 'revealed' && playerReady) {
       loadCurrent();
     }
     refreshStatusBar();
+  }
+
+  /** Shows the player for `lesson` in its spot; a page that is starting is a new page. */
+  function showPlayer(lesson: Lesson, resourceRoots: readonly string[]): PlayerShowResult {
+    spot ??= settingSpot(config);
+    shownRoots = resourceRoots;
+    const result = player.show({ title: lesson.title, resourceRoots, spot });
+    if (result === 'created') {
+      newPage(false);
+    }
+    return result;
+  }
+
+  /**
+   * Asks the open page what it shows and plays. Resolves `undefined` when it does not answer in
+   * time, or is closed meanwhile.
+   */
+  function takeSnapshot(): Promise<PlayerSnapshot | undefined> {
+    return new Promise((resolve) => {
+      const finish = (snapshot: PlayerSnapshot | undefined): void => {
+        timer.dispose();
+        awaitingSnapshot = undefined;
+        resolve(snapshot);
+      };
+      const timer = clock.schedule(snapshotWaitMs, () => {
+        logger.log({
+          level: 'warn',
+          message: 'The player did not say what it shows: moving it with what FollowAlong knows.',
+        });
+        finish(undefined);
+      });
+      awaitingSnapshot = finish;
+      player.send({ type: 'takeSnapshot' });
+    });
+  }
+
+  /**
+   * Where the moved Lesson starts in the new page, and whether it plays: what the page it leaves
+   * said, or else what the core knows. A Lesson the learner has not engaged with yet starts where
+   * FollowAlong put it.
+   */
+  function carriedPlayhead(
+    shown: LessonLoad,
+    snapshot: PlayerSnapshot | undefined,
+  ): { readonly position: number; readonly playing: boolean } {
+    const reported = snapshot?.lesson;
+    if (reported !== undefined && shownLesson(reported) === shown) {
+      return { position: reported.position, playing: reported.playing };
+    }
+    if (!playerReady) {
+      return { position: shown.startAt, playing: shown.autoplay };
+    }
+    // A Lesson loaded with autoplay that has not played yet (its sound may still be preparing)
+    // is still to play, unless it has ended.
+    const playing = playback.playing || (playback.awaitingAutoplay && !playback.ended);
+    return { position: shown.engaged ? position : shown.startAt, playing };
+  }
+
+  /** Whether `shown` is still the Loaded Lesson, in an open player. */
+  function stillLoaded(shown: LessonLoad): boolean {
+    return current === shown && spot !== undefined;
+  }
+
+  async function move(to: VideoSpot): Promise<void> {
+    // `moveVideo` has told the learner already: it asks `spot()` before it asks for a spot.
+    if (current === undefined || spot === undefined) {
+      return;
+    }
+    requestedSpot = to;
+    if (awaitingSnapshot !== undefined) {
+      // The move under way waits for its snapshot; it goes where the learner asked last.
+      logger.log({ level: 'info', message: `Moving the video to ${to} instead, once it can` });
+      return;
+    }
+    const shown = current;
+    const snapshot =
+      to !== spot && playerReady && currentLoad !== undefined ? await takeSnapshot() : undefined;
+    const target = requestedSpot;
+    requestedSpot = undefined;
+    if (target === spot) {
+      return;
+    }
+    if (!stillLoaded(shown)) {
+      logger.log({
+        level: 'info',
+        message: 'Not moving the video: the player closed or another Lesson loaded meanwhile.',
+      });
+      return;
+    }
+    const carried = carriedPlayhead(shown, snapshot);
+    stopSaving();
+    if (shown.engaged) {
+      position = carried.position;
+      recordAndSave(shown, seenOf(shown, false));
+    }
+    // Like a page that reloaded mid-Lesson: the new page starts where the playhead was, and its
+    // start seek is FollowAlong's own, so it saves nothing (ADR 0030).
+    current = {
+      ...shown,
+      startAt: carried.position,
+      autoplay: carried.playing,
+      engaged: false,
+      startSeekPending: false,
+      lastPlayingPosition: undefined,
+    };
+    // Without a snapshot the zoom view is unknown: the whole picture, rather than whatever a view
+    // spot used before still holds in its webview state.
+    // A page that is still starting has nothing to say: what the page before it held is kept for
+    // the next page (review of #49, item 1).
+    const ended =
+      snapshot === undefined ? (pendingRestore?.ended ?? playback.ended) : playback.ended;
+    pendingRestore =
+      snapshot === undefined
+        ? { ...(pendingRestore ?? { rate, zoom: wholePicture }), ended }
+        : { rate: snapshot.rate, zoom: snapshot.zoom, ended };
+    // The page that held this load is gone: nothing (a prepared sound) is sent for it, and nothing
+    // it still posts is about the Lesson. The page in the new spot gets its own `load`.
+    currentLoad = undefined;
+    logger.log({ level: 'info', message: `Moving the video from ${spot} to ${target}` });
+    spot = target;
+    showPlayer(current.lesson, shownRoots);
+    refreshStatusBar();
+  }
+
+  /** A page that started in a new spot takes over the speed and zoom of the page it replaced. */
+  function restorePage(): void {
+    const restore = pendingRestore;
+    pendingRestore = undefined;
+    if (restore === undefined) {
+      return;
+    }
+    if (restore.rate !== rate) {
+      setRate(restore.rate);
+    }
+    // Also at the whole picture: a view spot keeps the webview state of the page it held before,
+    // and that page's zoom must not come back.
+    player.send({ type: 'restore', zoom: restore.zoom });
+    if (restore.ended) {
+      // Still at its end: a resume restarts it rather than stepping back (ADR 0016).
+      playback = { ...playback, ended: true };
+    }
   }
 
   /**
@@ -913,6 +1118,13 @@ export function createLoadedLesson(
   return {
     lesson: () => current?.lesson,
     load,
+    spot: () => (current === undefined ? undefined : spot),
+    move,
+    reveal(resourceRoots) {
+      if (current !== undefined) {
+        showPlayer(current.lesson, resourceRoots);
+      }
+    },
     leave,
     unload,
     playPause,

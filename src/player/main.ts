@@ -8,6 +8,7 @@ import {
   type AboutLesson,
   type PlayerCommand,
   type PlayerEvent,
+  type PlayerSnapshot,
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
@@ -111,6 +112,8 @@ interface Lesson {
   readonly stop: AbortController;
   /** Set once `error` was posted: nothing else is reported for this Lesson. */
   failed: boolean;
+  /** The `load`'s start position, until the player has written it (after `loadedmetadata`). */
+  pendingStart: number | undefined;
   /** Whether `played` was posted since the last pause, so a recovered stall is not a new play. */
   playing: boolean;
   /**
@@ -224,6 +227,7 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
       ...(command.loadId === undefined ? {} : { loadId: command.loadId }),
     },
     stop: new AbortController(),
+    pendingStart: command.startAt > 0 ? command.startAt : undefined,
     failed: false,
     playing: false,
     sound: awaitsSound ? 'awaited' : 'own',
@@ -258,6 +262,7 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
     media.addEventListener(
       'loadedmetadata',
       () => {
+        lesson.pendingStart = undefined;
         writeTime(lesson, media, command.startAt, 'start');
       },
       { once: true, signal },
@@ -517,7 +522,34 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
     case 'zoom':
       zoomControls.reset();
       break;
+    case 'takeSnapshot':
+      post({ type: 'snapshot', snapshot: snapshotOf(media) });
+      break;
+    case 'restore':
+      zoomControls.showView(command.zoom);
+      break;
   }
+}
+
+/**
+ * What the page shows and plays, for a page in another spot to carry on from (ADR 0049). A Lesson
+ * whose start position is not applied yet is where it is about to be; one waiting for its sound
+ * to play plays once it arrives, so it counts as playing.
+ */
+function snapshotOf(media: HTMLVideoElement): PlayerSnapshot {
+  const page = { rate: media.playbackRate, zoom: zoomControls.shown };
+  const lesson = current;
+  if (lesson === undefined || lesson.failed) {
+    return page;
+  }
+  return {
+    ...page,
+    lesson: {
+      ...lesson.about,
+      position: lesson.pendingStart ?? media.currentTime,
+      playing: !media.paused || lesson.playWhenSound,
+    },
+  };
 }
 
 /** Forwards what the media element does to the extension, as protocol events. */

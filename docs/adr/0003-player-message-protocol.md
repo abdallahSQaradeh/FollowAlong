@@ -80,3 +80,9 @@ ADR 0037.
 
 Ticket #42 added `soundProgress {percent}` (extension → player), `playWithoutSound` (player → extension,
 with `lessonId` and `loadId`), and the optional `soundCodecs` of `ready`; see ADR 0055 and ADR 0056.
+
+Ticket #49 added `takeSnapshot` and `restore {zoom}` (extension → player) and
+`snapshot {snapshot: {rate, zoom, lesson?}}` (player → extension, the answer to `takeSnapshot`;
+the Lesson inside carries `lessonId` and `loadId`, with its `position` and whether it is `playing`),
+to move the player to another spot; see ADR 0049. `ZoomView` and `isZoomView` now live in this
+protocol module.

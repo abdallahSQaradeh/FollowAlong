@@ -52,6 +52,8 @@ interface TestHooks {
   quickPicksShown(): number;
   /** The label of the highlighted item of the quick pick shown last. */
   activeQuickPickItem(): string | undefined;
+  /** The spot the player is in, and whether VS Code shows it. */
+  playerSpot(): { readonly spot: string; readonly visible: boolean } | undefined;
   /** Whether the quick pick shown last still shows its busy indicator. */
   quickPickBusy(): boolean;
 }
@@ -129,6 +131,7 @@ export async function run(): Promise<void> {
     'followalong.previousLesson',
     'followalong.goToLesson',
     'followalong.attachToLoadedLesson',
+    'followalong.moveVideo',
     'followalong.toggleLessonDone',
     'followalong.markLessonDone',
     'followalong.markLessonNotDone',
@@ -145,6 +148,17 @@ export async function run(): Promise<void> {
     'VS Code did not register the followalong.lessons view',
   );
   say('its commands and the Lessons tree view are registered');
+  // The video's own views: VS Code registers them only if it accepted their view containers in
+  // the bottom panel and the secondary sidebar (`viewsContainers.panel` / `.secondarySidebar`).
+  for (const view of ['followalong.videoPanel', 'followalong.videoSidebar']) {
+    assert.ok(registered.includes(`${view}.focus`), `VS Code did not register the ${view} view`);
+  }
+  assert.equal(
+    vscode.workspace.getConfiguration('followalong').get('videoLocation'),
+    'editorSplit',
+    'followalong.videoLocation defaults to the editor split',
+  );
+  say('the video views in the bottom panel and the secondary sidebar are registered');
 
   playPauseIsBoundToItsKeys(extension.packageJSON);
   say('FollowAlong: Play/Pause is in the Command Palette and bound to its default keys');
@@ -237,6 +251,184 @@ export async function run(): Promise<void> {
 
   await resourcesOpenByType(extension.extensionPath, hooks);
   say('Markdown, HTML, an image and a PDF each open in their own kind of tab beside the code');
+
+  await aLessonLoadsInEachSpot(extension.extensionPath, hooks);
+}
+
+/**
+ * The three spots of #49 (ADR 0049): `followalong.videoLocation` opens the Lesson in the bottom
+ * panel, and _Move video to…_ moves it to the secondary sidebar, beside the code, and back to the
+ * panel. In each spot VS Code shows the player, a new page loads the Lesson through asWebviewUri,
+ * the CSP and localResourceRoots, and the code keeps the focus. What a move carries (time, speed, play,
+ * zoom) is covered at Seam 1 and Seam 2.
+ */
+async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): Promise<void> {
+  const scratch = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
+  const settings = vscode.workspace.getConfiguration('followalong');
+  try {
+    const course = join(scratch, 'Spots Course');
+    mkdirSync(course);
+    copyFileSync(
+      join(extensionPath, 'test', 'fixtures', 'media', 'lesson.webm'),
+      join(course, 'spots.webm'),
+    );
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    const code = await vscode.workspace.openTextDocument({
+      language: 'javascript',
+      content: '2;\n',
+    });
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await settings.update('videoLocation', 'bottomPanel', vscode.ConfigurationTarget.Global);
+
+    let from = hooks.playerEvents.length;
+    await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+    say(await theLessonLoadsIn(hooks, 'bottomPanel', from, code));
+
+    // Back into the bottom panel at the end: a view spot used before takes a new page.
+    for (const spot of ['secondarySidebar', 'editorSplit', 'bottomPanel'] as const) {
+      from = hooks.playerEvents.length;
+      await vscode.commands.executeCommand('followalong.moveVideo', spot);
+      say(await theLessonLoadsIn(hooks, spot, from, code));
+      // Leaving the bottom panel must not leave the panel to fall back to the Terminal view, which
+      // starts a shell and takes the focus (gate round 1, CI run 43906351106).
+      assert.deepEqual(
+        vscode.window.terminals.map((terminal) => terminal.name),
+        [],
+        `moving the video to ${spot} started a terminal`,
+      );
+    }
+
+    say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
+  } finally {
+    await settings.update('videoLocation', undefined, vscode.ConfigurationTarget.Global);
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  }
+}
+
+/** Which part of the VS Code window has keyboard focus. */
+type FocusedPart = 'editor' | 'terminal' | 'webview' | 'other';
+
+/**
+ * Which part of the VS Code window has keyboard focus, read from the workbench page over the
+ * DevTools protocol. The extension API cannot say: `activeTextEditor` stays the code editor while
+ * focus sits in a webview view, and VS Code 1.146 has no command that reads a context key such as
+ * `editorTextFocus` (gate review of #49, item 2; `getContextKeyValue` is not found).
+ */
+async function focusedPart(): Promise<FocusedPart> {
+  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
+  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  try {
+    const workbench = browser
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((page) => page.url().includes('workbench'));
+    assert.ok(workbench, 'the DevTools connection lists no VS Code workbench page');
+    return await workbench.evaluate((): FocusedPart => {
+      const focused = document.activeElement;
+      if (focused === null) {
+        return 'other';
+      }
+      if (focused.closest('.terminal') !== null) {
+        return 'terminal';
+      }
+      if (focused.closest('.monaco-editor') !== null) {
+        return 'editor';
+      }
+      return focused.tagName === 'IFRAME' || focused.closest('.webview') !== null
+        ? 'webview'
+        : 'other';
+    });
+  } finally {
+    // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
+    await browser.close();
+  }
+}
+
+/**
+ * Focus return wins over the video (#12 D12): when the learner last typed in a terminal and the
+ * video moves to the bottom panel, focus goes back to that terminal, which then stays in front
+ * even though it hides the video there (gate review of #49, item 4).
+ */
+async function aTerminalKeepsItsFocusOverTheBottomPanel(hooks: TestHooks): Promise<string> {
+  await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+  await waitFor('the player in the editor group', () =>
+    hooks.playerSpot()?.spot === 'editorSplit' ? true : undefined,
+  );
+  // Outside the smoke workspace: on Windows a shell holds its working folder until it has exited,
+  // and scripts/run-smoke.mjs removes the workspace right after VS Code closes.
+  const terminal = vscode.window.createTerminal({ name: 'FollowAlong smoke', cwd: tmpdir() });
+  try {
+    terminal.show(false);
+    await waitForAsync('the terminal to take the focus', async () =>
+      (await focusedPart()) === 'terminal' ? true : undefined,
+    );
+    await vscode.commands.executeCommand('followalong.moveVideo', 'bottomPanel');
+    await waitFor('the player in the bottom panel', () =>
+      hooks.playerSpot()?.spot === 'bottomPanel' ? true : undefined,
+    );
+    // Longer than the adapter's 1 s watch for a hidden view.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(await focusedPart(), 'terminal', 'the terminal lost the focus');
+    assert.equal(
+      hooks.playerSpot()?.visible,
+      false,
+      'the video was brought in front of the terminal the learner was typing in',
+    );
+    return 'after a move to the bottom panel, the terminal the learner typed in keeps the focus and stays in front';
+  } finally {
+    terminal.dispose();
+  }
+}
+
+/** Waits for a new page in `spot` to load the Lesson, with VS Code showing it and the code focused. */
+async function theLessonLoadsIn(
+  hooks: TestHooks,
+  spot: string,
+  from: number,
+  code: vscode.TextDocument,
+): Promise<string> {
+  const lessonId = 'spots.webm';
+  const since = () => hooks.playerEvents.slice(from);
+  await waitFor(`a new player page in ${spot}`, () =>
+    since().some((event) => event.type === 'ready') ? true : undefined,
+  );
+  const loaded = await waitFor(
+    `the Lesson to load in ${spot}`,
+    () => {
+      const events = since();
+      const failure = events.find((event) => event.type === 'error');
+      assert.equal(failure, undefined, `the player failed in ${spot}: ${failure?.message ?? ''}`);
+      const ready = events.findIndex((event) => event.type === 'ready');
+      return events
+        .slice(ready)
+        .find(
+          (event) =>
+            event.type === 'timeUpdate' && event.lessonId === lessonId && (event.duration ?? 0) > 0,
+        );
+    },
+    20_000,
+  );
+  const where = await waitFor(`VS Code to show the player in ${spot}`, () => {
+    const hosted = hooks.playerSpot();
+    return hosted?.spot === spot && hosted.visible ? hosted : undefined;
+  });
+  // Keyboard focus itself, not only the active editor: VS Code keeps reporting the code editor as
+  // the active one while focus sits in a webview view (gate review of #49, item 2).
+  let lastFocused: FocusedPart = 'other';
+  await waitForAsync(
+    `keyboard focus back in the code after the player opened in ${spot}`,
+    async () => {
+      lastFocused = await focusedPart();
+      return lastFocused === 'editor' && vscode.window.activeTextEditor?.document === code
+        ? true
+        : undefined;
+    },
+  ).catch((error: unknown) => {
+    throw new Error(`${String(error)}; keyboard focus is in: ${lastFocused}`);
+  });
+  return `the Lesson loads in the ${where.spot} spot (length ${String(loaded.duration)} s), and the code keeps the focus`;
 }
 
 /**
