@@ -115,6 +115,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         const shown = isCurrent(event);
         if (shown !== undefined) {
+          // The player posts nothing more for a failed Lesson (ADR 0003), not even a pause.
+          stopPlaying(shown);
           ui.showMessage({
             severity: 'error',
             text: `FollowAlong could not play “${shown.lesson.title}”: ${event.message}`,
