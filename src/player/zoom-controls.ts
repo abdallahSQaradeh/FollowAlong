@@ -1,14 +1,16 @@
 /**
- * The player's zoom controls (ADR 0037): the box the learner drags over the picture, the zoom
- * toolbar, and what the page shows and keeps in its webview state. What a click on the picture
- * does stays with playback in `main.ts`; it asks these controls whether the page is zoomed, and
- * whether the click ends a drag.
+ * The player's zoom controls (ADR 0037, 0087, 0088): the box the learner drags over the picture,
+ * the pan, the wheel, the zoom toolbar, and what the page shows and keeps in its webview state. What
+ * a click on the picture does stays with playback in `main.ts`; it asks these controls whether the
+ * page is zoomed, and whether the click ends a drag.
  */
 import { zoomLabel } from '../protocol/player-messages.js';
 import type { Interactions } from './interactions.js';
 import {
   isZoomView,
+  panBy,
   wholePicture,
+  zoomAt,
   zoomBy,
   zoomStep,
   zoomToBox,
@@ -18,6 +20,10 @@ import {
 
 /** How far the pointer moves, in px, before a press on the picture is a drag and not a click. */
 const dragThreshold = 6;
+/** How far the wheel turns, in px of `deltaY`, for one step of {@link zoomStep}: a notch of a mouse. */
+const wheelNotch = 100;
+/** A turn of the wheel this long after the one before starts a new gesture, and drops its rest. */
+const wheelIdleMs = 250;
 /** A box smaller than this, in px either way, zooms to nothing. */
 const smallestBox = 12;
 
@@ -56,6 +62,10 @@ interface Press {
   readonly pointerId: number;
   readonly x: number;
   readonly y: number;
+  /** What a drag of this press does: set when it began, and kept until it ends. */
+  readonly kind: 'box' | 'pan';
+  /** What the page showed when the press began: a pan moves it from there. */
+  readonly view: ZoomView;
   dragging: boolean;
 }
 
@@ -74,6 +84,9 @@ export class ZoomControls {
   /** Set by the toolbar's area button: the next drag draws a box, whatever the zoom. */
   private areaMode = false;
   private press: Press | undefined;
+  /** The turn of the wheel, in px of `deltaY`, not yet enough for a step, and when it came. */
+  private wheelLeftover = 0;
+  private lastWheelAt = 0;
   /** Set when a drag ended: the `click` the browser fires after it is not a click. */
   private dragEnded = false;
   private readonly levelOutput: HTMLElement;
@@ -83,6 +96,7 @@ export class ZoomControls {
     this.levelOutput = part(options.toolbar, '.zoom-level');
     this.areaButton = part(options.toolbar, '[data-zoom="area"]');
     this.listenToDrags();
+    this.listenToWheel();
     this.listenToToolbar();
   }
 
@@ -139,11 +153,21 @@ export class ZoomControls {
 
   /** Shows `view`, keeps it in the webview state, and reports a new level. */
   private show(view: ZoomView): void {
-    const { media, state, zoomChanged } = this.options;
+    this.keep(view);
+    this.render(view);
+  }
+
+  /** Keeps `view` in the webview state. */
+  private keep(view: ZoomView): void {
+    // View state, not the Lesson's: it stays for the next Lesson and a reloaded page.
+    this.options.state.setState({ zoom: view } satisfies PageState);
+  }
+
+  /** Shows `view`, and reports a new level. */
+  private render(view: ZoomView): void {
+    const { media, zoomChanged } = this.options;
     const before = this.view.level;
     this.view = view;
-    // View state, not the Lesson's: it stays for the next Lesson and a reloaded page.
-    state.setState({ zoom: view } satisfies PageState);
     media.style.transform = zoomTransform(view);
     // The native control bar would be enlarged with the picture: it is off while zoomed, and the
     // overlay then covers the whole player, so the strip along the bottom is picture too.
@@ -162,8 +186,9 @@ export class ZoomControls {
   }
 
   /**
-   * A drag on the picture draws a box, and the player zooms to the area in it. The drag is one
-   * gesture for Focus return (ADR 0009): focus is handed back once it ends, not during it.
+   * A drag on the picture either draws a box, and the player zooms to the area in it, or pans the
+   * zoomed picture (ADR 0087). Which, is fixed when the press begins. The drag is one gesture for
+   * Focus return (ADR 0009): focus is handed back once it ends, not during it.
    */
   private listenToDrags(): void {
     const { overlay, box, interactions } = this.options;
@@ -173,10 +198,15 @@ export class ZoomControls {
       }
       // A drag whose `click` never came must not swallow this press's click.
       this.dragEnded = false;
+      // A drag pans only while zoomed, where there is more picture to move to; Shift, or area
+      // mode, asks for a new area instead (ADR 0087).
+      const draws = !this.zoomed || this.areaMode || event.shiftKey;
       this.press = {
         pointerId: event.pointerId,
         x: event.clientX,
         y: event.clientY,
+        kind: draws ? 'box' : 'pan',
+        view: this.view,
         dragging: false,
       };
       overlay.setPointerCapture(event.pointerId);
@@ -192,7 +222,19 @@ export class ZoomControls {
       }
       if (!press.dragging) {
         press.dragging = true;
+        document.body.classList.toggle('panning', press.kind === 'pan');
         interactions.beginGesture(event.pointerId);
+      }
+      if (press.kind === 'pan') {
+        const stage = this.stage();
+        this.render(
+          panBy(
+            press.view,
+            (event.clientX - press.x) / stage.width,
+            (event.clientY - press.y) / stage.height,
+          ),
+        );
+        return;
       }
       box.style.left = `${String(area.x)}px`;
       box.style.top = `${String(area.y)}px`;
@@ -202,9 +244,12 @@ export class ZoomControls {
     });
     overlay.addEventListener('pointerup', (event) => {
       if (this.press?.pointerId === event.pointerId) {
+        const { kind } = this.press;
         const area = rectangle(this.press, event.clientX, event.clientY);
         this.endPress(this.press.dragging);
-        this.zoomTo(area);
+        if (kind === 'box') {
+          this.zoomTo(area);
+        }
       }
     });
     // The browser took the pointer away (`pointercancel`), or the press lost its capture without
@@ -219,6 +264,43 @@ export class ZoomControls {
   }
 
   /**
+   * The wheel zooms toward the cursor, a step of {@link zoomStep} for each {@link wheelNotch} it
+   * turns. A trackpad's many small turns add up to steps, so each one that counts is a zoom the
+   * learner sees (a level that reads 1× is the whole picture). A turn is not a click, and it does
+   * not take focus from the editor, so there is nothing to hand back.
+   */
+  private listenToWheel(): void {
+    this.options.overlay.addEventListener(
+      'wheel',
+      (event) => {
+        // The page must not scroll, nor the browser zoom on a Ctrl+wheel or a pinch.
+        event.preventDefault();
+        // A turn to the side (Shift+wheel on some systems) is not a zoom, nor the end of one.
+        if (event.deltaY === 0) {
+          return;
+        }
+        // A drag under way owns the view: it would be drawn over, or moved from, a view that moved.
+        if (this.press !== undefined) {
+          return;
+        }
+        const turned = event.deltaY;
+        const reversed = Math.sign(turned) !== Math.sign(this.wheelLeftover);
+        const pause = event.timeStamp - this.lastWheelAt > wheelIdleMs;
+        this.lastWheelAt = event.timeStamp;
+        const total = (reversed || pause ? 0 : this.wheelLeftover) + turned;
+        const steps = Math.trunc(total / wheelNotch);
+        this.wheelLeftover = total - steps * wheelNotch;
+        if (steps === 0) {
+          return;
+        }
+        // Turning away from the learner (a negative `deltaY`) zooms in.
+        this.show(zoomAt(this.view, zoomStep ** -steps, this.onStage(event)));
+      },
+      { passive: false },
+    );
+  }
+
+  /**
    * Ends the press under way. A drag also ends its gesture and area mode: area mode is for the
    * next drag only, whether it zooms or not. `clickFollows`: the browser fires a `click` for it.
    */
@@ -228,13 +310,32 @@ export class ZoomControls {
       return;
     }
     this.press = undefined;
+    document.body.classList.remove('panning');
     this.options.box.setAttribute('hidden', '');
     if (!press.dragging) {
       return;
     }
+    if (press.kind === 'pan') {
+      // The pan moved the view without keeping it: it is kept once, where the pan ended.
+      this.keep(this.view);
+    }
     this.dragEnded = clickFollows;
     this.setAreaMode(false);
     this.options.interactions.endGesture(press.pointerId);
+  }
+
+  /** The player's box, in px of the page: at 1× the overlay stops above the native control bar. */
+  private stage(): DOMRect {
+    return (this.options.overlay.parentElement ?? this.options.overlay).getBoundingClientRect();
+  }
+
+  /** Where the pointer of `event` is on the player, in fractions of its width and height. */
+  private onStage(event: MouseEvent): { x: number; y: number } {
+    const stage = this.stage();
+    return {
+      x: (event.clientX - stage.x) / stage.width,
+      y: (event.clientY - stage.y) / stage.height,
+    };
   }
 
   /** Zooms to the area of a box drawn over the picture, when it is big enough to mean one. */
@@ -242,11 +343,7 @@ export class ZoomControls {
     if (area.width < smallestBox || area.height < smallestBox) {
       return;
     }
-    // Until #47 a plain drag also draws a box: at 1×, while zoomed and in area mode alike.
-    // The player's box: at 1× the overlay stops above the native control bar.
-    const stage = (
-      this.options.overlay.parentElement ?? this.options.overlay
-    ).getBoundingClientRect();
+    const stage = this.stage();
     this.show(
       zoomToBox(this.view, {
         x: (area.x - stage.x) / stage.width,
