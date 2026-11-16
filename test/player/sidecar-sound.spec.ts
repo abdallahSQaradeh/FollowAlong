@@ -16,7 +16,7 @@ function loadMp4(overrides: Partial<Extract<PlayerCommand, { type: 'load' }>> = 
   return {
     type: 'load',
     lessonId,
-    videoUri: media.longMp4,
+    videoUri: media.sidecarMp4,
     container: 'mp4',
     startAt: 0,
     autoplay: true,
@@ -24,7 +24,7 @@ function loadMp4(overrides: Partial<Extract<PlayerCommand, { type: 'load' }>> = 
   };
 }
 
-const soundReady: PlayerCommand = { type: 'soundReady', audioUri: media.longMp3 };
+const soundReady: PlayerCommand = { type: 'soundReady', audioUri: media.sidecarMp3 };
 
 /** Waits a moment in which the player could act, to check that it did not. */
 async function aMoment(): Promise<void> {
@@ -72,7 +72,7 @@ test.describe('sound for an MP4 Lesson when AAC does not play', () => {
     const video = await player.video();
     expect(video.muted).toBe(true);
     expect(video.paused).toBe(false);
-    expect((await player.sound()).source).toBe(media.longMp3);
+    expect((await player.sound()).source).toBe(media.sidecarMp3);
     expect((await player.sound()).muted).toBe(false);
     await expectSoundInStep(player);
   });

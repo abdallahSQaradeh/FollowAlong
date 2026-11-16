@@ -30,9 +30,9 @@ export const media = {
   /** A download that stopped before its first byte. */
   empty: `${origin}/media/empty.webm`,
   /** 8 s, H.264 + AAC, index (moov atom) at the end. */
-  longMp4: `${origin}/media/long.mp4`,
-  /** long.mp4's sound as the audio sidecar converts it (MP3). */
-  longMp3: `${origin}/media/long.mp3`,
+  sidecarMp4: `${origin}/media/sidecar.mp4`,
+  /** sidecar.mp4's sound as the audio sidecar converts it (MP3). */
+  sidecarMp3: `${origin}/media/sidecar.mp3`,
 } as const;
 export const webmDuration = 3;
 
@@ -173,8 +173,8 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       path === '/media/long.webm' ||
       path === '/media/no-duration.webm' ||
       path === '/media/sample.mp4' ||
-      path === '/media/long.mp4' ||
-      path === '/media/long.mp3'
+      path === '/media/sidecar.mp4' ||
+      path === '/media/sidecar.mp3'
     ) {
       const contentType = path.endsWith('.mp4')
         ? 'video/mp4'
