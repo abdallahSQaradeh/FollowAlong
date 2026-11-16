@@ -65,22 +65,36 @@ Later tickets add intents and entries to this model: Recent and _(open)_ (#35), 
 later open started changes nothing (logged), so two quick picks can never leave the earlier Course
 open with the later one's player.
 
-## The player panel is kept across Courses
+## The player keeps its page across Courses under the Courses roots
 
 ADR 0002 made a new webview panel for every Course, because `localResourceRoots` is fixed at
 creation. That cost the learner the click that lets the player start playback (#12 D3, ADR 0008)
-at every switch, and moved the tab. Now `PlayerPanel.show` with other roots keeps the panel and sets
-`webview.options` with the new `localResourceRoots`; VS Code reloads the page in the same panel,
-which posts `ready`, and the core loads the Lesson as for a new page (`show` still answers
-`created`). The panel is never disposed on a switch, so `Player.onDidClose` cannot fire for it.
+at every switch, and moved the tab. Two changes:
 
-MEASUREMENT_PLACEHOLDER
+- **The panel is kept.** `PlayerPanel.show` with other roots sets `webview.options` with the new
+  `localResourceRoots` on the open panel. VS Code reloads the page in the same panel, which posts
+  `ready`, and the core loads the Lesson as for a new page (`show` still answers `created`). The
+  panel is never disposed on a switch, so `Player.onDidClose` cannot fire for it, and the tab stays
+  in its editor group.
+- **The roots rarely change.** Measured in the smoke test on VS Code 1.146 (Windows, CI run
+  43813403964): the reload loses the click. The picked Course's Lesson was refused autoplay
+  (`paused {byUser: false}`) in the kept panel. So the core now gives the player the **Courses
+  roots** as its folders, plus the Course folder only when it is outside every root, plus the
+  extension storage. Switching between Courses under the roots keeps the same roots: `show`
+  answers `revealed`, the same page loads the next Lesson, and it still has the click. The smoke
+  test asserts it: after one click, a Course picked under the same root starts by itself. A
+  Course outside the roots, or a changed `coursesRoots` setting, reloads the page once.
+
+The cost: the player page may read any file under the Courses roots, not only the open Course's.
+The roots are folders the learner named for their Courses, and the page is FollowAlong's own,
+with a nonce CSP and no remote content, which only fetches the URIs the core sends it.
 
 ## Considered options
 
-- **Widen `localResourceRoots` to every Courses root**, so Courses under the roots never change
-  them. Not needed (see the measurement), and it would let the page read every file under the
-  roots, not just the open Course.
+- **Only the open Course's folder, with a kept panel.** Rejected after the measurement: every
+  switch reloads the page and asks for a click again.
+- **A wide fixed root (the drive, the home folder).** Rejected: no reload ever, but the page could
+  read nearly everything on the machine.
 - **The scanner names Courses and the picker sorts them.** Rejected: the scan result is what #37
   caches, so it carries its final order and names.
 - **A folder dialog for _Open Course…_ beside the picker.** Rejected: the spec replaces it, and
