@@ -15,6 +15,7 @@ import {
 import { buildCoursePicker, type RecentCourse } from './course-picker.js';
 import { folderLabel, scanCourses, type ScannedCourse } from './course-scanner.js';
 import { addCoursesRoot, keyOf, playerFolders, readCoursesRoots } from './courses-roots.js';
+import { locateCourse } from './locate-course.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
@@ -38,7 +39,7 @@ import {
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
-import { readRecent, recordOpened } from './recent-courses.js';
+import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
@@ -480,6 +481,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         if (await chooseCoursesRoot()) {
           await pickCourse();
         }
+        break;
+      case 'removeRecentCourse':
+        await removeRecent(storage.global, intent.folder);
+        await pickCourse();
+        break;
+      case 'locateCourse':
+        // Shown again either way: the entry is re-pointed, or still missing after a cancel.
+        await locateCourse(ports, intent.folder);
+        await pickCourse();
         break;
       case undefined:
         break;

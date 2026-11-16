@@ -49,3 +49,27 @@ export async function removeRecent(store: KeyValueStore, folder: string): Promis
     readRecent(store).filter((other) => removed === undefined || keyOf(other) !== keyOf(removed)),
   );
 }
+
+/**
+ * Points the Recent Course at `from` to `to` instead, keeping its place. If `to` is in Recent
+ * already, the entry that is nearer the top stays and the other goes.
+ */
+export async function relocateRecent(
+  store: KeyValueStore,
+  from: string,
+  to: string,
+): Promise<void> {
+  const source = spelled(from);
+  const target = spelled(to);
+  if (target === undefined) {
+    return;
+  }
+  const folders = new Map<string, string>();
+  for (const folder of readRecent(store)) {
+    const moved = source !== undefined && keyOf(folder) === keyOf(source) ? target : folder;
+    if (!folders.has(keyOf(moved))) {
+      folders.set(keyOf(moved), moved);
+    }
+  }
+  await store.set(recentKey, [...folders.values()]);
+}

@@ -5,7 +5,7 @@
  */
 import * as vscode from 'vscode';
 
-import type { QuickPickModel } from '../../core/quick-pick.js';
+import type { QuickPickButtonModel, QuickPickModel } from '../../core/quick-pick.js';
 
 type IntentItem<Intent> = vscode.QuickPickItem & { readonly intent?: Intent };
 
@@ -15,12 +15,21 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
     quickPick.title = model.title;
     quickPick.placeholder = model.placeholder;
     quickPick.matchOnDescription = model.matchOnDescription;
+    /** What pressing each button asks for: a VS Code button carries no data of ours. */
+    const buttonIntents = new Map<vscode.QuickInputButton, Intent>();
+    const buttonsOf = (buttons: readonly QuickPickButtonModel<Intent>[]) =>
+      buttons.map((button): vscode.QuickInputButton => {
+        const drawn = { iconPath: new vscode.ThemeIcon(button.icon), tooltip: button.label };
+        buttonIntents.set(drawn, button.intent);
+        return drawn;
+      });
     quickPick.items = model.entries.map((entry): IntentItem<Intent> =>
       entry.kind === 'separator'
         ? { label: entry.label, kind: vscode.QuickPickItemKind.Separator }
         : {
             label: entry.label,
             ...(entry.description === undefined ? {} : { description: entry.description }),
+            ...(entry.buttons === undefined ? {} : { buttons: buttonsOf(entry.buttons) }),
             intent: entry.intent,
           },
     );
@@ -38,6 +47,11 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
       const picked = quickPick.selectedItems[0];
       if (picked?.intent !== undefined) {
         answer(picked.intent);
+      }
+    });
+    quickPick.onDidTriggerItemButton(({ button }) => {
+      if (buttonIntents.has(button)) {
+        answer(buttonIntents.get(button));
       }
     });
     quickPick.onDidHide(() => {

@@ -350,6 +350,29 @@ export class RecordingUi implements UiSink {
     answer(item.intent);
   }
 
+  /** The labels of the buttons beside the open quick pick's item with this label. */
+  buttonsOf(label: string): string[] {
+    const item = this.picker?.entries.find(
+      (entry) => entry.kind === 'item' && entry.label === label,
+    );
+    return item?.kind === 'item' ? (item.buttons ?? []).map((button) => button.label) : [];
+  }
+
+  /** The learner presses a button beside the open quick pick's item with this label. */
+  press(label: string, button: string): void {
+    const item = this.picker?.entries.find(
+      (entry) => entry.kind === 'item' && entry.label === label,
+    );
+    const pressed =
+      item?.kind === 'item' ? item.buttons?.find((b) => b.label === button) : undefined;
+    if (this.answer === undefined || pressed === undefined) {
+      throw new Error(`No button “${button}” beside “${label}” in the open quick pick`);
+    }
+    const answer = this.answer;
+    this.answer = undefined;
+    answer(pressed.intent);
+  }
+
   /** The learner closes the quick pick without picking. */
   dismissPicker(): void {
     const answer = this.answer;
