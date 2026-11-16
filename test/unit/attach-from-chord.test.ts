@@ -82,8 +82,8 @@ describe('attaching a Resource from the chord', () => {
     await attached;
 
     expect(resourceLabels(h, '01 One.webm')).toEqual([]);
-    const stored = await readFile(join(notes, '..', '.followalong', 'resources.json'), 'utf8');
-    expect(stored).toContain('notes.md');
+    await h.core.openCourse(join(notes, '..'));
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
   });
 
   it('never pauses or otherwise commands the player', async () => {

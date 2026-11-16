@@ -15,7 +15,7 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
 - **The interface is small.** `lesson()`, `load(lesson, {startAt, autoplay, resourceRoots})`,
   `leave()`, `unload(pause)`, the playback commands and `dispose()`. Behind it sit the player event
   dispatch, `loadId` gating, rate reconciliation, autoplay refusal, the save timer and the status
-  bar. It needs three things from the Course side, passed in as a `LessonCourse`: the open Course's
+  bar. It needs three things from the Course side, passed in as an `OpenCourseView`: the open Course's
   Progress, the Lesson after a given Lesson in Course order, and what to do when the Next overlay is
   clicked.
 - **The seam is internal.** `createFollowAlong(ports)` and its `FollowAlong` interface do not
@@ -27,10 +27,10 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   - Player events already carry the `loadId` (ADR 0022).
   - Finding the Lesson beside the Loaded Lesson compares the `Lesson` objects of the open
     Course, so a Lesson from another Course is not found there.
-  - Anything that crosses an `await` keeps the Course with the Lesson it names. The attach from
-    the chord fixes both the Lesson and its Course at the key press (ADR 0023), so a Course opened
-    while the file dialog is up never receives the Resource. That fix is the one behaviour change
-    of CP1, with a red-then-green Seam 1 test.
+  - A Lesson the core holds across an `await` keeps its Course with it. The attach from the chord
+    fixes both the Lesson and its Course at the key press (ADR 0023), so a Course opened while the
+    file dialog is up never receives the Resource. That fix is the one behaviour change of CP1,
+    with a red-then-green Seam 1 test.
 
 ## Considered options
 

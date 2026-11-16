@@ -33,7 +33,7 @@ export interface CourseProgress {
 }
 
 /** How far before the saved position a Lesson starts again (spec #12, Resume). */
-const resumeLeadInSeconds = 5;
+const secondsBeforeSavedPosition = 5;
 
 function isFields(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -110,7 +110,7 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
 /** Where a Lesson starts when the learner comes back to it: 5 s before its saved position. */
 export function resumePosition(progress: CourseProgress, lessonId: string): number {
   const saved = entryOf(progress.lessons, lessonId);
-  return Math.max(0, (saved?.position ?? 0) - resumeLeadInSeconds);
+  return Math.max(0, (saved?.position ?? 0) - secondsBeforeSavedPosition);
 }
 
 /** One open Course's Progress: read once when the Course opens, saved as the learner goes. */

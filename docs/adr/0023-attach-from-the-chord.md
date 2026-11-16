@@ -16,7 +16,8 @@ node to name the Lesson, so these are the choices the spec leaves open.
   dialog code itself stays in the adapter; the tree's "+" calls the same helper
   (`pickFileToAttach`). `attachResource` is unchanged.
 - **The Lesson is fixed when the key is pressed**, not when the dialog closes: the learner means
-  the Lesson they were watching, even if the next one starts while the dialog is open.
+  the Lesson they were watching, even if the next one starts while the dialog is open. (Revised by
+  ADR 0024: its Course is fixed too, so a Course opened meanwhile never receives the Resource.)
 - **The flow never touches the player.** The native dialog does not pause the webview, and the
   core sends no player message. Attaching is not a Focus change: after the dialog closes, whether
   a file was picked, the dialog was closed, or the attach failed, the core calls

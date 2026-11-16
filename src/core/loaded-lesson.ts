@@ -27,7 +27,7 @@ export type SpeedDirection = 'up' | 'down';
 export const noLessonText = 'FollowAlong: no Lesson is open. Open a Course first.';
 
 /** What the Loaded Lesson needs from the open Course. */
-export interface LessonCourse {
+export interface OpenCourseView {
   /** The open Course's Progress, which the Loaded Lesson's playhead is recorded into. */
   progress(): ProgressRecorder | undefined;
   /** The Lesson after `lesson` in the open Course's Course order, if there is one. */
@@ -80,8 +80,8 @@ export interface LoadedLesson {
   dispose(): void;
 }
 
-/** The Lesson the player shows, and how it was loaded. */
-interface CurrentLesson {
+/** The Loaded Lesson, and how it was loaded. */
+interface LessonLoad {
   readonly lesson: Lesson;
   readonly startAt: number;
   readonly autoplay: boolean;
@@ -176,11 +176,11 @@ function pressPlayText(lesson: Lesson): string {
 
 export function createLoadedLesson(
   ports: Pick<Ports, 'player' | 'clock' | 'ui' | 'logger' | 'config'>,
-  course: LessonCourse,
+  course: OpenCourseView,
 ): LoadedLesson {
   const { player, clock, ui, logger, config } = ports;
 
-  let current: CurrentLesson | undefined;
+  let current: LessonLoad | undefined;
   /** How many `load`s were sent, and the `loadId` of the one that loaded `current`, if any. */
   let loads = 0;
   let currentLoad: number | undefined;
@@ -287,7 +287,7 @@ export function createLoadedLesson(
    * same Lesson id is not enough: the page outlives a Course (ADR 0022), and another Course can
    * hold a Lesson with the same id, so the event must also come from the current `load`.
    */
-  function shownLesson(event: AboutLesson): CurrentLesson | undefined {
+  function shownLesson(event: AboutLesson): LessonLoad | undefined {
     return event.lessonId === current?.lesson.id &&
       currentLoad !== undefined &&
       event.loadId === currentLoad
