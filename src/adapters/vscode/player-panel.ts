@@ -224,10 +224,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           return;
         }
         this.awaitedSpot = undefined;
-        const { host, panel, startPage } = this.openPanel('floatingWindow', title);
+        const { host, panel, startPage, setMoving } = this.openPanel('floatingWindow', title);
         this.host = host;
         // The queue waits for the move into the new window, as the spot changes after it must.
-        return this.moveIntoFloatingWindow(host, panel, startPage);
+        return this.moveIntoFloatingWindow(host, panel, startPage, setMoving);
       }
       case 'miniStrip':
         return this.openStrip();
@@ -333,7 +333,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private openPanel(
     spot: PanelSpot,
     title: string,
-  ): { readonly host: Host; readonly panel: vscode.WebviewPanel; readonly startPage: () => void } {
+  ): {
+    readonly host: Host;
+    readonly panel: vscode.WebviewPanel;
+    readonly startPage: () => void;
+    readonly setMoving: (moving: boolean) => void;
+  } {
     const floating = spot === 'floatingWindow';
     const panel = vscode.window.createWebviewPanel(
       playerViewType,
@@ -348,6 +353,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       { ...this.webviewOptions(), retainContextWhenHidden: true },
     );
     let dropped = false;
+    /**
+     * Set while VS Code moves the tab into its new window. A tab disposed meanwhile leaves that
+     * window empty and open, so a drop then waits until the move is over (#50 merge with #51, CI).
+     */
+    let moving = false;
+    let disposeWhenMoved = false;
     /** What the page posts is forwarded until the host is dropped. */
     const forwarding: vscode.Disposable[] = [];
     const host: Host = {
@@ -372,9 +383,20 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
         for (const subscription of forwarding) {
           subscription.dispose();
         }
+        if (moving) {
+          disposeWhenMoved = true;
+          return;
+        }
         panel.dispose();
       },
       closeContainer: () => Promise.resolve(),
+    };
+    const setMoving = (now: boolean): void => {
+      moving = now;
+      if (!now && disposeWhenMoved) {
+        disposeWhenMoved = false;
+        panel.dispose();
+      }
     };
     panel.onDidDispose(() => {
       // A panel dropped for a move is not a close: the Lesson is still there. The learner closing
@@ -392,7 +414,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     if (!floating) {
       startPage();
     }
-    return { host, panel, startPage };
+    return { host, panel, startPage, setMoving };
   }
 
   /**
@@ -406,6 +428,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     host: Host,
     panel: vscode.WebviewPanel,
     startPage: () => void,
+    setMoving: (moving: boolean) => void,
   ): Promise<void> {
     const isStillThePlayer = (): boolean => this.host === host;
     if (!isStillThePlayer()) {
@@ -424,12 +447,16 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       );
       return;
     }
+    setMoving(true);
     try {
       await vscode.commands.executeCommand(floatCommands.move);
     } catch (error) {
+      setMoving(false);
       this.cannotFloat(host, messageOf(error));
       return;
     }
+    // A drop that came meanwhile (a collapse, another spot) disposes the tab now, in its window.
+    setMoving(false);
     // The new window takes the focus a moment after VS Code opened it.
     await this.whileOpen(panel, floatSettleMs, () => false);
     if (!isStillThePlayer()) {

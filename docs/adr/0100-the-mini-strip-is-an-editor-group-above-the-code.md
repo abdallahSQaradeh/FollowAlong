@@ -89,6 +89,15 @@ group at the end" is a group to the right of the code, under the strip: the stri
 width. With more groups the strip sits above the group the learner was in, and the Resource goes
 where the placement's rules put it.
 
+## After the merge with the floating window (#51)
+
+The floating window (ADR 0102) now opens as one more case of the same queue (`open(spot)`): its
+tab is made when its turn comes, and the queue waits for its move into the new window, as the spot
+changes after it must. That exposed a race the earlier timing hid (CI, merged head 67cc415): a
+collapse that comes while `moveEditorToNewWindow` is running disposed the tab mid-move and left an
+empty floating window open. A floating tab dropped during that command is now disposed once the
+command has finished, in its new window, which VS Code then closes as it does for any closed tab.
+
 ## Known limits
 
 - A group `newGroupAbove` makes after its 5 s wait ran out (VS Code very slow) is left as it is, an
