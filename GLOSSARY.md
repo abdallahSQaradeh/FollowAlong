@@ -24,6 +24,10 @@ _Avoid_: Module, chapter, part
 The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing.
 _Avoid_: Lesson search, jump list
 
+**Course order**:
+The order the Course presents its Lessons in: a folder's own Lessons first, then its Sections, each in natural order. The next and previous Lesson, and the Lesson tree, follow it. It stops at the first and the last Lesson and does not wrap.
+_Avoid_: Playlist order, queue
+
 **Wrapper folder**:
 A folder inside a Course that holds no Lessons of its own and only one other folder with Lessons. It is not shown as a Section: its content is shown in its place.
 _Avoid_: Container folder, parent folder

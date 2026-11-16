@@ -34,26 +34,32 @@ export const commands = {
   /** `Ctrl+'` `↑` / `↓`: one rung up or down the speed ladder. */
   speedUp: 'followalong.speedUp',
   speedDown: 'followalong.speedDown',
+  /** `Ctrl+'` `N` / `P`: the next or previous Lesson in Course order. */
+  nextLesson: 'followalong.nextLesson',
+  previousLesson: 'followalong.previousLesson',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
 } as const;
 
 /**
  * What `activate` returns when VS Code runs the extension's tests (`ExtensionMode.Test`): the
- * player events the extension received, so the smoke test can see the real page play a Lesson.
+ * player events the extension received, so the smoke test can see the real page play a Lesson,
+ * and the Lesson the tree has selected.
  * In normal use `activate` returns nothing.
  */
 export interface TestHooks {
   readonly playerEvents: readonly PlayerEvent[];
   /** The Lesson tree the learner sees now. */
   lessonTree(): LessonTreeModel;
+  /** The id of the Lesson the Lesson tree shows as selected. */
+  selectedLesson(): string | undefined;
 }
 
 export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
-  const lessonTree = new LessonTreeView();
+  const lessonTree = new LessonTreeView(logger);
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -86,7 +92,11 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     const playerEvents: PlayerEvent[] = [];
     context.subscriptions.push(player.onEvent((event) => playerEvents.push(event)));
-    testHooks = { playerEvents, lessonTree: () => lessonTree.current };
+    testHooks = {
+      playerEvents,
+      lessonTree: () => lessonTree.current,
+      selectedLesson: () => lessonTree.selectedLesson(),
+    };
   }
 
   context.subscriptions.push(
@@ -168,6 +178,12 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.speedDown, () => {
       core.speedStep('down');
+    }),
+    register(commands.nextLesson, () => {
+      core.nextLesson();
+    }),
+    register(commands.previousLesson, () => {
+      core.previousLesson();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );
