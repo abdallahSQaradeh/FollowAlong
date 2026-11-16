@@ -408,6 +408,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** The open Course's Course data, and the Resources read from it. */
   let courseData: CourseData | undefined;
   let resources: ResourcesData = noResources;
+  /** The Courses roots setting entries the learner was told about in this window. */
+  const warnedRoots = new Set<string>();
   /** How many Course opens have started: the number of the latest, which is the one that wins. */
   let opens = 0;
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
@@ -425,7 +427,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     ui.selectLesson(lesson.id);
     const shown = player.show({
       title: lesson.title,
-      resourceRoots: playerFolders(readCoursesRoots(config), course.folder, storage.folder),
+      resourceRoots: playerFolders(readCoursesRoots(config).roots, course.folder, storage.folder),
     });
     if (shown === 'created') {
       // A new page is not ready and plays at normal speed.
@@ -624,9 +626,30 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     play(course, first);
   }
 
+  /**
+   * Tells the learner, once per window, about setting entries that are not a full path: they are
+   * skipped, because a path such as `.` resolves against whatever folder VS Code runs in.
+   */
+  function warnNotAbsolute(entries: readonly string[]): void {
+    const unwarned = entries.filter((entry) => !warnedRoots.has(entry));
+    if (unwarned.length === 0) {
+      return;
+    }
+    for (const entry of unwarned) {
+      warnedRoots.add(entry);
+    }
+    const names = unwarned.map((entry) => `“${entry}”`).join(', ');
+    const root = unwarned.length === 1 ? 'root' : 'roots';
+    ui.showMessage({
+      severity: 'warning',
+      text: `FollowAlong skips the Courses ${root} ${names}: a Courses root must be a full path, such as D:\\Learning.`,
+    });
+  }
+
   /** The Course picker. */
   async function pickCourse(): Promise<void> {
-    const roots = readCoursesRoots(config);
+    const { roots, notAbsolute } = readCoursesRoots(config);
+    warnNotAbsolute(notAbsolute);
     const scan = await scanCourses(ports, roots);
     for (const root of scan.unreadableRoots) {
       ui.showMessage({

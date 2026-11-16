@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -298,5 +298,57 @@ describe('the Course picker', () => {
     });
 
     expect(h.player.sent).toEqual([]);
+  });
+
+  it('takes two spellings of one Courses root as one root', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Some Course/intro.webm': 'v' });
+    // A trailing separator, a `..` segment, and on Windows another letter case: the same folder.
+    const spellings = [
+      `${learning}${sep}`,
+      `${learning}${sep}Some Course${sep}..`,
+      ...(process.platform === 'win32' ? [learning.toUpperCase(), learning.toLowerCase()] : []),
+    ];
+    h.config.set('coursesRoots', [learning, ...spellings]);
+    h.ui.folderAnswers.push(`${learning}${sep}`);
+
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    h.ui.choose('Add Courses root…');
+    await h.ui.pickerShown();
+    h.ui.choose('Some Course');
+    await picking;
+
+    expect(h.config.get('coursesRoots')).toEqual([learning, ...spellings]);
+    expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
+      [learning, h.storage.folder],
+    ]);
+  });
+
+  it('skips a Courses root that is not an absolute path, and says so once', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Some Course/intro.webm': 'v' });
+    h.config.set('coursesRoots', ['.', '~', `relative${sep}folder`, learning]);
+
+    const first = h.core.pickCourse();
+    await h.ui.pickerShown();
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    h.ui.choose('Some Course');
+    await first;
+    const second = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.dismissPicker();
+    await second;
+
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'warning',
+        text: `FollowAlong skips the Courses roots “.”, “~”, “relative${sep}folder”: a Courses root must be a full path, such as D:\\Learning.`,
+      },
+    ]);
+    expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
+      [learning, h.storage.folder],
+    ]);
   });
 });
