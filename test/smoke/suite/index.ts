@@ -54,8 +54,6 @@ interface TestHooks {
   activeQuickPickItem(): string | undefined;
   /** The spot the player is in, and whether VS Code shows it. */
   playerSpot(): { readonly spot: string; readonly visible: boolean } | undefined;
-  /** [DEBUG-49v] */
-  debugTrace(): readonly string[];
   /** Whether the quick pick shown last still shows its busy indicator. */
   quickPickBusy(): boolean;
 }
@@ -300,11 +298,6 @@ async function theLessonLoadsIn(
   const where = await waitFor(`VS Code to show the player in ${spot}`, () => {
     const hosted = hooks.playerSpot();
     return hosted?.spot === spot && hosted.visible ? hosted : undefined;
-  }).catch((reason: unknown) => {
-    // [DEBUG-49v]
-    throw new Error(
-      `${String(reason)}; place=${JSON.stringify(hooks.playerSpot())}; trace:\n${hooks.debugTrace().join('\n')}`,
-    );
   });
   await waitFor(`the focus back in the code after the player opened in ${spot}`, () =>
     vscode.window.activeTextEditor?.document === code ? true : undefined,

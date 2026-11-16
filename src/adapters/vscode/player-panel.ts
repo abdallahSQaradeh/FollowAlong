@@ -75,32 +75,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private readonly events = new vscode.EventEmitter<PlayerEvent>();
   private readonly closed = new vscode.EventEmitter<undefined>();
   private readonly subscriptions: vscode.Disposable[] = [];
-  /** [DEBUG-49v] An id per resolved view, to tell them apart in the trace. */
-  private readonly viewIds = new WeakMap<vscode.WebviewView, number>();
-  private nextViewId = 1;
-
-  /** [DEBUG-49v] Logs a step of a spot move. */
-  private trace(message: string): void {
-    const groups = vscode.window.tabGroups.all.length;
-    this.logger.log({
-      level: 'debug',
-      message: `[DEBUG-49v] +${String(Date.now() % 100000)}ms groups=${String(groups)} ${message}`,
-    });
-  }
-
-  /** [DEBUG-49v] */
-  private idOf(view: vscode.WebviewView | undefined): string {
-    if (view === undefined) {
-      return 'none';
-    }
-    let id = this.viewIds.get(view);
-    if (id === undefined) {
-      id = this.nextViewId;
-      this.nextViewId += 1;
-      this.viewIds.set(view, id);
-    }
-    return `v${String(id)}(visible=${String(view.visible)})`;
-  }
 
   constructor(
     private readonly extensionPath: string,
@@ -138,9 +112,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   show(options: PlayerShowOptions): PlayerShowResult {
     const { title, resourceRoots, spot } = options;
-    this.trace(
-      `show ${spot}; host=${this.host?.spot ?? 'none'} awaited=${this.awaitedView?.spot ?? 'none'}`,
-    );
     const sameRoots =
       resourceRoots.length === this.roots.length &&
       resourceRoots.every((root, index) => root === this.roots[index]);
@@ -257,7 +228,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       },
     };
     panel.onDidDispose(() => {
-      this.trace(`panel disposed; dropped=${String(dropped)}`);
       // A panel dropped for a move is not a close: the Lesson is still there.
       if (!dropped && this.host === host) {
         this.playerGone();
@@ -269,10 +239,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   /**
    * Shows the view of the spot the player is awaited in, and starts the page in whichever view
-   * VS Code then shows: a view it resolves now, or one it resolved before once that is visible
-   * again. A view hidden by its `when` clause is not brought back by `WebviewView.show`, and the
-   * page must not start in one that stays hidden (smoke test, CI runs 43894818485, 43895921006).
-   * The container is opened with its command either way.
+   * VS Code then shows. VS Code disposes a view its `when` clause hides and resolves a new one
+   * when it shows again (trace, CI run 43897862321), so the page starts in the view it resolves
+   * now; a view it still holds is used once it is visible. The container is opened with its
+   * command either way.
    */
   private openView(spot: ViewSpot): void {
     if (this.awaitedView?.spot !== spot) {
@@ -280,9 +250,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       return;
     }
     const existing = this.views.get(spot);
-    this.trace(`openView ${spot}; existing=${this.idOf(existing)}`);
     const watching = existing?.onDidChangeVisibility(() => {
-      this.trace(`visibility ${spot} ${this.idOf(existing)}`);
       if (existing.visible) {
         this.adopt(spot, existing);
       }
@@ -293,13 +261,9 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     // Opening the container focuses the view: focus goes back to the code once it is open.
     vscode.commands.executeCommand(`workbench.view.extension.${playerViews[spot].container}`).then(
       () => {
-        this.trace(
-          `container opened ${spot}; existing=${this.idOf(existing)} now=${this.idOf(this.views.get(spot))}`,
-        );
         if (existing?.visible === true) {
           this.adopt(spot, existing);
         }
-        this.trace('returnFocus');
         void this.returnFocus().then(() => {
           this.keepShown(spot);
         });
@@ -328,7 +292,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private keepShown(spot: ViewSpot): void {
     const host = this.host;
     const view = this.views.get(spot);
-    this.trace(`keepShown ${spot}; host=${host?.spot ?? 'none'} view=${this.idOf(view)}`);
     if (host?.spot !== spot || view?.webview !== host.webview) {
       return;
     }
@@ -339,7 +302,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     // The hide can also come just after: watch the next change for a moment.
     const watching = view.onDidChangeVisibility(() => {
       watching.dispose();
-      this.trace(`keepShown change ${spot} ${this.idOf(view)}`);
       if (!view.visible && this.host === host) {
         host.reveal();
       }
@@ -355,7 +317,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   /** The player is awaited in `spot`, and `view` is the view VS Code shows there: start its page. */
   private adopt(spot: ViewSpot, view: vscode.WebviewView): void {
     const awaited = this.awaitedView;
-    this.trace(`adopt ${spot} ${this.idOf(view)}; awaited=${awaited?.spot ?? 'none'}`);
     if (awaited?.spot !== spot) {
       return;
     }
@@ -366,17 +327,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   /** VS Code resolved the view of `spot`: it is the player when the player is awaited there. */
   private viewResolved(spot: ViewSpot, view: vscode.WebviewView): void {
-    this.trace(`resolved ${spot} ${this.idOf(view)}; previous=${this.idOf(this.views.get(spot))}`);
-    view.onDidChangeVisibility(() => {
-      this.trace(
-        `visibility (any) ${spot} ${this.idOf(view)}; isHost=${String(this.host?.webview === view.webview)}`,
-      );
-    });
     this.views.set(spot, view);
     view.onDidDispose(() => {
-      this.trace(
-        `disposed ${spot} ${this.idOf(view)}; isHost=${String(this.host?.webview === view.webview)}`,
-      );
       // VS Code may have resolved a newer view for the spot since.
       if (this.views.get(spot) === view) {
         this.views.delete(spot);
@@ -422,7 +374,6 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   /** The player is gone (closed by the learner, or never opened): whatever it had loaded is gone. */
   private playerGone(): void {
-    this.trace('playerGone');
     this.host = undefined;
     this.roots = [];
     void this.showSpot(undefined);
