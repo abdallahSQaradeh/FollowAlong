@@ -24,8 +24,8 @@ import {
 /** The Course data subfolder that holds prepared sound. */
 const soundFolderName = 'sound';
 
-/** The ffmpeg used when `followalong.ffmpegPath` is not set: the one on PATH. */
-const defaultProgram = 'ffmpeg';
+/** The ffmpeg used on a machine with no bundled one, when `followalong.ffmpegPath` is not set. */
+const pathProgram = 'ffmpeg';
 
 /** `<Lesson file name>-<hash of relative path, size, last change>.mp3`: readable, and unique. */
 function soundFileName(lesson: Lesson, { size, modifiedMs }: FileStat): string {
@@ -37,20 +37,22 @@ function soundFileName(lesson: Lesson, { size, modifiedMs }: FileStat): string {
   return `${name}-${hash}.mp3`;
 }
 
-/** The ffmpeg to run: the `followalong.ffmpegPath` setting when it names one, else the default. */
-function ffmpegProgram(ports: SidecarSoundPorts, warned: Set<string>): string {
-  const { config, ui, logger } = ports;
+/**
+ * The ffmpeg to run (ADR 0071): the `followalong.ffmpegPath` setting when it names a full path,
+ * else the ffmpeg the extension ships, where there is one for this machine, else the one on PATH.
+ * Rejects when the shipped ffmpeg is wanted but its file is gone: the sound then fails like any
+ * other, and the learner can play without it.
+ */
+async function ffmpegProgram(ports: SidecarSoundPorts, warned: Set<string>): Promise<string> {
+  const { config, ui, logger, fileSystem, bundledFfmpeg } = ports;
   const setting = config.get('ffmpegPath');
   const value = typeof setting === 'string' ? setting.trim() : '';
-  if (value === '') {
-    return defaultProgram;
-  }
-  if (isFullPath(value)) {
+  if (value !== '' && isFullPath(value)) {
     return value;
   }
   // A relative path would resolve against whatever folder VS Code runs in (as for Courses roots).
   // Said once per window and value, not at every Lesson.
-  if (!warned.has(value)) {
+  if (value !== '' && !warned.has(value)) {
     warned.add(value);
     logger.log({
       level: 'warn',
@@ -58,10 +60,18 @@ function ffmpegProgram(ports: SidecarSoundPorts, warned: Set<string>): string {
     });
     ui.showMessage({
       severity: 'warning',
-      text: `FollowAlong ignores the followalong.ffmpegPath setting “${value}”: it must be a full path, such as C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe. It uses ffmpeg on PATH instead.`,
+      text: `FollowAlong ignores the followalong.ffmpegPath setting “${value}”: it must be a full path, such as C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe. It uses ${bundledFfmpeg === undefined ? 'ffmpeg on PATH' : 'the ffmpeg that comes with FollowAlong'} instead.`,
     });
   }
-  return defaultProgram;
+  if (bundledFfmpeg === undefined) {
+    return pathProgram;
+  }
+  if (!(await exists(fileSystem, bundledFfmpeg))) {
+    throw new Error(
+      `The ffmpeg that comes with FollowAlong is missing (${bundledFfmpeg}). Reinstall FollowAlong, or set followalong.ffmpegPath to an ffmpeg you installed.`,
+    );
+  }
+  return bundledFfmpeg;
 }
 
 /** Whether a file is at `path`. */
@@ -79,7 +89,7 @@ async function exists(fileSystem: Ports['fileSystem'], path: string): Promise<bo
 
 type SidecarSoundPorts = Pick<
   Ports,
-  'fileSystem' | 'storage' | 'converter' | 'config' | 'ui' | 'logger' | 'clock'
+  'fileSystem' | 'storage' | 'converter' | 'config' | 'ui' | 'logger' | 'clock' | 'bundledFfmpeg'
 >;
 
 /**
@@ -267,7 +277,7 @@ async function prepareSound(
     }
   }
   signal.throwIfAborted();
-  const program = ffmpegProgram(ports, warnedPaths);
+  const program = await ffmpegProgram(ports, warnedPaths);
   const codec = await probeSound(ports, lesson, program, signal);
   if (codec === undefined || pageDecodes.has(codec)) {
     const why = codec === undefined ? 'silent' : 'ownSound';
