@@ -7,7 +7,7 @@ import type { Logger } from '../../core/logger.js';
 import type { Config, KeyValueStore, Storage, UiSink } from '../../core/ports.js';
 import type { LessonTreeView } from './lesson-tree-view.js';
 import type { ResourcePlacement } from './resource-placement.js';
-import type { ResourceViewers } from './resource-viewers.js';
+import { openInEditor, type ResourceViewers } from './resource-viewers.js';
 import type { StatusBarView } from './status-bar-view.js';
 import { showQuickPick } from './quick-pick.js';
 
@@ -78,11 +78,7 @@ export function createUiSink(
         case 'file':
           // VS Code picks the editor for the file: text and code in the text editor, an image in
           // its image preview.
-          await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(target.path), {
-            viewColumn: column,
-            preview: false,
-            preserveFocus: true,
-          });
+          await openInEditor(target.path, column);
           break;
       }
       placement.opened(target.path);

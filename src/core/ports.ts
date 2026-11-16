@@ -136,7 +136,7 @@ export interface UserMessage {
  * What a Resource opens as. The core picks the kind from the file's type (`resourceTarget`); the
  * adapter turns each kind into a tab beside the code. A URL target comes with its own ticket.
  */
-export interface FileResourceTarget {
+export interface ResourceTarget {
   /**
    * - `file`: text and code, and any type FollowAlong has no better opener for: the editor;
    * - `image`: VS Code's image preview;
@@ -146,8 +146,6 @@ export interface FileResourceTarget {
   readonly kind: 'file' | 'image' | 'markdown' | 'html' | 'pdf';
   readonly path: string;
 }
-
-export type ResourceTarget = FileResourceTarget;
 
 export interface UiSink {
   showMessage(message: UserMessage): void;

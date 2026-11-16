@@ -1,7 +1,8 @@
 /**
  * The Resource tabs FollowAlong draws itself (ADR 0021): the preview of an HTML or Markdown file,
- * and the PDF viewer. Each file has at most one tab; opening it again brings that tab forward. Like every Resource, a
- * tab opens in the editor group the placement names and never takes focus.
+ * and the PDF viewer. Each file has at most one tab; opening it again brings that tab forward, in
+ * the editor group the placement names, in case the learner moved it. Like every Resource, a tab
+ * never takes focus.
  */
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -26,6 +27,15 @@ export function isResourceViewType(viewType: string): boolean {
   return viewType.endsWith(previewViewType) || viewType.endsWith(pdfViewType);
 }
 
+/** Opens `path` in VS Code's own editor for it (text, or an image preview), beside the code. */
+export async function openInEditor(path: string, column: vscode.ViewColumn): Promise<void> {
+  await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path), {
+    viewColumn: column,
+    preview: false,
+    preserveFocus: true,
+  });
+}
+
 export class ResourceViewers implements vscode.Disposable {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
   private readonly pdfEvents = new vscode.EventEmitter<PdfViewerEvent>();
@@ -44,7 +54,7 @@ export class ResourceViewers implements vscode.Disposable {
     const key = `pdf:${path}`;
     const existing = this.panels.get(key);
     if (existing !== undefined) {
-      existing.reveal(undefined, true);
+      existing.reveal(column, true);
       return Promise.resolve();
     }
     const folder = vscode.Uri.file(dirname(path));
@@ -104,11 +114,7 @@ export class ResourceViewers implements vscode.Disposable {
     const body = kind === 'markdown' ? await this.renderMarkdown(text) : undefined;
     if (kind === 'markdown' && body === undefined) {
       // VS Code's Markdown support is off: the file still opens, as text.
-      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path), {
-        viewColumn: column,
-        preview: false,
-        preserveFocus: true,
-      });
+      await openInEditor(path, column);
       return;
     }
     const key = `${kind}:${path}`;
@@ -129,7 +135,7 @@ export class ResourceViewers implements vscode.Disposable {
       this.panels.set(key, panel);
       panel.onDidDispose(() => this.panels.delete(key));
     } else {
-      existing.reveal(undefined, true);
+      existing.reveal(column, true);
     }
     const { webview } = panel;
     const baseHref = `${webview.asWebviewUri(vscode.Uri.file(dirname(path))).toString()}/`;

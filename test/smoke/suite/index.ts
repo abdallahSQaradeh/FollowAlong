@@ -206,7 +206,7 @@ async function resourcesOpenByType(extensionPath: string, hooks: TestHooks): Pro
       vscode.window.tabGroups.all.flatMap((group) => group.tabs).find((tab) => tab.label === label);
     const kindOf = (tab: vscode.Tab): string =>
       tab.input instanceof vscode.TabInputWebview
-        ? tab.input.viewType.replace(/^.*-/, '')
+        ? tab.input.viewType
         : tab.input instanceof vscode.TabInputCustom
           ? tab.input.viewType
           : tab.input instanceof vscode.TabInputText
@@ -218,17 +218,12 @@ async function resourcesOpenByType(extensionPath: string, hooks: TestHooks): Pro
       ['pic.png', 'imagePreview.previewEditor'],
       ['sample.pdf', 'followalong.pdf'],
     ];
-    const kinds: string[] = [];
-    for (const [label] of expectations) {
+    for (const [label, kind] of expectations) {
       const tab = await waitFor(`the tab ${label}`, () => tabFor(label));
       opened.push(tab);
-      kinds.push(kindOf(tab));
+      // VS Code puts a prefix before the view type of a webview.
+      assert.ok(kindOf(tab).endsWith(kind), `${label} opened as ${kindOf(tab)}, not as ${kind}`);
     }
-    assert.deepEqual(
-      kinds,
-      expectations.map(([, kind]) => kind),
-      'the tab each Resource opened as',
-    );
 
     // Story 94: none of them covers the video or the code, and they collect in one group.
     const isPlayer = (tab: vscode.Tab): boolean =>

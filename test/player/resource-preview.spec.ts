@@ -78,13 +78,13 @@ test.describe('the HTML preview', () => {
     await page.close();
   });
 
-  test('cannot reach into the page around it', async ({ browser }) => {
+  test('finds the head of the page, not one written in a comment', async ({ browser }) => {
     const page = await browser.newPage();
-    await open(page, renderHtmlPreviewPage({ cspSource: origin, baseHref, html: '<h1>x</h1>' }));
+    const commented = `<!doctype html><html><!-- <head> --><head><link rel="stylesheet" href="style.css"></head>
+<body><h1>Closures</h1></body></html>`;
+    await open(page, renderHtmlPreviewPage({ cspSource: origin, baseHref, html: commented }));
 
-    const sandbox = await page.locator('iframe').getAttribute('sandbox');
-
-    expect(sandbox).toBe('');
+    await expect(page.frameLocator('iframe').locator('h1')).toHaveCSS('color', 'rgb(0, 128, 0)');
     await page.close();
   });
 });

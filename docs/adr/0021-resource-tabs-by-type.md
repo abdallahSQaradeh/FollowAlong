@@ -10,13 +10,13 @@ route them inside the adapter. These are the choices the spec leaves open.
 - `resourceTarget(path)` in `src/core/resources.ts` maps the file's extension, without regard to
   case, to the kind the `UiSink.openResource` target carries (no new port, ADR 0002):
 
-  | Extension                                | Kind       | Opens as                              |
-  | ---------------------------------------- | ---------- | ------------------------------------- |
-  | `.md`, `.markdown`                       | `markdown` | FollowAlong preview                   |
-  | `.html`, `.htm`                          | `html`     | FollowAlong preview                   |
-  | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` | `image`    | VS Code's image preview               |
-  | `.pdf`                                   | `pdf`      | FollowAlong PDF viewer                |
-  | anything else, and no extension          | `file`     | the editor, as before (text and code) |
+  | Extension                                                         | Kind       | Opens as                              |
+  | ----------------------------------------------------------------- | ---------- | ------------------------------------- |
+  | `.md`, `.markdown`                                                | `markdown` | FollowAlong preview                   |
+  | `.html`, `.htm`                                                   | `html`     | FollowAlong preview                   |
+  | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`, `.avif` | `image`    | VS Code's image preview               |
+  | `.pdf`                                                            | `pdf`      | FollowAlong PDF viewer                |
+  | anything else, and no extension                                   | `file`     | the editor, as before (text and code) |
 
   A name that only ends like a type (`pdf`, `.md`: no extension in Node's sense) is a `file`.
   **SVG stays a `file`**: it is XML a learner reads and edits as code, so it opens in the editor.
@@ -58,7 +58,8 @@ for the dependency (over 1 MB, Apache-2.0), with these conditions, all met:
 
 - **`pdfjs-dist@6.5.438`, a pinned `devDependency`, bundled by esbuild** (ADR 0004) into
   `out/pdf/pdf-viewer.js` (the viewer) and `out/pdf/pdf.worker.js` (the pdf.js worker), minified in
-  the `.vsix`: 0.44 MB and 1.16 MB, 0.52 MB compressed in the package. Nothing is loaded from the
+  the `.vsix`: 0.44 MB and 1.16 MB. **Measured with `npm run package`: the `.vsix` goes from
+  19.8 KB (integration/v1 at `89f28cd`) to 543.7 KB, +524 KB compressed (+1.6 MB unpacked).** Nothing is loaded from the
   network, and `node_modules` stays out of the package.
 - **Hardening.** pdf.js 6.5 has no `isEvalSupported` option and no `eval`/`new Function` in its
   build (checked in the sources shipped), and the page's policy has no `'unsafe-eval'`, so the
@@ -112,7 +113,14 @@ for the dependency (over 1 MB, Apache-2.0), with these conditions, all met:
   them (and fails on warnings, like the other bundles).
 - A PDF tab and a preview tab are created per file and reused when the same Resource opens again.
   They are not restored when VS Code restarts (no webview serializer), like the player.
-- Link clicks inside a PDF, text selection and search are not in this ticket.
+- Link clicks inside a PDF, text selection and search are not in this ticket. Seam 2 opens a PDF
+  that is a link all over and runs JavaScript on open (`test/fixtures/pdf/active.pdf`) and checks
+  that nothing happens: no dialog, no navigation, no request. It guards against a later ticket
+  adding an annotation or scripting layer without thinking about this.
+- Pages not drawn yet are sized like page 1, so a PDF with mixed page sizes shifts a little as its
+  pages are drawn.
+- Opening a Resource that already has a tab brings the tab forward **in the group the placement
+  names**, so a tab the learner dragged into the player's group goes back out of it (D4).
 - The smoke test opens a Markdown, an HTML, an image and a PDF Resource and checks the kind of tab
   each gets and that the PDF viewer drew page 1; it runs in CI only, because VS Code cannot be
   downloaded in the cloud session that built this.

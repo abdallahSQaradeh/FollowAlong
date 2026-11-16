@@ -22,17 +22,19 @@ function escapeAttribute(text: string): string {
  */
 export function withBase(html: string, baseHref: string): string {
   const base = `<base href="${escapeAttribute(baseHref)}">`;
-  const head = /<head(\s[^>]*)?>/i.exec(html);
+  // Tags inside a comment are not the document's: blank the comments out before looking.
+  const searched = html.replace(/<!--[\s\S]*?-->/g, (comment) => ' '.repeat(comment.length));
+  const head = /<head(\s[^>]*)?>/i.exec(searched);
   if (head !== null) {
     const end = head.index + head[0].length;
     return html.slice(0, end) + base + html.slice(end);
   }
-  const root = /<html(\s[^>]*)?>/i.exec(html);
+  const root = /<html(\s[^>]*)?>/i.exec(searched);
   if (root !== null) {
     const end = root.index + root[0].length;
     return `${html.slice(0, end)}<head>${base}</head>${html.slice(end)}`;
   }
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(searched);
   const end = doctype === null ? 0 : doctype[0].length;
   return html.slice(0, end) + base + html.slice(end);
 }

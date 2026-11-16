@@ -147,6 +147,9 @@ const targetKinds: Readonly<Record<string, ResourceTarget['kind']>> = {
   '.jpeg': 'image',
   '.gif': 'image',
   '.webp': 'image',
+  '.bmp': 'image',
+  '.ico': 'image',
+  '.avif': 'image',
   '.pdf': 'pdf',
 };
 

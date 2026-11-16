@@ -118,10 +118,12 @@ async function open(): Promise<void> {
     try {
       await task.promise;
     } catch (error) {
-      // A drawing cancelled by a zoom or by scrolling away is not a failure.
-      if (!(error instanceof Error && error.name === 'RenderingCancelledException')) {
-        throw error;
+      // A drawing cancelled by a zoom or by scrolling away is not a failure, and not a page drawn:
+      // the page is drawn again when it comes back into view.
+      if (error instanceof Error && error.name === 'RenderingCancelledException') {
+        return;
       }
+      throw error;
     }
     if (view.number === 1) {
       report({ type: 'rendered', pages: doc.numPages });

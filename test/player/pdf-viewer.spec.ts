@@ -73,6 +73,7 @@ async function sent(page: Page): Promise<PdfViewerEvent[]> {
 }
 
 const sample = readFileSync(join(root, 'test', 'fixtures', 'pdf', 'sample.pdf'));
+const active = readFileSync(join(root, 'test', 'fixtures', 'pdf', 'active.pdf'));
 
 test('draws every page of the PDF and says how many there are', async ({ page }) => {
   await openViewer(page, sample);
@@ -125,5 +126,26 @@ test('fetches nothing from outside its own origin', async ({ page }) => {
   const opened = await openViewer(page, sample);
   await expect.poll(() => sent(page)).toEqual([{ type: 'rendered', pages: 3 }]);
 
+  expect(opened.strangers).toEqual([]);
+});
+
+test('shows a PDF that is all link and runs JavaScript on open, and does neither', async ({
+  page,
+}) => {
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+  const opened = await openViewer(page, active);
+  await expect.poll(() => sent(page)).toEqual([{ type: 'rendered', pages: 1 }]);
+  const address = page.url();
+
+  // The whole page is a link to https://example.invalid/: a click goes nowhere.
+  await page.locator('.page canvas').first().click();
+  await page.waitForTimeout(300);
+
+  expect(page.url()).toBe(address);
+  expect(dialogs).toEqual([]);
   expect(opened.strangers).toEqual([]);
 });
