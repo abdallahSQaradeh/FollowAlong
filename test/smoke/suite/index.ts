@@ -52,6 +52,8 @@ interface TestHooks {
   quickPicksShown(): number;
   /** The label of the highlighted item of the quick pick shown last. */
   activeQuickPickItem(): string | undefined;
+  /** Whether the quick pick shown last still shows its busy indicator. */
+  quickPickBusy(): boolean;
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -388,11 +390,15 @@ async function aPickedCourseKeepsThePlayer(
 
     const picksBefore = hooks.quickPicksShown();
     const picking = vscode.commands.executeCommand('followalong.openCourse');
-    // The picker shows once the scan is done, with its first item highlighted.
+    // The picker shows at once, from the cache or with the Recent Courses, and stops being busy
+    // when the background scan is done and has filled in the list (#37).
     await waitFor('the Course picker to show', () =>
       hooks.quickPicksShown() > picksBefore && hooks.activeQuickPickItem() !== undefined
         ? true
         : undefined,
+    );
+    await waitFor('the Course picker to finish its scan', () =>
+      hooks.quickPickBusy() ? undefined : true,
     );
     // Highlight “Picked Course” by moving down until it is the highlighted item, then accept it.
     await waitForAsync('“Picked Course” to be the highlighted item', async () => {

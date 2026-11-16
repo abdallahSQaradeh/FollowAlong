@@ -40,4 +40,14 @@ export interface QuickPickModel<Intent> {
   /** Whether typing also matches an item's description, not only its label. */
   readonly matchOnDescription: boolean;
   readonly entries: readonly QuickPickEntry<Intent>[];
+  /**
+   * Whether the core is still reading what the list holds: the quick pick shows its busy indicator
+   * and the core will replace the model when it is done. Left out when the list is complete.
+   */
+  readonly busy?: boolean;
+  /**
+   * Buttons in the title bar. Unlike an item's button, pressing one does not close the quick
+   * pick: the core is told, and may replace the model (a Refresh).
+   */
+  readonly toolbar?: readonly QuickPickButtonModel<Intent>[];
 }
