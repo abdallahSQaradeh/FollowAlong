@@ -100,8 +100,10 @@ async function present(path: string): Promise<boolean> {
 
 /** Makes `lockPath` holding `token` if nothing is there; `false` while another window holds it. */
 async function makeLock(lockPath: string, token: string): Promise<boolean> {
+  let made = false;
   try {
     const file = await open(lockPath, 'wx');
+    made = true;
     try {
       await file.writeFile(token, 'utf8');
     } finally {
@@ -109,6 +111,11 @@ async function makeLock(lockPath: string, token: string): Promise<boolean> {
     }
     return true;
   } catch (error) {
+    if (made) {
+      // Made, but its token could not be written (a full disk): leave no lock without an owner.
+      await rm(lockPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
     const code = codeOf(error);
     if (code === 'EEXIST') {
       return false;
@@ -134,7 +141,7 @@ async function removeLockOf(lockPath: string, token: string): Promise<void> {
 }
 
 /**
- * Takes over the lock at `lockPath` when it was left behind. Failing to remove it (on Windows,
+ * Takes over the lock at `lockPath` when it was left behind (by its age, from `stat`). Failing to remove it (on Windows,
  * another process may hold it for a moment) is not a reason to call the folder read-only: the
  * caller waits on, and gives up in time.
  */
@@ -144,9 +151,13 @@ async function takeOverLeftBehind(lockPath: string): Promise<void> {
     (found) => Date.now() - found.mtimeMs >= leftBehindLockMs,
     () => false,
   );
-  if (token !== undefined && old) {
-    await removeLockOf(lockPath, token).catch(() => undefined);
+  if (!old) {
+    return;
   }
+  // A lock whose token cannot be read is judged by its age alone.
+  await (token === undefined ? rm(lockPath, { force: true }) : removeLockOf(lockPath, token)).catch(
+    () => undefined,
+  );
 }
 
 /** See {@link FileSystem.lock}. */
