@@ -27,9 +27,24 @@ export function createStorage(context: vscode.ExtensionContext): Storage {
   };
 }
 
+/**
+ * A folder's path as the core takes it. VS Code spells a Windows drive letter in lower case
+ * (`d:\Learning`); Windows and the learner write `D:\Learning`. One spelling keeps the same root
+ * from being added twice, and the same Course from having two storage keys (ADR 0005, ADR 0022).
+ */
+export function folderPath(folder: vscode.Uri): string {
+  return folder.fsPath.replace(/^([a-z]):/, (drive) => drive.toUpperCase());
+}
+
 export function createConfig(): Config {
   return {
     get: (name) => vscode.workspace.getConfiguration('followalong').get<unknown>(name),
+    update: (name, value) =>
+      Promise.resolve(
+        vscode.workspace
+          .getConfiguration('followalong')
+          .update(name, value, vscode.ConfigurationTarget.Global),
+      ),
     onDidChange: (listener) =>
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('followalong')) {
@@ -91,6 +106,17 @@ export function createUiSink(
           break;
       }
       placement.opened(target.path);
+    },
+    async chooseFolder({ title, openLabel }) {
+      const chosen = await vscode.window.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel,
+        title,
+      });
+      const folder = chosen?.[0];
+      return folder === undefined ? undefined : folderPath(folder);
     },
     async pickFile() {
       return (await pickFileToAttach())?.fsPath;

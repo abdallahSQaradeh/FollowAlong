@@ -199,6 +199,12 @@
         "key": "ctrl+' a",
         "mac": "cmd+' a",
         "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.openCourse",
+        "key": "ctrl+' c",
+        "mac": "cmd+' c",
+        "when": "editorTextFocus || terminalFocus"
       }
     ],
     "viewsContainers": {
@@ -221,7 +227,7 @@
     "viewsWelcome": [
       {
         "view": "followalong.lessons",
-        "contents": "Open a Course folder to list its Lessons here.\n[Open Course…](command:followalong.openCourse)"
+        "contents": "Pick a Course from your Courses roots to list its Lessons here.\n[Open Course…](command:followalong.openCourse)"
       }
     ],
     "menus": {
@@ -261,6 +267,15 @@
           "default": 30,
           "minimum": 1,
           "markdownDescription": "Seconds the long step moves back or forward: `Ctrl+'` then `←` / `→`."
+        },
+        "followalong.coursesRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine",
+          "markdownDescription": "Folders that hold your Courses (Courses roots). **FollowAlong: Open Course…** (`Ctrl+'` then `C`) lists every Course under them, and can add a root for you."
         },
         "followalong.resumeRewind": {
           "type": "number",

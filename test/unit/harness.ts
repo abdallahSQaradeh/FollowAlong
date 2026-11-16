@@ -24,6 +24,7 @@ import {
   Converter,
   Disposable,
   FileSystem,
+  FolderDialog,
   KeyValueStore,
   PlayerPort,
   PlayerShowOptions,
@@ -45,6 +46,8 @@ export class FakePlayer implements PlayerPort {
   private readonly listeners = new Set<(event: PlayerEvent) => void>();
   private readonly closeListeners = new Set<() => void>();
   private openRoots: readonly string[] | undefined;
+  /** The `loadId` of the last `load` the page received. */
+  private loadId: number | undefined;
 
   show(options: PlayerShowOptions): PlayerShowResult {
     this.shown.push(options);
@@ -61,6 +64,9 @@ export class FakePlayer implements PlayerPort {
 
   send(command: PlayerCommand): void {
     this.sent.push(command);
+    if (command.type === 'load') {
+      this.loadId = command.loadId;
+    }
   }
 
   onEvent(listener: (event: PlayerEvent) => void): Disposable {
@@ -86,9 +92,18 @@ export class FakePlayer implements PlayerPort {
     }
   }
 
+  /**
+   * The page reports an event. An event about a Lesson carries the `loadId` of the page's last
+   * `load`, as the real page echoes it, unless the test gives one (a late event from an earlier
+   * load).
+   */
   emit(event: PlayerEvent): void {
+    const stamped =
+      'lessonId' in event && !('loadId' in event) && this.loadId !== undefined
+        ? { ...event, loadId: this.loadId }
+        : event;
     for (const listener of this.listeners) {
-      listener(event);
+      listener(stamped);
     }
   }
 
@@ -162,7 +177,32 @@ class MemoryStore implements KeyValueStore {
 
   set(key: string, value: unknown): Promise<void> {
     this.values.set(key, structuredClone(value));
+    const gate = this.gate;
+    if (gate !== undefined) {
+      this.gate = undefined;
+      gate.reach();
+      return gate.released;
+    }
     return this.settlesLater ? new Promise((resolve) => setImmediate(resolve)) : Promise.resolve();
+  }
+
+  private gate: { readonly reach: () => void; readonly released: Promise<void> } | undefined;
+
+  /**
+   * Holds the next `set` until `release` is called, as a slow disk would. `reached` settles when
+   * that `set` has been called, so a test can act at exactly that moment.
+   */
+  holdNextSet(): { readonly reached: Promise<void>; release(): void } {
+    let reach = (): void => undefined;
+    let release = (): void => undefined;
+    const reached = new Promise<void>((resolve) => {
+      reach = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.gate = { reach, released };
+    return { reached, release };
   }
 }
 
@@ -177,6 +217,12 @@ export class FakeConfig implements Config {
   onDidChange(listener: (affects: (name: string) => boolean) => void): Disposable {
     this.listeners.add(listener);
     return { dispose: () => this.listeners.delete(listener) };
+  }
+
+  /** FollowAlong writes a setting in the learner's user settings. */
+  update(name: string, value: unknown): Promise<void> {
+    this.set(name, structuredClone(value));
+    return Promise.resolve();
   }
 
   /** The learner changed a `followalong.*` setting. */
@@ -229,8 +275,13 @@ export class RecordingUi implements UiSink {
   /** Every quick pick the core opened, in order. */
   readonly pickers: QuickPickModel<unknown>[] = [];
   private answer: ((intent: unknown) => void) | undefined;
+  private readonly pickerWaiters: (() => void)[] = [];
   /** How many times the core asked to hand keyboard focus back to the Practice area. */
   focusReturns = 0;
+  /** Every folder dialog the core opened, in order. */
+  readonly folderDialogs: FolderDialog[] = [];
+  /** The folders the learner will choose in the next folder dialogs; none left is a cancel. */
+  readonly folderAnswers: string[] = [];
   /** How many times the core opened the file dialog for an Attach. */
   fileDialogs = 0;
   private fileAnswer: ((path: string | undefined) => void) | undefined;
@@ -258,11 +309,27 @@ export class RecordingUi implements UiSink {
 
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
     this.pickers.push(model);
-    return new Promise((resolve) => {
+    const shown = new Promise<Intent | undefined>((resolve) => {
       this.answer = (intent) => {
         resolve(intent as Intent | undefined);
       };
     });
+    for (const waiter of this.pickerWaiters.splice(0)) {
+      waiter();
+    }
+    return shown;
+  }
+
+  /**
+   * Resolves once a quick pick is open: at once if one is, else when the core opens the next one
+   * (after it has read what it lists), so a test never guesses how long that takes.
+   */
+  pickerShown(): Promise<void> {
+    return this.answer === undefined
+      ? new Promise((resolve) => {
+          this.pickerWaiters.push(resolve);
+        })
+      : Promise.resolve();
   }
 
   /** The quick pick the learner sees now, if one is open. */
@@ -312,6 +379,11 @@ export class RecordingUi implements UiSink {
 
   returnFocus(): void {
     this.focusReturns += 1;
+  }
+
+  chooseFolder(dialog: FolderDialog): Promise<string | undefined> {
+    this.folderDialogs.push(dialog);
+    return Promise.resolve(this.folderAnswers.shift());
   }
 
   pickFile(): Promise<string | undefined> {
@@ -370,6 +442,16 @@ export interface Harness {
    * EACCES.
    */
   makeUnreadable(folder: string): void;
+  /**
+   * Holds every read of `folder`'s listing until the returned function is called, as a slow disk
+   * or network drive would, so a test can make reads finish in another order than they started.
+   */
+  holdReads(folder: string): () => void;
+  /**
+   * Holds the next write to the workspace state (a Course open stores its folder there) until
+   * `release` is called; `reached` settles once the write has started.
+   */
+  holdWorkspaceWrite(): { readonly reached: Promise<void>; release(): void };
   /** Undoes {@link Harness.makeUnreadable}: the path reads as usual again. */
   makeReadable(path: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
@@ -398,13 +480,15 @@ export async function createHarness(): Promise<Harness> {
   const ui = new RecordingUi();
   const logger = new RecordingLogger();
   const terminalSettings = new FakeTerminalSettings();
+  const workspace = new MemoryStore(true);
   const storage: Storage = {
     global: new MemoryStore(),
-    workspace: new MemoryStore(true),
+    workspace,
     folder: join(root, 'extension-storage'),
   };
   const nodeFileSystem = createNodeFileSystem();
   const unreadable = new Set<string>();
+  const held = new Map<string, Promise<void>>();
   const inFlight = new Set<Promise<unknown>>();
   /** Counts a call until it settles, so `settle()` can wait for it. */
   const track = <T>(call: Promise<T>): Promise<T> => {
@@ -415,12 +499,14 @@ export async function createHarness(): Promise<Harness> {
   };
   const fileSystem: FileSystem = {
     readDirectory(path) {
-      if (unreadable.has(path)) {
-        return Promise.reject(
-          new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
-        );
-      }
-      return track(nodeFileSystem.readDirectory(path));
+      const read = (): ReturnType<FileSystem['readDirectory']> =>
+        unreadable.has(path)
+          ? Promise.reject(
+              new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
+            )
+          : nodeFileSystem.readDirectory(path);
+      const hold = held.get(path);
+      return track(hold === undefined ? read() : hold.then(read));
     },
     readText(path) {
       if (unreadable.has(path)) {
@@ -473,6 +559,24 @@ export async function createHarness(): Promise<Harness> {
     root,
     makeUnreadable(folder) {
       unreadable.add(folder);
+    },
+    holdWorkspaceWrite() {
+      return workspace.holdNextSet();
+    },
+    holdReads(folder) {
+      let release = (): void => undefined;
+      held.set(
+        folder,
+        new Promise((resolve) => {
+          release = () => {
+            held.delete(folder);
+            resolve();
+          };
+        }),
+      );
+      return () => {
+        release();
+      };
     },
     makeReadable(path) {
       unreadable.delete(path);

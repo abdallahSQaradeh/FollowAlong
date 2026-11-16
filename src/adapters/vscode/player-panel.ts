@@ -46,18 +46,22 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     const sameRoots =
       resourceRoots.length === this.roots.length &&
       resourceRoots.every((root, index) => root === this.roots[index]);
-    if (this.panel !== undefined && sameRoots) {
+    if (this.panel !== undefined) {
       this.panel.title = title;
+      if (!sameRoots) {
+        // Other folders: the same panel takes them, and VS Code reloads its page, which posts
+        // `ready` again. Keeping the panel keeps its tab where the learner put it, and is not a
+        // close. The reload loses the click that lets the page start playback (#12 D3), which is
+        // why the core keeps the folders the same across Courses under the roots (ADR 0022).
+        this.panel.webview.options = {
+          ...this.panel.webview.options,
+          localResourceRoots: resourceRoots.map((root) => vscode.Uri.file(root)),
+        };
+        this.roots = resourceRoots;
+      }
       this.panel.reveal(undefined, true);
-      return 'revealed';
+      return sameRoots ? 'revealed' : 'created';
     }
-    // localResourceRoots are fixed when a webview is created, so a new Course gets a new panel.
-    // The old one is let go first: its `onDidDispose` fires inside `dispose()` and must not look
-    // like the learner closing the player.
-    const replaced = this.panel;
-    this.panel = undefined;
-    this.roots = [];
-    replaced?.dispose();
     const panel = vscode.window.createWebviewPanel(
       playerViewType,
       title,

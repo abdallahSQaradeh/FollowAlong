@@ -23,7 +23,8 @@ export interface PlayerShowOptions {
 }
 
 /**
- * - `created`: a new player page is starting; it posts `ready` once it can take commands.
+ * - `created`: a new player page is starting (in a new player, or in the open one with other
+ *   resource roots); it posts `ready` once it can take commands.
  * - `revealed`: the player that was already open, with the same resource roots, was brought to
  *   the front; it posts nothing new.
  */
@@ -128,6 +129,8 @@ export interface Converter {
 export interface Config {
   /** The value of a `followalong.*` setting, by its name without the prefix. */
   get(name: string): unknown;
+  /** Writes a `followalong.*` setting, by its name without the prefix, in the user settings. */
+  update(name: string, value: unknown): Promise<void>;
   /** Calls `listener` with a check for which settings changed. */
   onDidChange(listener: (affects: (name: string) => boolean) => void): Disposable;
 }
@@ -166,6 +169,13 @@ export interface Question {
   readonly decline: string;
 }
 
+/** A dialog in which the learner chooses one folder. */
+export interface FolderDialog {
+  readonly title: string;
+  /** The label of the button that chooses the folder. */
+  readonly openLabel: string;
+}
+
 export interface UiSink {
   showMessage(message: UserMessage): void;
   /**
@@ -191,6 +201,8 @@ export interface UiSink {
    * the player is not a Focus change (ADR 0009).
    */
   returnFocus(): void;
+  /** Asks the learner for one folder; resolves with its absolute path, or `undefined` on cancel. */
+  chooseFolder(dialog: FolderDialog): Promise<string | undefined>;
   /**
    * Opens the file dialog for an Attach and resolves with the absolute path of the file the
    * learner picked, or `undefined` when they closed it without picking. The dialog is not

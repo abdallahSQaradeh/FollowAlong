@@ -1,6 +1,6 @@
 /**
- * The quick pick as a view model, shared by every picker (the Lesson picker, later the Course
- * picker). The core builds a model; the UI sink shows it and answers with the intent of the item
+ * The quick pick as a view model, shared by every picker (the Lesson picker, the Course picker).
+ * The core builds a model; the UI sink shows it and answers with the intent of the item
  * the learner picked, or `undefined` when the learner closed the quick pick without picking.
  */
 

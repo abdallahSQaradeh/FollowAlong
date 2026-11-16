@@ -58,3 +58,11 @@ Ticket #21 added `showNext {title}` (extension → player) and `nextClicked {les
 extension); see ADR 0019.
 
 Ticket #19 added `setResumeRewind {seconds}` (extension → player, 0 or more); see ADR 0016.
+
+Ticket #33 added `loadId` (a whole number) to `load`, and the player echoes it on every event
+about the Lesson (`timeUpdate`, `played`, `paused`, `ended`, `seeked`, `rateChanged`, `error`,
+`nextClicked`). The extension counts its loads and acts on an event about a Lesson only when its
+`lessonId` and its `loadId` are those of the current load. The `lessonId` alone stopped being
+enough when one player page started to outlive a Course (ADR 0022): two Courses can both hold
+`01.mp4`, and a late `timeUpdate` or `ended` from the first one would count for the second. It is
+optional on both sides, so a `load` without it gets events without it.
