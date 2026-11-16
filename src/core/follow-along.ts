@@ -19,6 +19,9 @@ export interface FollowAlong {
   openCourse(folder: string): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
+  /** The window is closing: saves Progress, then stops. */
+  close(): Promise<void>;
+  /** Stops at once, without saving (tests use it as a crash). */
   dispose(): void;
 }
 
@@ -159,8 +162,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       }
-      case 'seeked':
+      case 'seeked': {
+        // A seek is the learner moving the playhead, playing or not: it counts, and saves now.
+        const shown = isCurrent(event);
+        if (shown !== undefined) {
+          shown.engaged = true;
+          progress?.record(shown.lesson.id, event.position, shown.duration);
+          void progress?.save();
+        }
         break;
+      }
     }
   }
 
@@ -168,6 +179,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
+
+  /** The learner leaves the current Lesson (another Lesson, another Course, the window closes). */
+  function leaveCurrent(): Promise<void> {
+    const left = current;
+    if (left === undefined) {
+      return Promise.resolve();
+    }
+    stopPlaying(left);
+    return left.engaged && progress !== undefined ? progress.save() : Promise.resolve();
+  }
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
@@ -186,6 +207,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   return {
     async openCourse(folder) {
+      await leaveCurrent();
       let course: Course;
       try {
         course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
@@ -231,7 +253,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      play(course, lesson, 0, true);
+      void leaveCurrent();
+      const saved = progress?.current();
+      play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
+    },
+    async close() {
+      await leaveCurrent();
+      this.dispose();
     },
     dispose() {
       for (const subscription of subscriptions) {

@@ -81,4 +81,82 @@ describe('remembering where the learner is in each Lesson', () => {
     });
     expect(await h.listFiles(course)).toEqual(Object.keys(lessons));
   });
+
+  it('saves right away when the learner seeks, also before the Lesson has played', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.player.emit({ type: 'seeked', lessonId: '01 Intro.webm', position: 200 });
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 195 });
+  });
+
+  it('saves the Lesson the learner leaves when they switch to another', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 50);
+    h.core.playLesson('02 Setup.webm');
+
+    // The Lesson switched to never played, so the last Lesson played is still the first one.
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 45 });
+  });
+
+  it('plays a Lesson the learner comes back to from 5 s before where they left it', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 50);
+    h.core.playLesson('02 Setup.webm');
+    h.core.playLesson('01 Intro.webm');
+
+    expect(h.player.sent.at(-1)).toMatchObject({
+      lessonId: '01 Intro.webm',
+      startAt: 45,
+      autoplay: true,
+    });
+  });
+
+  it('saves the open Course when the learner opens another one', async () => {
+    const h = await createHarness();
+    const first = await h.folder('first', lessons);
+    const second = await h.folder('second', lessons);
+    await h.core.openCourse(first);
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    playTo(h, '02 Setup.webm', 80);
+    await h.core.openCourse(second);
+
+    expect(await reopen(h, first)).toMatchObject({ lessonId: '02 Setup.webm', startAt: 75 });
+  });
+
+  it('saves when the VS Code window closes', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 33);
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 28 });
+  });
+
+  it('keeps the saved position when the learner reopens a Lesson and leaves without playing it', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 100);
+    pause(h, '01 Intro.webm');
+    await reopen(h, course);
+    // The player reports the playhead where FollowAlong put it, 5 s back; nothing is played.
+    h.player.emit({ type: 'timeUpdate', lessonId: '01 Intro.webm', position: 95, duration: 600 });
+    h.player.emit({ type: 'paused', lessonId: '01 Intro.webm', byUser: false });
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 95 });
+  });
 });
