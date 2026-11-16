@@ -212,6 +212,30 @@ test.describe('a seek-bar drag while the Lesson plays', () => {
   });
 });
 
+test.describe('two pointers dragging at once (touch and mouse)', () => {
+  test('keeps focus until both have let go', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const capture = (type: string, pointerId: number) =>
+      page.locator('video').evaluate(
+        (video, init) => {
+          video.dispatchEvent(new PointerEvent(init.type, { pointerId: init.pointerId }));
+        },
+        { type, pointerId },
+      );
+
+    await capture('gotpointercapture', 1);
+    await capture('gotpointercapture', 2);
+    await capture('lostpointercapture', 1);
+    await page.waitForTimeout(300);
+    expect(await interactions(player)).toBe(0);
+
+    await capture('lostpointercapture', 2);
+
+    await player.waitForEvent({ type: 'userInteracted' });
+  });
+});
+
 test.describe('the keyboard in the player', () => {
   test('hands focus back once a key is released', async ({ page }) => {
     const player = await openPlayer(page);

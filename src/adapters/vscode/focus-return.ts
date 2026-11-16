@@ -1,9 +1,10 @@
 /**
  * Remembers whether the learner last used a text editor or a terminal, and hands keyboard focus
  * back to it when the core asks (ADR 0009). The stable VS Code API cannot read which part has
- * focus, so this follows the signals it does give: an editor becoming active, a selection change
- * or an edit in an editor; a terminal becoming active, a command starting in it, or the first
- * input to it.
+ * focus, so this follows the signals it does give: an editor becoming active or the learner
+ * moving its selection (keyboard, mouse or a command); a terminal becoming active, a command
+ * starting in it, or the first input to it. Changes from outside, such as a file reloaded after a
+ * `git checkout` run in the terminal, carry no selection kind and move nothing.
  */
 import * as vscode from 'vscode';
 
@@ -26,7 +27,7 @@ export class FocusReturn implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[];
 
   constructor() {
-    const { window, workspace } = vscode;
+    const { window } = vscode;
     const editor = window.activeTextEditor;
     if (editor !== undefined) {
       this.useEditor(editor);
@@ -38,13 +39,11 @@ export class FocusReturn implements vscode.Disposable {
           this.useEditor(active);
         }
       }),
-      window.onDidChangeTextEditorSelection(({ textEditor }) => {
-        this.useEditor(textEditor);
-      }),
-      workspace.onDidChangeTextDocument(({ document, contentChanges }) => {
-        const active = window.activeTextEditor;
-        if (contentChanges.length > 0 && active?.document === document) {
-          this.useEditor(active);
+      // Typing moves the selection too, so this also covers the learner's edits. `kind` is unset
+      // when the change did not come from the learner's keyboard, mouse or a command.
+      window.onDidChangeTextEditorSelection(({ textEditor, kind }) => {
+        if (kind !== undefined) {
+          this.useEditor(textEditor);
         }
       }),
       window.onDidChangeActiveTerminal((terminal) => {

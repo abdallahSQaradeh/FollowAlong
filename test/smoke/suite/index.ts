@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { chromium } from '@playwright/test';
+import { type Browser, chromium } from '@playwright/test';
 import * as vscode from 'vscode';
 
 /**
@@ -196,7 +196,10 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
     assert.equal(secondGroup.viewColumn, resourceGroup.viewColumn);
     assert.ok(!hooks.playerEvents.some((event) => event.type === 'error'));
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    // Close the Resource tabs and the player, which hold the scratch files open: Windows refuses
+    // to delete an open file (EPERM). The retries cover a handle VS Code lets go of a moment later.
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   }
 }
 
@@ -439,31 +442,12 @@ async function aClickOnThePicture(
   );
   const from = events.length;
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const pages = () => browser.contexts().flatMap((context) => context.pages());
-  // The player page lives in an out-of-process frame that the DevTools connection does not
-  // list, so the click goes to the workbench page at the middle of the player's <iframe>: the
-  // middle of the picture. Chromium routes it into the player as real input.
-  const player = await waitForAsync('the player <iframe> in the VS Code window', async () => {
-    for (const page of pages()) {
-      const frames = page.locator('iframe[src^="vscode-webview:"]');
-      if ((await frames.count().catch(() => 0)) === 1) {
-        const box = await frames.boundingBox();
-        if (box !== null && box.width > 0 && box.height > 0) {
-          return { page, box };
-        }
-      }
-    }
-    return undefined;
-  }).catch((error: unknown) => {
-    // Say which pages there were, so a failure in CI can be read without a rerun.
-    const seen = pages().map((page) => page.url() || '(no URL)');
-    throw new Error(`${String(error)}; pages seen: ${seen.join(', ') || 'none'}`);
-  });
-  await player.page.mouse.click(
-    player.box.x + player.box.width / 2,
-    player.box.y + player.box.height / 2,
-  );
-
+  try {
+    await clickThePlayer(browser);
+  } finally {
+    // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
+    await browser.close();
+  }
   const expected = wasPlaying ? 'paused' : 'played';
   await waitFor(`the player to report ${expected} after the click`, () =>
     events
@@ -494,9 +478,9 @@ async function aClickOnThePicture(
 }
 
 /**
- * After the click, runs the play/pause command from the editor until it has to play, and reports
- * whether the page then played: whether one real click lets later commands start playback
- * (sticky user activation, ADR 0008). Measured and reported either way.
+ * After the click, runs the play/pause command from the editor until it has to play, and checks
+ * that the page then plays: one real click lets later commands start playback (sticky user
+ * activation, ADR 0008), which #12 D3 relies on.
  */
 async function playFromTheEditorAfterAClick(events: readonly SeenEvent[]): Promise<string> {
   if (lastPlayState(events, lessonId) === 'played') {
@@ -516,9 +500,44 @@ async function playFromTheEditorAfterAClick(events: readonly SeenEvent[]): Promi
           event.lessonId === lessonId && (event.type === 'played' || event.type === 'paused'),
       ),
   );
-  return answer.type === 'played'
-    ? 'MEASURED: after one click in the player, play sent from the command starts playback'
-    : 'MEASURED: after one click in the player, play sent from the command is still refused';
+  // #12 D3 rests on this: one real click lets later commands start playback (sticky activation).
+  assert.equal(
+    answer.type,
+    'played',
+    'after one click in the player, play sent from the command was still refused',
+  );
+  return 'after one click in the player, play sent from the command starts playback (sticky activation)';
+}
+
+/**
+ * Clicks the middle of the player's <iframe> in the VS Code window, with real input over the
+ * DevTools protocol: the middle of the picture.
+ */
+async function clickThePlayer(browser: Browser): Promise<void> {
+  const pages = () => browser.contexts().flatMap((context) => context.pages());
+  // The player page lives in an out-of-process frame that the DevTools connection does not
+  // list, so the click goes to the workbench page at the middle of the player's <iframe>: the
+  // middle of the picture. Chromium routes it into the player as real input.
+  const player = await waitForAsync('the player <iframe> in the VS Code window', async () => {
+    for (const page of pages()) {
+      const frames = page.locator('iframe[src^="vscode-webview:"]');
+      if ((await frames.count().catch(() => 0)) === 1) {
+        const box = await frames.boundingBox();
+        if (box !== null && box.width > 0 && box.height > 0) {
+          return { page, box };
+        }
+      }
+    }
+    return undefined;
+  }).catch((error: unknown) => {
+    // Say which pages there were, so a failure in CI can be read without a rerun.
+    const seen = pages().map((page) => page.url() || '(no URL)');
+    throw new Error(`${String(error)}; pages seen: ${seen.join(', ') || 'none'}`);
+  });
+  await player.page.mouse.click(
+    player.box.x + player.box.width / 2,
+    player.box.y + player.box.height / 2,
+  );
 }
 
 /** Whether the Lesson last reported `played` or `paused`. */
