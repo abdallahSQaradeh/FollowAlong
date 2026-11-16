@@ -44,9 +44,15 @@ export interface BrowsedVideo {
 /** Where the learner is in the browser, and what is there. */
 export type FolderBrowserView =
   | {
-      /** The top: the Courses roots the learner named. */
+      /** The top of the browser. */
       readonly kind: 'top';
-      readonly roots: readonly BrowsedFolder[];
+      /** Where it starts: the Courses roots the learner named, or the drives or home folder. */
+      readonly start: readonly BrowsedFolder[];
+      /**
+       * With Courses roots set: the drives or home folder, listed after them, so that what is
+       * outside the roots can be reached too.
+       */
+      readonly elsewhere: readonly BrowsedFolder[];
     }
   | {
       /** Inside `folder`: its subfolders, then its videos, in the order to show them. */
@@ -97,7 +103,11 @@ export function buildFolderBrowser(view: FolderBrowserView): QuickPickModel<Fold
           keepsOpen: true,
         },
         // A root's name alone can be the same for two roots: the path tells them apart.
-        ...view.roots.map((root) => folderItem(root, true)),
+        ...view.start.map((folder) => folderItem(folder, true)),
+        ...(view.start.length === 0 || view.elsewhere.length === 0
+          ? []
+          : [{ kind: 'separator', label: 'Elsewhere' } as const]),
+        ...view.elsewhere.map((folder) => folderItem(folder, true)),
       ],
     };
   }

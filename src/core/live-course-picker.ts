@@ -8,11 +8,13 @@ import { buildCoursePicker, type CoursePickerIntent } from './course-picker.js';
 import type { CourseScans } from './course-list-cache.js';
 import {
   buildFolderBrowser,
+  type BrowsedFolder,
   type FolderBrowserIntent,
   type FolderBrowserView,
 } from './folder-browser.js';
 import { folderLabel } from './course-scanner.js';
 import { FileSystemError } from './ports.js';
+import { sameFolder } from './courses-roots.js';
 import { lookForVideos, readBrowsedFolder } from './read-browsed-folder.js';
 import type { QuickPickModel } from './quick-pick.js';
 import type { CourseScan, ScannedCourse } from './course-scanner.js';
@@ -115,6 +117,40 @@ export async function showCoursePicker(
     await redraw();
   };
 
+  /**
+   * Shows the top of the Folder browser at once: the Courses roots, or the drives or home folder
+   * when there is none. Which of them hold videos, and (under roots) the drives or home folder
+   * to reach what is outside them, follow when they have been looked at.
+   */
+  const browseTop = async (stale: () => boolean): Promise<void> => {
+    const named = roots.map((path): BrowsedFolder => ({ path }));
+    browsing = { kind: 'top', start: named, elsewhere: [] };
+    picker.update({ ...view(), busy: true });
+    const found = await ports.fileSystem.startingFolders();
+    if (stale()) {
+      return;
+    }
+    const outside = found.filter((path) => !roots.some((root) => sameFolder(root, path)));
+    const start = roots.length === 0 ? outside : roots;
+    const elsewhere = roots.length === 0 ? [] : outside;
+    const places = [...start, ...elsewhere].map((path): BrowsedFolder => ({ path }));
+    browsing = {
+      kind: 'top',
+      start: places.slice(0, start.length),
+      elsewhere: places.slice(start.length),
+    };
+    picker.update({ ...view(), busy: true });
+    const looked = await lookForVideos(ports, places);
+    if (!stale()) {
+      browsing = {
+        kind: 'top',
+        start: looked.slice(0, start.length),
+        elsewhere: looked.slice(start.length),
+      };
+      picker.update(view());
+    }
+  };
+
   /** Shows what is in `folder`, or the top of the Folder browser; the picker stays open. */
   const browseTo = async (folder: string | undefined): Promise<void> => {
     newestFolder += 1;
@@ -122,8 +158,7 @@ export async function showCoursePicker(
     /** Whether the picker is closed, or the learner asked for another folder since. */
     const stale = (): boolean => closed || mine !== newestFolder;
     if (folder === undefined) {
-      browsing = { kind: 'top', roots: roots.map((path) => ({ path })) };
-      picker.update(view());
+      await browseTop(stale);
       return;
     }
     // Busy while the folder is read, the list the learner picked from still in view.

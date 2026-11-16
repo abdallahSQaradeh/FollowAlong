@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { QuickPickModel } from '../../src/core/quick-pick.js';
 import { createHarness, type Harness } from './harness.js';
@@ -265,5 +265,184 @@ describe('picking a video in the Folder browser', () => {
     expect(h.player.sent).toMatchObject([
       { type: 'load', lessonId: '02 State.mp4', startAt: 115, autoplay: true },
     ]);
+  });
+});
+
+describe('Browse… and the Course that is open', () => {
+  /** Picks Courses, then Browse…, then walks to `folders`; resolves the picker's answer. */
+  async function walkFromPicker(
+    h: Harness,
+    ...folders: string[]
+  ): Promise<{ readonly picking: Promise<void> }> {
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+    for (const label of folders) {
+      h.ui.choose(label);
+      await h.ui.pickerShown();
+    }
+    return { picking };
+  }
+
+  it('plays a video of the open Course without opening it again, keeping its Progress', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'React/01 Intro.mp4': 'v',
+      'React/02 State.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    await h.core.openCourse(join(learning, 'React'));
+    h.player.ready();
+    h.player.clearSent();
+    const draws = h.ui.lessonTreeDraws;
+    const { picking } = await walkFromPicker(h, 'Learning', 'React');
+
+    h.ui.choose('02 State.mp4');
+    await picking;
+
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: '02 State.mp4', autoplay: true },
+    ]);
+    expect(h.ui.lessonTreeDraws).toBeLessThanOrEqual(draws + 1);
+    expect(h.ui.selectedLesson).toBe('02 State.mp4');
+  });
+
+  it('keeps what plays when the learner opens the open Course again as a Course', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'React/01 Intro.mp4': 'v',
+      'React/02 State.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    await h.core.openCourse(join(learning, 'React'));
+    h.player.ready();
+    h.core.playLesson('02 State.mp4');
+    h.player.clearSent();
+    const { picking } = await walkFromPicker(h, 'Learning', 'React');
+
+    h.ui.choose('Open “React” as Course');
+    await picking;
+
+    expect(h.player.sent).toEqual([]);
+    expect(h.ui.selectedLesson).toBe('02 State.mp4');
+  });
+});
+
+describe('where Browse… starts', () => {
+  it('starts at the drives or the home folder when no Courses root is set', async () => {
+    const h = await createHarness();
+    const home = await h.folder('home', { 'Videos/01 Intro.mp4': 'v' });
+    const drive = await h.folder('D', {});
+    h.setStartingFolders(home, drive);
+
+    await browse(h);
+
+    expect(rows(h.ui.picker)).toEqual(['Back to Courses', 'home', 'D']);
+    h.ui.choose('home');
+    await h.ui.pickerShown();
+    expect(rows(h.ui.picker)).toEqual(['Up', 'Videos']);
+  });
+
+  it('also offers the drives or the home folder under the roots, to reach what is outside them', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {});
+    const home = await h.folder('home', {});
+    h.config.set('coursesRoots', [learning]);
+    h.setStartingFolders(home);
+
+    await browse(h);
+
+    expect(rows(h.ui.picker)).toEqual(['Back to Courses', 'Learning', '── Elsewhere', 'home']);
+  });
+
+  it('offers Open as Course on a root or a drive that holds videos itself', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Videos', { '01 Intro.mp4': 'v' });
+    const other = await h.folder('Other', { 'notes.txt': 'n' });
+    h.config.set('coursesRoots', [root, other]);
+
+    await browse(h);
+
+    expect(h.ui.buttonsOf('Videos')).toEqual(['Open as Course']);
+    expect(h.ui.buttonsOf('Other')).toEqual([]);
+  });
+
+  it('returns to the Courses, and the Courses are listed again', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Node/01 Intro.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+    await browse(h);
+
+    h.ui.choose('Back to Courses');
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual(['Node', 'Browse…', 'Add Courses root…']);
+  });
+});
+
+describe('a Course outside the Courses roots', () => {
+  it('opens, and the player may read its folder, which reloads the page once', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Node/01 Intro.mp4': 'v' });
+    const elsewhere = await h.folder('Elsewhere/Stuff', { '01 Talk.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+    await h.core.openCourse(join(learning, 'Node'));
+    h.player.ready();
+    h.setStartingFolders(join(h.root, 'Elsewhere'));
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+    h.ui.choose('Elsewhere');
+    await h.ui.pickerShown();
+    h.ui.choose('Stuff');
+    await h.ui.pickerShown();
+
+    h.ui.choose('01 Talk.mp4');
+    await picking;
+
+    expect(h.player.shown.at(-1)?.resourceRoots).toContain(elsewhere);
+    expect(h.player.shown.at(-1)?.resourceRoots).toContain(learning);
+  });
+});
+
+describe('a folder the learner cannot read', () => {
+  it('tells them, and the quick pick stays where it was', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Locked/01 Intro.mp4': 'v', 'Open/x.txt': 'n' });
+    h.config.set('coursesRoots', [learning]);
+    await browse(h);
+    h.ui.choose('Learning');
+    await h.ui.pickerShown();
+    h.makeUnreadable(join(learning, 'Locked'));
+
+    h.ui.choose('Locked');
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual(['Up', 'Locked', 'Open']);
+    expect(h.ui.messages).toEqual([
+      { severity: 'warning', text: "FollowAlong can't read the folder “Locked”." },
+    ]);
+    expect(h.ui.pickerBusy).toBe(false);
+  });
+});
+
+describe('the Folder browser while the Courses roots are scanned', () => {
+  it('keeps showing the folders when the scan lands', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Node/01 Intro.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+    const release = h.holdReads(learning);
+    void h.core.pickCourse();
+    await h.ui.pickerOpened();
+    h.ui.choose('Browse…');
+    release();
+    // The scan is done once its result is cached.
+    await vi.waitFor(() => {
+      expect(h.storage.global.get('courseListCache')).toBeDefined();
+    });
+
+    expect(rows(h.ui.picker)).toEqual(['Back to Courses', 'Learning']);
   });
 });
