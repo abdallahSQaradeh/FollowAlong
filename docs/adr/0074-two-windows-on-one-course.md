@@ -71,34 +71,53 @@ playing it with the entry it read earlier, and saves its place a moment later. B
 so A's done mark would go (#26 left this to #27, ADR 0030). So an entry now has two stamps:
 
 - `savedAt`: when its place (`position`, `duration`) was saved;
-- `statusAt`: when the learner last set its status by hand (mark done, reset), or 0 when never.
-  Play raises a status (10 s of play, the last 5 %, `ended`, ADR 0030) but keeps the stamp of the
-  status it rose from. So play in a window that had not seen another window's mark or reset carries
-  an older stamp and loses to it. Play after this window's own reset carries the reset's stamp and
-  beats a done mark another window still holds. An entry without `statusAt` is read as `savedAt`:
-  it was written before the field existed (every reset of ADR 0061 among them) or by an older
-  FollowAlong, and its whole entry was saved then. So it is written only when it differs from
-  `savedAt`, and a status never set is written as `statusAt: 0`.
+- `statusAt`: when the learner last set its status by hand, or 0 when never. By hand means Mark
+  done, Mark not done, Mark all done, Reset Section and Reset Course. Play only ever raises a status
+  (none → in progress → done: 10 s of play, the last 5 %, `ended`, ADR 0030) and never changes
+  `statusAt`. An entry without `statusAt` is read as `savedAt`: it was written before the field
+  existed (every reset of ADR 0061 among them) or by an older FollowAlong, and its whole entry was
+  saved then. So it is written only when it differs from `savedAt`, and a status never set by hand
+  is written as `statusAt: 0`.
 
-Merging two entries of one Lesson takes the place with the later `savedAt` and the status with the
-later `statusAt`; the first copy wins a tie. There is no exception for done. (A first version made
-in progress never replace done, and stamped play with the time of the raise. Then a reset followed
-by play lost to the other window's stale done mark: gate return 1 on PR #105, HARD 1. A first
-version also read a missing `statusAt` as never on entries without a status, so a pre-#27 reset
-lost to an older done in the other copy: HARD 2.) Every change is stamped after the entry it replaces,
-recorded play included (`savedAfter`, ADR 0061). A window's own last write comes back at its next
-write, through the re-read, and must never win over what that window did since.
+**The status-merge rule (D14 on #12, binding):** of two entries of one Lesson, the one with the
+larger `statusAt` gives the status. On equal `statusAt`, the higher status wins (done > in progress
+
+> none): equal stamps mean both rose by play from the same status set by hand (or from never), and
+> play only raises. So a newer status set by hand always wins, the furthest play from the same
+> baseline wins, and play never beats a status set by hand that it did not see. The place is merged
+> apart from the status: the later `savedAt` wins; on the same `savedAt`, the larger position, then
+> the longer duration. `last` is the one saved later; on the same `savedAt`, the larger id. No tie is
+> broken by which copy came first, so the merge is commutative, associative and idempotent. Copies
+> merge to one result whatever the order or grouping of the writes. An exhaustive property test checks
+> this (`test/unit/progress-merge.test.ts`: every pair and triple of a domain of status, `statusAt`,
+> `savedAt` and position). So does a Seam 1 test of every sequence of up to 3 steps of two windows on
+> one Course (`test/unit/two-windows-sequences.test.ts`: mark done, mark not done, play past 10 s, play
+> to the end and pause, in either window).
+
+Every change is stamped after the entry it replaces, recorded play included (`savedAfter`, ADR
+0061). A window's own last write comes back at its next write through the re-read, and must never
+win over what that window did since.
+
+How the rule was reached: a first version stamped play with the time of the raise and made in
+progress never replace done. Then a reset followed by play lost to the other window's stale done
+mark (gate return 1 on PR #105, HARD 1). It also read a missing `statusAt` as never on entries
+without a status, so a pre-#27 reset lost to an older done in the other copy (HARD 2). A second
+version kept the stamp over play but let the first copy win a tie. Then a Lesson one window played
+to its end lost its done mark to the other window's older play from the same baseline (gate return
+2). D14's tie rule closes that.
 
 | Case                                                                                                     | Result                                                                                                               |
 | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | A marks done; B, playing on with its older entry, then saves its place                                   | done, at B's place                                                                                                   |
 | A marks done while B's place is newer than anything A read                                               | done, at B's place (mark done changes only the status)                                                               |
-| A resets; B then writes a place stamped before the reset (B's write landed late, or B's clock is behind) | reset: 0:00, not started                                                                                             |
-| A resets; B then saves a place stamped after the reset                                                   | B's place counts again; the status stays reset until B's play sets one                                               |
-| A marks done; B, which had not seen it, then plays past 10 s and saves                                   | done, at B's place (B's in progress keeps its old stamp)                                                             |
-| B still has the Lesson done; A resets it, plays it past 10 s and saves; B then saves                     | in progress, at A's place (A's play keeps the reset's stamp, newer than B's done)                                    |
-| `.followalong` holds a reset written before `statusAt`; the fallback holds an older done mark            | reset (the reset's `statusAt` is its `savedAt`)                                                                      |
+| A marks done; B, which had not seen it, then plays past 10 s and saves                                   | done (A's stamp is newer than B's)                                                                                   |
+| A plays 4 s and saves; B plays the Lesson to its end; A saves again                                      | done (equal stamps, 0: the higher status)                                                                            |
+| A and B both saw the same reset; A plays past 10 s, B plays to the end                                   | done (equal stamps: the higher status)                                                                               |
+| B still has the Lesson done; A resets it, plays it past 10 s and saves; B then saves                     | in progress, at A's place (A's stamp is the reset's, newer than B's done)                                            |
 | B still had the Lesson done when A reset it, and B saves a newer place                                   | B's place, not done: B's done mark is older than the reset                                                           |
+| A resets; B then writes a place stamped before the reset (B's write landed late, or B's clock is behind) | reset: 0:00, not started                                                                                             |
+| A resets; B then saves a place stamped after the reset                                                   | B's place counts again; the status stays reset until B's play raises it                                              |
+| `.followalong` holds a reset written before `statusAt`; the fallback holds an older done mark            | reset (the reset's `statusAt` is its `savedAt`)                                                                      |
 | A resets the whole Course                                                                                | every Lesson of the Course gets a reset entry, also those only B saved, and `last` is reset even when A knew of none |
 
 A reset still writes a reset entry rather than removing one (ADR 0061). Its `statusAt` is its
@@ -115,8 +134,9 @@ one look fresh (then each save waits 2 s and goes ahead).
 
 ## Considered options
 
-- **The higher status wins** (done over in progress over not started). Rejected, as in ADR 0030:
-  an un-mark (#29/#30) would be undone by an older copy.
+- **The higher status always wins** (done over in progress over not started). Rejected, as in ADR
+  0030: an un-mark (#29/#30) would be undone by an older copy. D14 uses it only between equal
+  stamps.
 - **Newest whole entry, plus "done is sticky across a merge".** Rejected: B's play could not tell
   A's reset from a done mark it never saw, so a reset would lose to B's stale done mark.
 - **A lock only inside the process.** Rejected: two windows are two processes. It would make the
