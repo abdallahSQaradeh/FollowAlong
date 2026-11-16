@@ -146,7 +146,7 @@ with a nonce CSP and no remote content, which only fetches the URIs the core sen
 - `Config` has `update`, and `UiSink` has `chooseFolder`; every implementation (the VS Code ones,
   the Seam 1 fakes) has them.
 - The scan runs each time the picker opens, before it shows, with no cache and no busy indicator:
-  #37 adds the cache and the background rescan.
+  #37 added the cache, the busy indicator and the background rescan (ADR 0058).
 - A read-only Course keeps its Resources in the extension storage, keyed by its absolute path
   (ADR 0005), so they do not follow a Course folder that is moved or renamed; the Course then shows
   under its new path without them. This picker lists Courses by their current path only; #35's

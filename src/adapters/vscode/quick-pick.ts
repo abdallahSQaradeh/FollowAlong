@@ -10,11 +10,13 @@ import type { QuickPickButtonModel, QuickPickModel } from '../../core/quick-pick
 
 /**
  * What the smoke test can see of the quick picks, so it never guesses how long the scan takes or
- * where the focus is: how many were shown, and the label of the active item of the latest.
+ * where the focus is: how many were shown, the label of the active item of the latest, and
+ * whether the latest still shows its busy indicator.
  */
-export const quickPickStats: { shown: number; active: string | undefined } = {
+export const quickPickStats: { shown: number; active: string | undefined; busy: boolean } = {
   shown: 0,
   active: undefined,
+  busy: false,
 };
 
 type IntentItem<Intent> = vscode.QuickPickItem & { readonly intent?: Intent };
@@ -45,6 +47,7 @@ export function openQuickPick<Intent>(
     buttonIntents.clear();
     quickPick.placeholder = shown.placeholder;
     quickPick.busy = shown.busy === true;
+    quickPickStats.busy = quickPick.busy;
     quickPick.buttons = buttonsOf(shown.toolbar ?? []);
     const kept = quickPick.activeItems[0]?.label;
     quickPick.items = shown.entries.map((entry): IntentItem<Intent> =>
@@ -70,6 +73,7 @@ export function openQuickPick<Intent>(
     const finish = (intent: Intent | undefined): void => {
       if (!answered) {
         answered = true;
+        quickPickStats.busy = false;
         resolve(intent);
         quickPick.dispose();
       }

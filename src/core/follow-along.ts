@@ -618,26 +618,27 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     // Shown from the cache at once; the scan below fills in what is new (ADR 0058).
     let courses = courseScans.cached(roots) ?? [];
     let scanning = roots.length > 0;
-    const modelNow = async () => {
-      const [shown, busy] = [courses, scanning];
-      return buildCoursePicker({
+    // Which Recent Courses are missing is read when the list changes, not on every redraw.
+    let recentShown = await recentCourses(ports, recent, courses);
+    const view = () =>
+      buildCoursePicker({
         hasRoots: roots.length > 0,
-        courses: shown,
-        recent: await recentCourses(ports, recent, shown),
+        courses,
+        recent: recentShown,
         openFolder: openedCourse?.folder,
-        scanning: busy,
+        scanning,
       });
-    };
     let closed = false;
     let drawn = 0;
     let newest = 0;
-    /** Shows the list as it is now; of two redraws under way, only the later one is shown. */
+    /** Shows a scan that is done; of two redraws under way, only the later one is shown. */
     const redraw = async (): Promise<void> => {
       drawn += 1;
       const mine = drawn;
-      const model = await modelNow();
+      const shown = await recentCourses(ports, recent, courses);
       if (!closed && mine === drawn) {
-        picker.update(model);
+        recentShown = shown;
+        picker.update(view());
       }
     };
     /** Waits for a scan, then shows it, unless the picker is closed or a newer scan was asked for. */
@@ -672,11 +673,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       scanning = false;
       await redraw();
     };
-    const picker = ui.openPicker(await modelNow(), (button) => {
+    const picker = ui.openPicker(view(), (button) => {
       if (button.type === 'refreshCourses') {
         scanning = true;
+        drawn += 1;
+        picker.update(view());
         void showScan(courseScans.scan(roots, recent, { fresh: true }));
-        void redraw();
       }
     });
     if (scanning) {
