@@ -3,9 +3,10 @@
  * Courses roots through the File system port. It decides nothing about how a Course is shown; the
  * Course picker does that.
  */
-import { basename, join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 
 import { isLessonFile, isSkippedFolder, naturalOrder } from './course-model.js';
+import { hostFlavour, type PathFlavour } from './courses-roots.js';
 import { FileSystemError, type Ports } from './ports.js';
 
 type ScanPorts = Pick<Ports, 'fileSystem' | 'logger'>;
@@ -57,6 +58,20 @@ export async function scanCourses(ports: ScanPorts, roots: readonly string[]): P
 }
 
 /**
+ * What a folder is called: its name, or for the root of a drive (`D:\`, whose name is empty) the
+ * drive (`D:`), or `/`. `flavour` is the host's; tests give each one on every OS.
+ */
+export function folderLabel(folder: string, flavour: PathFlavour = hostFlavour): string {
+  const rules = flavour === 'win32' ? win32 : posix;
+  const name = rules.basename(folder);
+  if (name !== '') {
+    return name;
+  }
+  const { root } = rules.parse(folder);
+  return root.length > 1 ? root.replace(/[\\/]+$/, '') : root;
+}
+
+/**
  * Folders Windows keeps at the root of a drive, which a drive named as a Courses root would show:
  * the recycle bin holds deleted Courses, which must not be offered. Matched in any letter case.
  */
@@ -75,7 +90,7 @@ async function walk(
 ): Promise<void> {
   const entries = await ports.fileSystem.readDirectory(folder);
   if (entries.some((entry) => entry.kind === 'file' && isLessonFile(entry.name))) {
-    found.set(folder, { name: basename(folder), folder });
+    found.set(folder, { name: folderLabel(folder), folder });
     return;
   }
   for (const entry of entries) {
