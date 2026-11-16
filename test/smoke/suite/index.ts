@@ -610,9 +610,18 @@ async function theFloatingWindowHoldsThePlayer(): Promise<string> {
 
 /** Waits until no floating VS Code window is left after `what`. */
 async function noFloatingWindowIsLeft(what: string): Promise<void> {
-  await waitForAsync(`no floating window left after ${what}`, async () =>
-    (await floatingWindows()).length === 0 ? true : undefined,
-  );
+  await waitForAsync(`no floating window left after ${what}`, async () => {
+    try {
+      return (await floatingWindows()).length === 0 ? true : undefined;
+    } catch (error) {
+      // The window closes while its page is read: that page goes with it, so look again. Any other
+      // failure is a real one.
+      if (/has been closed|Target closed/.test(String(error))) {
+        return undefined;
+      }
+      throw error;
+    }
+  });
 }
 
 /**
