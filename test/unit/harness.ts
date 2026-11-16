@@ -165,13 +165,19 @@ export class FakeConverter implements Converter {
 class MemoryStore implements KeyValueStore {
   private readonly values = new Map<string, unknown>();
 
+  /**
+   * `settlesLater`: the promise of `set` settles on a later turn, as a VS Code memento's does once
+   * it is on disk, so a test can reach the moments in between (a Course open stores its folder).
+   */
+  constructor(private readonly settlesLater = false) {}
+
   get(key: string): unknown {
     return this.values.get(key);
   }
 
   set(key: string, value: unknown): Promise<void> {
     this.values.set(key, structuredClone(value));
-    return Promise.resolve();
+    return this.settlesLater ? new Promise((resolve) => setImmediate(resolve)) : Promise.resolve();
   }
 }
 
@@ -390,8 +396,10 @@ export class RecordingLogger implements Logger {
 export type Tree = Readonly<Record<string, string>>;
 
 export interface Harness {
+  /** The core of the VS Code window under test; {@link Harness.restart} replaces it. */
   readonly core: FollowAlong;
   readonly ports: Ports;
+  /** The player of the window under test; {@link Harness.restart} replaces it. */
   readonly player: FakePlayer;
   readonly clock: FakeClock;
   readonly converter: FakeConverter;
@@ -414,10 +422,23 @@ export interface Harness {
    * or network drive would, so a test can make reads finish in another order than they started.
    */
   holdReads(folder: string): () => void;
+  /** Undoes {@link Harness.makeUnreadable}: the path reads as usual again. */
+  makeReadable(path: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
   folder(name: string, tree: Tree): Promise<string>;
   /** Every file under `folder`, as sorted relative paths with `/`. */
   listFiles(folder: string): Promise<string[]>;
+  /**
+   * Waits until every file system call the core started has finished, including calls those
+   * calls lead to (a save creates the folder, then writes the file).
+   */
+  settle(): Promise<void>;
+  /**
+   * VS Code starts again on the same workspace: a new core and a new player page, over the same
+   * disk and the same global and workspace storage. The old core is dropped (`dispose`) as a
+   * crash would drop it; call `close()` on it first for a clean window close.
+   */
+  restart(): void;
 }
 
 export async function createHarness(): Promise<Harness> {
@@ -431,22 +452,30 @@ export async function createHarness(): Promise<Harness> {
   const terminalSettings = new FakeTerminalSettings();
   const storage: Storage = {
     global: new MemoryStore(),
-    workspace: new MemoryStore(),
+    workspace: new MemoryStore(true),
     folder: join(root, 'extension-storage'),
   };
   const nodeFileSystem = createNodeFileSystem();
   const unreadable = new Set<string>();
   const held = new Map<string, Promise<void>>();
+  const inFlight = new Set<Promise<unknown>>();
+  /** Counts a call until it settles, so `settle()` can wait for it. */
+  const track = <T>(call: Promise<T>): Promise<T> => {
+    inFlight.add(call);
+    const done = () => inFlight.delete(call);
+    call.then(done, done);
+    return call;
+  };
   const fileSystem: FileSystem = {
-    ...nodeFileSystem,
-    async readDirectory(path) {
-      await held.get(path);
-      if (unreadable.has(path)) {
-        return Promise.reject(
-          new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
-        );
-      }
-      return nodeFileSystem.readDirectory(path);
+    readDirectory(path) {
+      const read = (): ReturnType<FileSystem['readDirectory']> =>
+        unreadable.has(path)
+          ? Promise.reject(
+              new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
+            )
+          : nodeFileSystem.readDirectory(path);
+      const hold = held.get(path);
+      return track(hold === undefined ? read() : hold.then(read));
     },
     readText(path) {
       if (unreadable.has(path)) {
@@ -454,11 +483,13 @@ export async function createHarness(): Promise<Harness> {
           new FileSystemError('readOnly', path, `EACCES: permission denied, open '${path}'`),
         );
       }
-      return nodeFileSystem.readText(path);
+      return track(nodeFileSystem.readText(path));
     },
+    writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
+    makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
   };
-  const ports: Ports = {
-    player,
+  const portsFor = (windowPlayer: FakePlayer): Ports => ({
+    player: windowPlayer,
     fileSystem,
     storage,
     clock,
@@ -467,16 +498,25 @@ export async function createHarness(): Promise<Harness> {
     ui,
     logger,
     terminalSettings,
-  };
-  const core = createFollowAlong(ports);
+  });
+  const cores: FollowAlong[] = [];
   onTestFinished(async () => {
-    core.dispose();
+    for (const core of cores) {
+      core.dispose();
+    }
+    // A save still under way would write into the temp dir while it is being removed.
+    await harness.settle();
     await rm(root, { recursive: true, force: true });
   });
+  const start = (windowPlayer: FakePlayer): FollowAlong => {
+    const core = createFollowAlong(portsFor(windowPlayer));
+    cores.push(core);
+    return core;
+  };
 
-  return {
-    core,
-    ports,
+  const harness: Harness = {
+    core: start(player),
+    ports: portsFor(player),
     player,
     clock,
     converter,
@@ -504,6 +544,9 @@ export async function createHarness(): Promise<Harness> {
         release();
       };
     },
+    makeReadable(path) {
+      unreadable.delete(path);
+    },
     async folder(name, tree) {
       const folder = join(root, name);
       await mkdir(folder, { recursive: true });
@@ -521,5 +564,25 @@ export async function createHarness(): Promise<Harness> {
         .map((entry) => relative(folder, join(entry.parentPath, entry.name)).split(sep).join('/'))
         .sort();
     },
+    async settle() {
+      for (;;) {
+        // A finished call's continuation may start the next call; let it run first.
+        await new Promise((resolve) => setImmediate(resolve));
+        if (inFlight.size === 0) {
+          return;
+        }
+        await Promise.allSettled([...inFlight]);
+      }
+    },
+    restart() {
+      harness.core.dispose();
+      const windowPlayer = new FakePlayer();
+      Object.assign(harness, {
+        core: start(windowPlayer),
+        player: windowPlayer,
+        ports: portsFor(windowPlayer),
+      });
+    },
   };
+  return harness;
 }

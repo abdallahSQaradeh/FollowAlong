@@ -13,7 +13,8 @@ seen again after a re-stream is not added twice. Media payloads are skipped, not
 `WebmSource` (`src/player/webm-source.ts`) uses the index like this:
 
 - **A seek to a time that is not buffered.** If the running stream is inside the target's Cluster,
-  it appends the target next, and the player waits. Otherwise the target is behind the stream
+  it appends the target next, and the player waits. "Inside" counts the piece the stream has read
+  but is still appending, which can wait a long time for room (see the amendment below). Otherwise the target is behind the stream
   (dropped) or in a Cluster known from an earlier stream ahead of it. The player then drops the
   whole buffer, appends the init segment again, and streams from that Cluster with a
   `Range: bytes=N-` request. VS Code's webview resource loader answers ranges with 206
@@ -26,7 +27,8 @@ seen again after a re-stream is not added twice. Media payloads are skipped, not
 - **While playing**, `makeRoom` drops only media more than `keepBehindSeconds` (30 s) behind the
   playhead, and otherwise waits for the playhead to move (`timeupdate` or `seeking`). It does not
   wait when less than a second is buffered ahead: playback would starve before the next append
-  fits, so everything behind the playhead may go.
+  fits, so everything behind the playhead may go. In every case the group of pictures the
+  playhead is in stays (see the amendment below).
 - **Re-streams are queued.** Every seek, even one to a buffered time, supersedes a re-stream that has
   not started. A re-stream that has started is committed:
   - it aborts the old fetch, which cancels its reader;
@@ -47,6 +49,46 @@ seen again after a re-stream is not added twice. Media payloads are skipped, not
 - **Failures.** A failed re-stream (fetch, parse or append) ends in the Lesson's single `error`
   event, never a silent stall.
 
+## Amendment: making room keeps the playhead's group of pictures (#25)
+
+Source: orchestrator, flake diagnosis (D6). MediaSource also drops the video frames after a
+removal's end, up to the next keyframe. A removal ending inside the playhead's group of pictures
+took the frame under the playhead: after `load {startAt: 6}` the player sat at 0:06 with
+`buffered` [[6.003, 8.005]] and never played on. It happened when keepBehindSeconds reached into
+that group, and more often with less than a second ahead, when the removal ran up to the
+playhead. A removal while the stream was on its way to a target late in a group of pictures also
+took the group's keyframe, so the target never came. `makeRoom` now ends a removal no later than
+the start of the Cluster before the one at the playhead: a Cluster starts at or just before a
+keyframe (re-streaming relies on that too), but its timecode can be an audio block's a few ms
+before the keyframe. That keeps at most two Clusters behind the playhead, so room runs out only if
+two Clusters and a second fill the quota. With a `broken` index the old limits apply. If they did
+fill it (two groups of pictures of about 75 MB each, for example 30 Mbit/s with keyframes 20 s
+apart), the stream would wait for a playhead that cannot move: a stall without an `error`. No
+Lesson measured in research 01 comes near that. It was kept over the old limit, which in that
+case drops the playhead's own frame and stalls as well (code review of #25).
+
+Found with it: a Cluster the index read in a piece that is still being appended (waiting for room)
+lay past `appendedTo`, so a seek into it re-streamed with a Range request although the running
+stream was about to append it. The "inside" check now uses the offset the stream has read to.
+
+## Amendment: the seekable range is declared before the first append (#25, H1)
+
+Source: independent gate review of #25, H1. For a WebM without a Duration element the player
+declared `setLiveSeekableRange(0, 24 h)` (ADR 0013) on the first `updateend`, and applied `startAt`
+on `loadedmetadata`. With the default 1 MB appends, Chromium fires `loadedmetadata` before the
+first append ends in about half the runs. `seekable` was then empty or ended at the buffered end,
+so the start seek was dropped (the Lesson stayed at 0:00, with no `seeked` and no `error`), or
+landed at 0:00.1–0:04.8 and posted the `seeked` the core takes for the start seek. The reviewer's
+277 MB, 370 s file with `-live 1` failed about half of 14 runs at `startAt: 340`.
+
+The range is now declared as soon as the source buffer exists, before any append. MediaSource
+sets the duration from the init segment (Infinity without a Duration) before the media element
+has its metadata, and uses the live range only while the duration is Infinity. So `seekable`
+covers the start position whenever `loadedmetadata` runs, in either order of the events, and the
+start seek waits for the stream like any seek ahead of it, with one `seeked` once it has landed.
+A WebM with a Duration keeps `seekable` [0, duration]; `endOfStream` still fixes the duration of
+one without. MP4 plays from `<video src>` and is not affected.
+
 ## Considered options
 
 - **WebM Cues + Range for every seek (the first plan).** Our own index already knows every Cluster
@@ -54,6 +96,17 @@ seen again after a re-stream is not added twice. Media payloads are skipped, not
   the download point, for example resuming deep into a long Lesson. **Cues are deferred to #25**
   (resume deep into a long Lesson). Without Cues, a forward jump past the download point waits
   for the local stream to catch up. Source: orchestrator answer during #13 gate review.
+  **Measured for #25, still deferred.** A 340 MB, 25-minute WebM (720p VP8 at 1.8 Mbit/s + Vorbis),
+  served from local disk over HTTP with Range, in Playwright's Chromium with the default tuning:
+  `load {startAt, autoplay: false}` reached the target with `readyState` 4 in 65–100 ms at 0:00,
+  1.0–1.5 s at 12:00, and 1.5–1.8 s at 24:00 and 24:55 (two runs each, with a Duration element).
+  The same runs without one were only checked after the fact: they hid the race of amendment H1,
+  in which about half the start seeks were dropped or cut short. Since that fix, a 70 MB,
+  370 s WebM with `-live 1` (no Duration; 720p VP8 at 1.5 Mbit/s), same setup, landed at 5:40
+  with one `seeked` in 20 of 20 runs, in 0.54–0.65 s (before it, 17 of 30 runs ended at
+  0:01.3–0:04.8). That is about 5 ms per MB streamed past, so Cues pay off only for much
+  larger Lessons or a much slower file loader than measured here; VS Code's own loader was not
+  measured.
 - **Restart from byte 0 on every unbuffered seek.** Correct, but slow for a seek back near the end
   of a long Lesson, and needless when the offset is known.
 - **Keep everything already played.** Impossible past the MediaSource quota.
@@ -70,7 +123,20 @@ Range requests. Tests cover:
 - a second seek back after a re-stream;
 - two quick seeks back, the second while the first re-stream is under way;
 - a start position past a full buffer with nothing behind it to drop;
-- a failed re-stream reporting `error`.
+- a failed re-stream reporting `error`;
+- a paused playhead that keeps its picture when the buffer fills, with keepBehindSeconds reaching
+  into its group of pictures and with less than a second ahead;
+- a start position late in a group of pictures, reached though the buffer fills before it;
+- a step ahead into what the stream has read but not appended, with no Range request;
+- a start position in a WebM without a Duration whose `loadedmetadata` comes before the first
+  append ends, with nothing or two seconds buffered by then, at the default tuning.
+
+The harness can hold a stream at a byte offset until the test releases it (`holdAt` in
+`test/player/player-page.ts`): it wraps the page's `fetch`, so it lives only in the test harness.
+That fixes what is buffered when a seek lands or the buffer fills, which `route.fulfill` alone
+(the whole body at once) leaves to chance. It can also hold back the first `updateend` of the
+source buffer until `loadedmetadata` (`metadataBeforeFirstAppendEnds`), the order Chromium takes
+only some of the time.
 
 The out-of-order index that gate review 2 found cannot be reproduced at Seam 2. It needs a second
 seek while a re-stream sits between a re-seen Cluster and a stale successor, and an 8 s fixture

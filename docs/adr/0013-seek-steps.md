@@ -21,9 +21,11 @@ choices, so the next playback commands (#18 speed, #22 status bar) follow the sa
   WebM seek into media the buffer dropped re-streams from the Cluster index (ADR 0006).
 - **A WebM without a Duration element** (an unfinalised recording) leaves the MediaSource duration
   Infinity until the stream ends, and Chromium then limits `seekable` to the buffered end: a long
-  forward step was cut short without a sound. The player calls `setLiveSeekableRange(0, 24 h)`
-  after the first append, so the seek goes through the normal path (the stream runs on to the
-  target). When the stream ends, `endOfStream` fixes the duration and the clamp at the end applies.
+  forward step was cut short without a sound. The player calls `setLiveSeekableRange(0, 24 h)`,
+  so the seek goes through the normal path (the stream runs on to the target). Since #25 it does
+  so before the first append, not after it, so a start position is not cut short either (ADR
+  0006, amendment H1). When the stream ends, `endOfStream` fixes the duration and the clamp at
+  the end applies.
 - **Before there is something to step in,** a step says "no Lesson is open" (same message as
   play/pause) with no Lesson, and does nothing while the player page is still starting.
 - **Keys.** Windows/Linux as in the spec. On macOS the one-press keys are `Ctrl+Cmd+←/→`, which

@@ -1,9 +1,13 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { openCourseData, type CourseDataFile } from '../../src/core/course-data.js';
+import {
+  openCourseData,
+  UnreadableCourseDataError,
+  type CourseDataFile,
+} from '../../src/core/course-data.js';
 import { createHarness } from './harness.js';
 import { isHidden, makeReadOnly } from './read-only.js';
 
@@ -162,5 +166,74 @@ describe('Course data storage', () => {
     expect(await h.listFiles(course)).toEqual(['.followalong', 'intro.webm']);
     expect(await openCourseData(course, h.ports).read(notesFile)).toEqual(notes);
     expect(h.ui.messages).toEqual([]);
+  });
+
+  it('keeps the data in the extension storage while the copy in the Course cannot be read', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { '.followalong/notes.json': '{"version": 2' });
+    const inCourse = join(course, '.followalong', 'notes.json');
+    const data = openCourseData(course, h.ports);
+    expect(await data.read(notesFile)).toBeUndefined();
+
+    expect(await data.write(notesFile, notes)).toEqual({ keptElsewhere: inCourse });
+    expect(await readFile(inCourse, 'utf8')).toBe('{"version": 2');
+    expect(await openCourseData(course, h.ports).read(notesFile)).toEqual(notes);
+  });
+
+  it('writes nowhere when neither the copy in the Course nor the fallback copy can be read', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { '.followalong/notes.json': '{"version": 2' });
+    await openCourseData(course, h.ports).write(notesFile, notes);
+    const [fallbackCopy] = await h.listFiles(h.storage.folder);
+    const fallback = join(h.storage.folder, fallbackCopy ?? '');
+    await writeFile(fallback, '{"version": 99, "data": {}}');
+
+    const data = openCourseData(course, h.ports);
+    expect(await data.read(notesFile)).toBeUndefined();
+    await expect(data.write(notesFile, notes)).rejects.toThrow(UnreadableCourseDataError);
+
+    expect(await readFile(join(course, '.followalong', 'notes.json'), 'utf8')).toBe(
+      '{"version": 2',
+    );
+    expect(await readFile(fallback, 'utf8')).toBe('{"version": 99, "data": {}}');
+  });
+
+  it('writes into the Course again once its copy has been fixed', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { '.followalong/notes.json': '{"version": 2' });
+    const data = openCourseData(course, h.ports);
+    expect(await data.read(notesFile)).toBeUndefined();
+
+    await writeFile(
+      join(course, '.followalong', 'notes.json'),
+      JSON.stringify({ version: 2, data: notes }),
+    );
+    expect(await data.read(notesFile)).toEqual(notes);
+    expect(await data.write(notesFile, { lessons: { 'intro.webm': 'fixed' } })).toEqual({});
+
+    expect(await openCourseData(course, h.ports).read(notesFile)).toEqual({
+      lessons: { 'intro.webm': 'fixed' },
+    });
+    expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
+  });
+
+  it('never writes over a fallback copy it could not read, even one it has not read yet', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      '.followalong/notes.json': JSON.stringify({ version: 2, data: notes }),
+    });
+    makeReadOnly(join(course, '.followalong'));
+    await openCourseData(course, h.ports).write(notesFile, notes);
+    const [fallbackCopy] = await h.listFiles(h.storage.folder);
+    const damaged = join(h.storage.folder, fallbackCopy ?? '');
+    await writeFile(damaged, '{"version": 99, "data": {}}');
+
+    // The copy in the Course is usable, so a read stops there; the write must still not replace
+    // the fallback copy, which a newer FollowAlong wrote.
+    const data = openCourseData(course, h.ports);
+    expect(await data.read(notesFile)).toEqual(notes);
+    await expect(data.write(notesFile, notes)).rejects.toThrow(UnreadableCourseDataError);
+
+    expect(await readFile(damaged, 'utf8')).toBe('{"version": 99, "data": {}}');
   });
 });

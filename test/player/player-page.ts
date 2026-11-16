@@ -31,12 +31,51 @@ export const media = {
   empty: `${origin}/media/empty.webm`,
 } as const;
 export const webmDuration = 3;
+
+/** The byte offset of each Cluster of a fixture, found by the Cluster element ID. */
+function clusterOffsets(name: string): readonly number[] {
+  const file = readFileSync(join(root, 'test', 'fixtures', 'media', name));
+  const clusterId = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+  const offsets: number[] = [];
+  for (let at = file.indexOf(clusterId); at !== -1; at = file.indexOf(clusterId, at + 1)) {
+    offsets.push(at);
+  }
+  return offsets;
+}
+
+function clusterOffset(name: string, offsets: readonly number[], index: number): number {
+  const offset = offsets[index];
+  if (offset === undefined) {
+    throw new Error(`${name} has no Cluster ${String(index)}`);
+  }
+  return offset;
+}
+
+const longClusters = clusterOffsets('long.webm');
+const noDurationClusters = clusterOffsets('no-duration.webm');
+
+/**
+ * The byte offset of Cluster `index` of the 8 s fixture, for `holdAt`. There is one a second:
+ * Cluster 3 starts at 0:02.988 (with sound), just before the keyframe at 0:03.003.
+ */
+export function longClusterOffset(index: number): number {
+  return clusterOffset('long.webm', longClusters, index);
+}
+
+/** The same for the 8 s fixture without a Duration element (Cluster 0 starts right after its init segment). */
+export function noDurationClusterOffset(index: number): number {
+  return clusterOffset('no-duration.webm', noDurationClusters, index);
+}
 export const mp4Duration = 3;
 
 declare global {
   interface Window {
     /** Every message the player posted to the extension, in order. */
     followalongSent?: unknown[];
+    /** Set with `holdAt`: lets the held streams go on. */
+    followalongReleaseStream?: () => void;
+    /** Set with `holdAt`: resolves once a held stream has passed on bytes after `holdAt`. */
+    followalongStreamDelivered?: Promise<void>;
   }
 }
 
@@ -47,6 +86,18 @@ export interface PlayerOptions {
   readonly tuning?: PlayerTuning;
   /** Answer Range requests with bytes that are not WebM, as a file changed on disk would. */
   readonly brokenRanges?: boolean;
+  /**
+   * Hold every media stream at this file offset until `releaseStream()`: the bytes before it
+   * arrive as one chunk, the rest only once released. Playwright delivers a whole response body
+   * at once, so this is how a test fixes what is buffered when something else happens.
+   */
+  readonly holdAt?: number;
+  /**
+   * Hold back the first `updateend` of each source buffer until the media element has fired
+   * `loadedmetadata`. Chromium fires `loadedmetadata` before the end of a large first append about
+   * half the time (#25, H1), and after a small one; this makes the order the same every run.
+   */
+  readonly metadataBeforeFirstAppendEnds?: boolean;
   /**
    * `false`: the harness posts commands and reads state without a user gesture, as VS Code does.
    * Chromium then refuses autoplay until the learner acts in the page (#12 D3). By default the
@@ -63,6 +114,10 @@ export interface PlayerHarness {
   /** Waits until the player has sent an event matching `expected` (a partial event). */
   waitForEvent(expected: Partial<PlayerEvent>): Promise<void>;
   video(): Promise<VideoState>;
+  /** Lets streams held by `holdAt` go on; returns once the player has read the bytes after it. */
+  releaseStream(): Promise<void>;
+  /** The Range header of every media request the player made, in order. */
+  rangeRequests(): readonly string[];
 }
 
 export interface VideoState {
@@ -87,8 +142,13 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
     script: readFileSync(join(root, 'out', 'player', 'player.js'), 'utf8'),
     style: readFileSync(join(root, 'out', 'player', 'player.css'), 'utf8'),
   });
+  const rangeRequests: string[] = [];
   await page.route(`${origin}/**`, async (route) => {
     const path = new URL(route.request().url()).pathname;
+    const requestedRange = route.request().headers().range;
+    if (path.startsWith('/media/') && requestedRange !== undefined) {
+      rangeRequests.push(requestedRange);
+    }
     if (path === '/') {
       await route.fulfill({ contentType: 'text/html', body: html });
     } else if (
@@ -100,7 +160,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       const contentType = path.endsWith('.mp4') ? 'video/mp4' : 'video/webm';
       const body = readFileSync(join(root, 'test', 'fixtures', path));
       // Byte ranges, as VS Code's webview resource loader answers them (research 01: 206).
-      const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? '');
+      const range = /^bytes=(\d+)-(\d*)$/.exec(requestedRange ?? '');
       if (range === null) {
         await route.fulfill({ contentType, body });
         return;
@@ -129,9 +189,121 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
     }
   });
   await page.addInitScript(
-    ({ aac, tuning }: { aac: boolean | undefined; tuning: PlayerTuning | undefined }) => {
+    ({
+      aac,
+      tuning,
+      holdAt,
+      metadataFirst,
+    }: {
+      aac: boolean | undefined;
+      tuning: PlayerTuning | undefined;
+      holdAt: number | undefined;
+      metadataFirst: boolean;
+    }) => {
       if (tuning !== undefined) {
         window.followalongPlayerTuning = tuning;
+      }
+      if (holdAt !== undefined) {
+        // The player streams with fetch: pass each body on only up to `holdAt` until released.
+        const released = new Promise<void>((resolve) => {
+          window.followalongReleaseStream = resolve;
+        });
+        let delivered = () => {
+          // Replaced right below.
+        };
+        window.followalongStreamDelivered = new Promise<void>((resolve) => {
+          delivered = resolve;
+        });
+        const fetchFile = window.fetch.bind(window);
+        window.fetch = async (input, init) => {
+          const response = await fetchFile(input, init);
+          if (response.body === null) {
+            return response;
+          }
+          const reader = response.body.getReader();
+          const from = /^bytes (\d+)-/.exec(response.headers.get('Content-Range') ?? '');
+          let offset = from === null ? 0 : Number(from[1]);
+          const before: Uint8Array[] = [];
+          const held = new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              const { done, value } = await reader.read();
+              if (done) {
+                for (const chunk of before.splice(0)) {
+                  controller.enqueue(chunk);
+                }
+                controller.close();
+                return;
+              }
+              const cut = Math.min(Math.max(holdAt - offset, 0), value.length);
+              offset += value.length;
+              if (cut > 0) {
+                before.push(value.subarray(0, cut));
+              }
+              if (offset < holdAt) {
+                return;
+              }
+              // Everything before `holdAt` as one chunk, then the rest once released.
+              const total = before.reduce((length, chunk) => length + chunk.length, 0);
+              if (total > 0) {
+                const joined = new Uint8Array(total);
+                let at = 0;
+                for (const chunk of before.splice(0)) {
+                  joined.set(chunk, at);
+                  at += chunk.length;
+                }
+                controller.enqueue(joined);
+              }
+              await released;
+              if (cut < value.length) {
+                controller.enqueue(value.subarray(cut));
+                delivered();
+              }
+            },
+            cancel: (reason) => reader.cancel(reason),
+          });
+          return new Response(held, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        };
+      }
+      if (metadataFirst) {
+        const addSourceBuffer = Object.getOwnPropertyDescriptor(
+          MediaSource.prototype,
+          'addSourceBuffer',
+        )?.value as (this: MediaSource, type: string) => SourceBuffer;
+        MediaSource.prototype.addSourceBuffer = function (this: MediaSource, type: string) {
+          const buffer = addSourceBuffer.call(this, type);
+          let metadata = false;
+          let first = true;
+          let release: (() => void) | undefined;
+          // Captured at the document, so it runs before the player's own listener on the video;
+          // the held `updateend` follows a task later, after that listener.
+          document.addEventListener(
+            'loadedmetadata',
+            () => {
+              metadata = true;
+              const held = release;
+              release = undefined;
+              if (held !== undefined) {
+                setTimeout(held, 0);
+              }
+            },
+            { capture: true, once: true },
+          );
+          // Added before the player's listeners, so it can stop the event reaching them.
+          buffer.addEventListener('updateend', (event) => {
+            if (!first || metadata) {
+              first = false;
+              return;
+            }
+            first = false;
+            event.stopImmediatePropagation();
+            release = () => buffer.dispatchEvent(new Event('updateend'));
+          });
+          return buffer;
+        };
       }
       const sent: unknown[] = [];
       window.followalongSent = sent;
@@ -146,7 +318,12 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
           type.includes('mp4a') ? (aac ? 'probably' : '') : original(type);
       }
     },
-    { aac: options.aac, tuning: options.tuning },
+    {
+      aac: options.aac,
+      tuning: options.tuning,
+      holdAt: options.holdAt,
+      metadataFirst: options.metadataBeforeFirstAppendEnds ?? false,
+    },
   );
   await page.goto(`${origin}/`);
 
@@ -166,6 +343,15 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       }, commands);
     },
     events,
+    async releaseStream() {
+      await page.evaluate(async () => {
+        window.followalongReleaseStream?.();
+        await window.followalongStreamDelivered;
+        // A task later, the player has read those bytes and acted on them.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    },
+    rangeRequests: () => [...rangeRequests],
     async waitForEvent(expected) {
       await expect
         .poll(async () => (await events()).some((event) => matches(event, expected)), {

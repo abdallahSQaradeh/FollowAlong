@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 import { createHarness } from './harness.js';
 
+/** Lets an open that was just asked for start: it is then waiting on its folder read. */
+async function readStarted(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('opening a Course', () => {
   it('plays its first Lesson in the player beside the code, with sound', async () => {
     const h = await createHarness();
@@ -101,17 +106,17 @@ describe('opening a Course', () => {
     ]);
   });
 
-  it('keeps the Course opened last when two opens finish in reverse order', async () => {
+  it('drops an open still reading a slow drive when the learner asks for another Course', async () => {
     const h = await createHarness();
     const slow = await h.folder('Slow drive course', { 'a.webm': 'video' });
     const fast = await h.folder('Fast course', { 'b.webm': 'video', 'Part 2/c.webm': 'video' });
     const release = h.holdReads(slow);
 
     const first = h.core.openCourse(slow);
+    await readStarted();
     const second = h.core.openCourse(fast);
-    await second;
     release();
-    await first;
+    await Promise.all([first, second]);
     h.player.ready();
 
     expect(h.player.shown.map((shown) => shown.resourceRoots[0])).toEqual([fast]);
@@ -126,10 +131,10 @@ describe('opening a Course', () => {
     const release = h.holdReads(moved);
 
     const first = h.core.openCourse(moved);
+    await readStarted();
     const second = h.core.openCourse(fast);
-    await second;
     release();
-    await first;
+    await Promise.all([first, second]);
 
     expect(h.ui.messages).toEqual([]);
     expect(h.player.shown.map((shown) => shown.resourceRoots[0])).toEqual([fast]);
