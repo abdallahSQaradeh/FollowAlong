@@ -133,9 +133,7 @@ export async function missingResources(
 }
 
 export function findResource(data: ResourcesData, id: string): ResourceRecord | undefined {
-  return Object.values(data.lessons)
-    .flat()
-    .find((record) => record.id === id);
+  return [...data.course, ...Object.values(data.lessons).flat()].find((record) => record.id === id);
 }
 
 export function withResource(
@@ -147,6 +145,21 @@ export function withResource(
     course: data.course,
     lessons: { ...data.lessons, [lessonId]: [...(data.lessons[lessonId] ?? []), record] },
   };
+}
+
+/** `data` without the Resource with this id, or `undefined` when it holds no such Resource. */
+export function withoutResource(data: ResourcesData, id: string): ResourcesData | undefined {
+  if (findResource(data, id) === undefined) {
+    return undefined;
+  }
+  const without = (records: readonly ResourceRecord[]): ResourceRecord[] =>
+    records.filter((record) => record.id !== id);
+  const lessons = Object.fromEntries(
+    Object.entries(data.lessons)
+      .map(([lessonId, records]) => [lessonId, without(records)] as const)
+      .filter(([, records]) => records.length > 0),
+  );
+  return { course: without(data.course), lessons };
 }
 
 /** The opener per file type, by extension without regard to case; every other type is a file. */

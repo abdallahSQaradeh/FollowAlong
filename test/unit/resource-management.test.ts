@@ -1,4 +1,4 @@
-import { rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -89,6 +89,67 @@ describe('a Resource whose file is missing', () => {
 
     expect(h.ui.opened).toEqual([{ kind: 'markdown', path: join(course, 'notes.md') }]);
     expect(resourceNamed(h, 'intro.webm', 'notes.md').missing).toBe(false);
+    expect(h.ui.messages).toEqual([]);
+  });
+});
+
+/** What is stored in the Resources file of a Course, as JSON. */
+async function storedResources(course: string): Promise<unknown> {
+  const stored = JSON.parse(
+    await readFile(join(course, '.followalong', 'resources.json'), 'utf8'),
+  ) as { readonly data: unknown };
+  return stored.data;
+}
+
+describe('detaching a Resource', () => {
+  it('removes it from the tree and the Resources file, and leaves the file on disk', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'two.webm': 'video',
+      'notes.md': '# notes',
+      'cheat.md': '# cheat',
+    });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'notes.md'));
+    await h.core.attachResource('intro.webm', join(course, 'cheat.md'));
+    await h.core.attachResource('two.webm', join(course, 'notes.md'));
+
+    await h.core.detachResource(resourceNamed(h, 'intro.webm', 'notes.md').id);
+
+    expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual(['cheat.md']);
+    expect(resourceNodes(h, 'two.webm').map((resource) => resource.label)).toEqual(['notes.md']);
+    expect(await storedResources(course)).toMatchObject({
+      lessons: { 'intro.webm': [{ path: 'cheat.md' }], 'two.webm': [{ path: 'notes.md' }] },
+    });
+    expect(await readFile(join(course, 'notes.md'), 'utf8')).toBe('# notes');
+    await h.core.openCourse(course);
+    expect(resourceNodes(h, 'intro.webm').map((resource) => resource.label)).toEqual(['cheat.md']);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('detaches a missing Resource too', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { 'intro.webm': 'video', 'notes.md': '# notes' });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'notes.md'));
+    await rm(join(course, 'notes.md'));
+    await h.core.openCourse(course);
+
+    await h.core.detachResource(resourceNamed(h, 'intro.webm', 'notes.md').id);
+
+    expect(resourceNodes(h, 'intro.webm')).toEqual([]);
+  });
+
+  it('does nothing for a Resource the open Course does not have, or with no Course open', async () => {
+    const h = await createHarness();
+    await h.core.detachResource('no-such-resource');
+    const course = await h.folder('Course', { 'intro.webm': 'video' });
+    await h.core.openCourse(course);
+
+    await h.core.detachResource('no-such-resource');
+
+    expect(await h.listFiles(course)).toEqual(['intro.webm']);
     expect(h.ui.messages).toEqual([]);
   });
 });

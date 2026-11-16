@@ -6,12 +6,7 @@ import { basename } from 'node:path';
 
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
-import {
-  fallbackRoot,
-  openCourseData,
-  UnreadableCourseDataError,
-  type CourseData,
-} from './course-data.js';
+import { fallbackRoot } from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
 import { scanCourses } from './course-scanner.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
@@ -25,18 +20,8 @@ import {
   type StepSize,
 } from './loaded-lesson.js';
 import type { StatusBarCommand } from './status-bar.js';
-import {
-  findResource,
-  missingResources,
-  newResource,
-  noResources,
-  resourcePath,
-  resourceTarget,
-  resourcesFile,
-  resourcesFileExists,
-  withResource,
-  type ResourcesData,
-} from './resources.js';
+import { openResources, type ResourceStore } from './resource-store.js';
+import { resourcePath, resourceTarget } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
@@ -64,6 +49,11 @@ export interface FollowAlong {
   attachToLoadedLesson(): Promise<void>;
   /** Opens a Resource of the open Course, by its tree id, in a tab beside the code. */
   openResource(resourceId: string): Promise<void>;
+  /**
+   * Detaches a Resource of the open Course, by its tree id: the reference goes, the file on disk
+   * stays. The Course is fixed when the command runs.
+   */
+  detachResource(resourceId: string): Promise<void>;
   /**
    * The play/pause command: pauses the Lesson if the player reports it playing, else resumes it,
    * first stepping back by the `followalong.resumeRewind` setting (a manual resume, ADR 0016).
@@ -108,15 +98,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
-  /** The open Course's Course data, and the Resources read from it. */
-  let courseData: CourseData | undefined;
-  let resources: ResourcesData = noResources;
-  /** The ids of the open Course's Resources whose file is missing: the tree shows them dimmed. */
-  let missing: ReadonlySet<string> = new Set();
+  /** The open Course's Resources. */
+  let resourceStore: ResourceStore | undefined;
   /** The open Course's Progress. */
   let progress: ProgressRecorder | undefined;
-  /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
-  let attaching: Promise<unknown> = Promise.resolve();
 
   /** The Lesson the player holds, and the playback commands. */
   const loaded = createLoadedLesson(ports, {
@@ -162,94 +147,40 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /**
-   * Attaches a file to a Lesson of `course`, after any attach still under way. It writes into that
-   * Course's data even if the learner has opened another Course since, and shows it in the tree
-   * only if that Course is still the one open.
+   * Shows a change made to a Course's Resources. It writes into that Course's data even if the
+   * learner has opened another Course since, and shows it in the tree only if that Course is
+   * still the one open; otherwise it says so, because the tree shows another Course and the
+   * learner might do it again.
    */
-  function attachInTurn(
-    course: Course,
-    data: CourseData,
-    lessonId: string,
-    absolutePath: string,
-  ): Promise<void> {
-    /** The Resources file is there but cannot be used: writing would replace what it holds. */
-    const refuse = (): void => {
-      logger.log({
-        level: 'warn',
-        message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
-      });
-      // The Course is named: after a switch, "this Course" would read as the one open now.
+  function showResourceChange(course: Course, store: ResourceStore, done: string): void {
+    if (openedCourse?.folder === course.folder) {
+      ui.showLessonTree(buildLessonTree(openedCourse, store.current(), store.missing()));
+    } else {
       ui.showMessage({
-        severity: 'warning',
-        text: `FollowAlong can't update the Resources file of “${basename(course.folder)}” (it is damaged or from a newer version). Nothing was changed.`,
+        severity: 'info',
+        text: `FollowAlong ${done} in “${basename(course.folder)}”, which is no longer open.`,
       });
-    };
-    const attach = async (): Promise<void> => {
-      // Re-read first: another window may have attached to this Course since it was opened.
-      const read = await data.read(resourcesFile);
-      if (read === undefined && (await resourcesFileExists(ports.fileSystem, course.folder))) {
-        // The file is there but was ignored (damaged, or from a newer FollowAlong): writing
-        // would replace data the learner, or a newer version, still needs.
-        refuse();
-        return;
-      }
-      const stored = read ?? noResources;
-      const next = withResource(stored, lessonId, newResource(course.folder, absolutePath));
-      try {
-        await data.write(resourcesFile, next);
-      } catch (error) {
-        // The copy the write would replace (the fallback one, in a read-only Course) is unusable.
-        if (error instanceof UnreadableCourseDataError) {
-          refuse();
-          return;
-        }
-        throw error;
-      }
-      logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });
-      // The Course may have been opened again, or another one opened, while this attach wrote.
-      if (openedCourse?.folder === course.folder) {
-        resources = next;
-        ui.showLessonTree(buildLessonTree(openedCourse, resources, missing));
-      } else {
-        // The tree shows another Course: without a word the learner might attach the file again.
-        const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
-        ui.showMessage({
-          severity: 'info',
-          text: `FollowAlong attached “${basename(absolutePath)}” to “${lesson?.title ?? lessonId}” in “${basename(course.folder)}”, which is no longer open.`,
-        });
-      }
-    };
-    const done = attaching.then(attach, attach);
-    attaching = done.catch(() => undefined);
-    return done;
+    }
   }
 
   /**
    * Both attach routes, once they have fixed the Lesson and its Course: asks for the file when
-   * none is given yet, then attaches it in turn. A closed dialog attaches nothing.
+   * none is given yet, then attaches it. A closed dialog attaches nothing.
    */
   async function attachTo(
     course: Course,
-    data: CourseData,
+    store: ResourceStore,
     lessonId: string,
     absolutePath?: string,
   ): Promise<void> {
     const path = absolutePath ?? (await ui.pickFile());
-    if (path !== undefined) {
-      await attachInTurn(course, data, lessonId, path);
-    }
-  }
-
-  /** The Course's Resources; a Course whose file cannot be read still opens, without them. */
-  async function readResources(data: CourseData, folder: string): Promise<ResourcesData> {
-    try {
-      return (await data.read(resourcesFile)) ?? noResources;
-    } catch (error) {
-      logger.log({
-        level: 'warn',
-        message: `Could not read the Resources of ${folder}: ${error instanceof Error ? error.message : String(error)}`,
-      });
-      return noResources;
+    if (path !== undefined && (await store.attach(lessonId, path))) {
+      const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+      showResourceChange(
+        course,
+        store,
+        `attached “${basename(path)}” to “${lesson?.title ?? lessonId}”`,
+      );
     }
   }
 
@@ -304,16 +235,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const hadLesson = loaded.lesson() !== undefined;
       await loaded.leave();
       // Read first, then switch, so no click sees one Course's Resources next to another's folder.
-      const data = openCourseData(folder, ports);
-      const stored = await readResources(data, folder);
-      const storedMissing = await missingResources(ports.fileSystem, folder, stored);
+      const store = await openResources(folder, ports);
       const inOrder = lessonsInOrder(course);
       const first = inOrder[0];
       const recorder = first === undefined ? undefined : await openProgress(folder, ports);
       openedCourse = course;
-      courseData = data;
-      resources = stored;
-      missing = storedMissing;
+      resourceStore = store;
       progress = recorder;
       if (first === undefined || recorder === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
@@ -326,7 +253,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       await storage.workspace.set(openCourseKey, folder);
-      ui.showLessonTree(buildLessonTree(course, resources, missing));
+      ui.showLessonTree(buildLessonTree(course, store.current(), store.missing()));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
@@ -502,8 +429,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     async attachResource(lessonId, absolutePath) {
       const course = openedCourse;
-      const data = courseData;
-      if (course === undefined || data === undefined) {
+      const store = resourceStore;
+      if (course === undefined || store === undefined) {
         logger.log({ level: 'warn', message: `Cannot attach to ${lessonId}: no Course is open.` });
         return;
       }
@@ -514,7 +441,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      await attachTo(course, data, lessonId, absolutePath);
+      await attachTo(course, store, lessonId, absolutePath);
     },
     async attachToLoadedLesson() {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
@@ -523,8 +450,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // The Loaded Lesson is always one of the open Course's: `open` leaves it before switching.
       const lesson = loaded.lesson();
       const course = openedCourse;
-      const data = courseData;
-      if (lesson === undefined || course === undefined || data === undefined) {
+      const store = resourceStore;
+      if (lesson === undefined || course === undefined || store === undefined) {
         ui.showMessage({
           severity: 'info',
           text: 'Open a Lesson first, then attach a Resource to it.',
@@ -532,16 +459,38 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       try {
-        await attachTo(course, data, lesson.id);
+        await attachTo(course, store, lesson.id);
       } finally {
         // The dialog took keyboard focus: hand it back, also when the attach failed (ADR 0023).
         ui.returnFocus();
       }
     },
+    async detachResource(resourceId) {
+      // The Course is fixed when the command runs: the change is made in its data even if
+      // another Course is opened before it is written.
+      const course = openedCourse;
+      const store = resourceStore;
+      const record = store?.find(resourceId);
+      if (course === undefined || store === undefined || record === undefined) {
+        logger.log({
+          level: 'warn',
+          message: `Cannot detach ${resourceId}: it is not a Resource of the open Course.`,
+        });
+        return;
+      }
+      if (await store.detach(resourceId)) {
+        showResourceChange(
+          course,
+          store,
+          `detached “${basename(resourcePath(course.folder, record))}”`,
+        );
+      }
+    },
     async openResource(resourceId) {
       const course = openedCourse;
-      const record = findResource(resources, resourceId);
-      if (course === undefined || record === undefined) {
+      const store = resourceStore;
+      const record = store?.find(resourceId);
+      if (course === undefined || store === undefined || record === undefined) {
         logger.log({
           level: 'warn',
           message: `Cannot open ${resourceId}: it is not a Resource of the open Course.`,
@@ -550,18 +499,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       const path = resourcePath(course.folder, record);
       // Looked at now, not when the Course opened: the file may have gone, or come back, since.
-      const there = await ports.fileSystem.exists(path);
-      if (openedCourse === course && missing.has(record.id) === there) {
-        const next = new Set(missing);
-        if (there) {
-          next.delete(record.id);
-        } else {
-          next.add(record.id);
-        }
-        missing = next;
-        ui.showLessonTree(buildLessonTree(course, resources, missing));
+      const changed = await store.checkFiles();
+      if (changed && openedCourse === course) {
+        ui.showLessonTree(buildLessonTree(course, store.current(), store.missing()));
       }
-      if (!there) {
+      if (store.missing().has(record.id)) {
         ui.showMessage({
           severity: 'warning',
           text: `FollowAlong can’t find “${basename(path)}”: it was moved, renamed or deleted. Use Relink… on it in the Lesson tree to point it at the file’s new place.`,
