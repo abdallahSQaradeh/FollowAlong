@@ -30,12 +30,17 @@ The setting's name is ADR 0089.
   Play-through (review of #60).
 - **It resumes only from the page that holds the pause.** A move (ADR 0049), a reload, or a
   collapse (ADR 0092, which leaves no page at all) replaces that page. A new page has had no click,
-  so VS Code would refuse a `play` there (#12 D3). So the auto-pause is dropped rather than
-  deferred: the Lesson stays paused as a plain pause, without "Paused (typing)", and a restored or
-  moved page loads it paused. A quiet period that ends while no ready page holds the Lesson, or
-  before the player has reported the pause, is dropped the same way. One that ends while the
-  learner's `play` is on its way does nothing: that play's answer makes the Play-through, or, if
-  VS Code refuses it, a plain pause (review of #60).
+  so VS Code would refuse a `play` there (#12 D3). So with `pauseAndResume` the auto-pause is
+  dropped rather than deferred: the Lesson stays paused as a plain pause, without "Paused
+  (typing)", and a restored or moved page loads it paused. **With `pause` it holds** (gate round 1
+  of #60): "Paused (typing)" keeps saying why the video stopped until the learner plays it again
+  (ADR 0052), and that play starts a Play-through. The core counts player pages and resumes only
+  into the page auto-pause paused, so switching to `pauseAndResume` after a page change ends the
+  Quiet period as a plain pause. A Quiet period that ends while no ready page holds the Lesson,
+  while a move or collapse waits for the page's snapshot, or before the player has reported the
+  pause, is dropped the same way. One that ends while the learner's `play` is on its way does
+  nothing: that play's answer makes the Play-through, or, if VS Code refuses it, a plain pause
+  (review of #60).
 - **A refused auto-resume ends the auto-pause.** The pause that answers it is a plain pause, and
   the learner is told once to press play in the player, as for any refused play (ADR 0052,
   Consequences).

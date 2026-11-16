@@ -55,8 +55,8 @@ export type AutoPauseInput =
    */
   | { readonly type: 'paused'; readonly refused: boolean }
   /**
-   * A new player page replaces the one that held the Lesson: a move (ADR 0049) or a reload. It
-   * has had no click, so VS Code would refuse a resume there (#12 D3).
+   * A new player page replaces the one that held the Lesson: a move (ADR 0049), a reload or a
+   * collapse (ADR 0092). It has had no click, so VS Code would refuse a resume there (#12 D3).
    */
   | { readonly type: 'pageReplaced' }
   /**
@@ -68,8 +68,8 @@ export type AutoPauseInput =
   /** The Loaded Lesson is over: it ended, or the learner left it (another Lesson or Course, a closed player). */
   | { readonly type: 'lessonOver' }
   /**
-   * The Quiet period of `pauseAndResume` passed with no edit. `canResume`: the page that holds the
-   * Lesson is ready and has reported it paused. `playAsked`: a `play` is on its way to the player
+   * The Quiet period of `pauseAndResume` passed with no edit. `canResume`: the page auto-pause
+   * paused the Lesson in still holds it, is ready, has reported it paused, and is not being moved. `playAsked`: a `play` is on its way to the player
    * (the learner's), whose answer ends the auto-pause.
    */
   | { readonly type: 'quiet'; readonly canResume: boolean; readonly playAsked: boolean };
@@ -161,10 +161,11 @@ function transition(state: AutoPauseState, input: AutoPauseInput): AutoPauseStep
       }
       return { state, effects: [] };
     case 'pageReplaced':
-      // The page that held its pause is gone. A Lesson that plays on in the new page keeps its
-      // Play-through: no pause came.
+      // The page that held its pause is gone, and the new one has had no click (#12 D3): a pause
+      // it would resume becomes a plain pause. With `pause` it keeps saying why the video stopped,
+      // and a Lesson that plays on in the new page keeps its Play-through: no pause came.
       return {
-        state: state.kind === 'autoPaused' ? { ...state, kind: 'armed' } : state,
+        state: quietRuns(state) ? { ...state, kind: 'armed' } : state,
         effects: [],
       };
     case 'learnerPaused':

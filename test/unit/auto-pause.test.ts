@@ -259,6 +259,21 @@ describe('auto-pause while typing', () => {
       expect(edit(h)).toEqual([{ type: 'pause' }]);
     });
 
+    it('re-arms when a pause the core did not ask for ends the play-through', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.player.emit({ type: 'played', lessonId });
+      // Not the learner's: the player stopped by itself (a refused autoplay after a move, say).
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
     it('re-arms when a pause the player reports ends the play-through', async () => {
       const h = await createHarness();
       await openLesson(h, 'pause');
@@ -416,6 +431,81 @@ describe('auto-pause while typing', () => {
       await pausedByTyping(h);
       h.config.set('autoPause', 'off');
 
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+  });
+
+  describe('in `pause` mode, a new player page keeps the pause it caused', () => {
+    /** The page tells what it shows when a move or collapse asks: paused at 1 s. */
+    function answerSnapshot(h: Harness): void {
+      h.player.emit({
+        type: 'snapshot',
+        snapshot: {
+          rate: 1,
+          zoom: { level: 1, left: 0, top: 0 },
+          lesson: { lessonId, position: 1, playing: false },
+        },
+      });
+    }
+
+    /** A Lesson that typing paused in `pause` mode; the player has reported the pause. */
+    async function pausedByTypingInPauseMode(h: Harness): Promise<void> {
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+    }
+
+    it('when the video moves: “Paused (typing)” stays, and the learner’s play then plays through', async () => {
+      const h = await createHarness();
+      await pausedByTypingInPauseMode(h);
+      const moving = h.core.moveVideo('bottomPanel');
+      answerSnapshot(h);
+      await moving;
+      h.player.ready();
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: 'Paused (typing)' });
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('when the player page reloads: “Paused (typing)” stays, and the learner’s click then plays through', async () => {
+      const h = await createHarness();
+      await pausedByTypingInPauseMode(h);
+      h.player.ready();
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: 'Paused (typing)' });
+      h.player.emit({ type: 'played', lessonId });
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('when the video collapses and comes back: “Paused (typing)” stays, and the learner’s play then plays through', async () => {
+      const h = await createHarness();
+      await pausedByTypingInPauseMode(h);
+      const collapsing = h.core.toggleVideo();
+      answerSnapshot(h);
+      await collapsing;
+      expect(playPauseItem(h)).toMatchObject({ text: 'Paused (typing)' });
+      await h.core.toggleVideo();
+      h.player.ready();
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: 'Paused (typing)' });
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('never resumes into the new page when the learner then switches to `pauseAndResume`', async () => {
+      const h = await createHarness();
+      await pausedByTypingInPauseMode(h);
+      h.player.ready();
+      h.config.set('autoPause', 'pauseAndResume');
+
+      h.player.clearSent();
+      h.clock.advance(10_000);
+
+      expect(h.player.sent).not.toContainEqual({ type: 'play' });
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
   });
@@ -656,6 +746,45 @@ describe('pause and resume after a quiet period', () => {
       expect(after(h, 10_000)).toEqual([]);
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
       await h.core.toggleVideo();
+      h.player.ready();
+      expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
+    });
+
+    it('drops the pause when the moved page is ready before the quiet period ends', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      const moving = h.core.moveVideo('bottomPanel');
+      h.player.emit({
+        type: 'snapshot',
+        snapshot: {
+          rate: 1,
+          zoom: { level: 1, left: 0, top: 0 },
+          lesson: { lessonId, position: 1, playing: false },
+        },
+      });
+      await moving;
+      h.player.ready();
+
+      expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+
+    it('never resumes while a move waits for the page to say what it shows', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      h.clock.advance(1500);
+      const moving = h.core.moveVideo('bottomPanel');
+
+      expect(after(h, 500)).toEqual([]);
+      h.player.emit({
+        type: 'snapshot',
+        snapshot: {
+          rate: 1,
+          zoom: { level: 1, left: 0, top: 0 },
+          lesson: { lessonId, position: 1, playing: false },
+        },
+      });
+      await moving;
       h.player.ready();
       expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
     });

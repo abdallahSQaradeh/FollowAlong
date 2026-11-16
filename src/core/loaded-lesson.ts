@@ -385,6 +385,7 @@ export function createLoadedLesson(
    * otherwise.
    */
   function newPage(ready: boolean): void {
+    pageGeneration += 1;
     // A pause auto-pause caused stays with the page that held it (ADR 0049, #12 D3).
     feedAutoPause({ type: 'pageReplaced' });
     playerReady = ready;
@@ -399,12 +400,18 @@ export function createLoadedLesson(
     mode: readAutoPauseMode(config),
   }).state;
 
+  /** Counts the player pages started (ready, starting or gone), so a pause knows its page. */
+  let pageGeneration = 0;
+  /** The page auto-pause last sent `pause` to: only that page is resumed. */
+  let autoPausedPage: number | undefined;
+
   /** The quiet period of `pauseAndResume` under way: when it passes, auto-pause resumes. */
   let quietTimer: Disposable | undefined;
 
   /** How each thing auto-pause answers is done. */
   const autoPauseEffects: Readonly<Record<AutoPauseEffect, () => void>> = {
     pause: () => {
+      autoPausedPage = pageGeneration;
       player.send({ type: 'pause' });
     },
     startQuiet: () => {
@@ -414,9 +421,11 @@ export function createLoadedLesson(
         quietTimer = undefined;
         feedAutoPause({
           type: 'quiet',
-          canResume: canResumeWithoutRewind(),
+          // Only into the page it paused: a new page has had no click (#12 D3).
+          canResume: canResumeWithoutRewind() && autoPausedPage === pageGeneration,
           playAsked: playback.awaitingPlayAnswer,
         });
+        refreshStatusBar();
       });
     },
     cancelQuiet: () => {
@@ -1185,7 +1194,14 @@ export function createLoadedLesson(
 
   /** Whether an automatic resume can play the Lesson now: a ready page holds it, paused. */
   function canResumeWithoutRewind(): boolean {
-    return current !== undefined && playerReady && currentLoad !== undefined && !playback.playing;
+    // Not while a move or collapse asks the page what it shows: the page is on its way out.
+    return (
+      current !== undefined &&
+      playerReady &&
+      currentLoad !== undefined &&
+      !playback.playing &&
+      awaitingSnapshot === undefined
+    );
   }
 
   /** An automatic resume, such as auto-pause's: no rewind (story 103), and silent. */
