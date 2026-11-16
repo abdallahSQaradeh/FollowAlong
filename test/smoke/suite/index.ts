@@ -10,7 +10,8 @@ import * as vscode from 'vscode';
  * It checks only what Seam 1 and Seam 2 cannot: that VS Code loads and activates the extension,
  * registers its commands, shows the player in an editor group beside the code, and that the real
  * page plays the Lesson there (asWebviewUri through the CSP, localResourceRoots, Electron's
- * autoplay policy).
+ * autoplay policy). It also checks the default keybindings, and what a command sent to the player
+ * does in the real page: the play/pause command is what the keybindings run.
  */
 
 /** The part of a player event this test reads (src/protocol/player-messages.ts). */
@@ -59,6 +60,7 @@ export async function run(): Promise<void> {
     'followalong.playLesson',
     'followalong.attachResource',
     'followalong.openResource',
+    'followalong.playPause',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
@@ -70,10 +72,14 @@ export async function run(): Promise<void> {
   );
   say('its commands and the Lessons tree view are registered');
 
+  playPauseIsBoundToItsKeys(extension.packageJSON);
+  say('FollowAlong: Play/Pause is in the Command Palette and bound to its default keys');
+
   await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
 
   say(await theLessonStarts(hooks.playerEvents, 'lesson.webm'));
+  say(await playFromTheEditor(hooks.playerEvents));
 
   // A click on a Lesson in the tree runs this command with the Lesson's id.
   await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
@@ -146,6 +152,71 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+interface Contributes {
+  readonly commands?: readonly { command?: string; title?: string; category?: string }[];
+  readonly keybindings?: readonly {
+    command?: string;
+    key?: string;
+    mac?: string;
+    when?: string;
+  }[];
+}
+
+/** The manifest's commands and keybindings: what VS Code reads to fill the Command Palette and the keys. */
+function playPauseIsBoundToItsKeys(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  const command = contributes?.commands?.find((entry) => entry.command === 'followalong.playPause');
+  assert.deepEqual(
+    { title: command?.title, category: command?.category },
+    { title: 'Play/Pause', category: 'FollowAlong' },
+    'the Command Palette entry is "FollowAlong: Play/Pause"',
+  );
+  const bindings = (contributes?.keybindings ?? []).filter(
+    (entry) => entry.command === 'followalong.playPause',
+  );
+  assert.deepEqual(
+    bindings.map(({ key, mac, when }) => ({ key, mac, when })),
+    [
+      {
+        key: 'ctrl+alt+space',
+        mac: 'cmd+alt+space',
+        when: '(editorTextFocus || terminalFocus) && !suggestWidgetVisible && !terminalSuggestWidgetVisible',
+      },
+      { key: "ctrl+' space", mac: "cmd+' space", when: 'editorTextFocus || terminalFocus' },
+    ],
+  );
+}
+
+/**
+ * Runs the play/pause command from the editor, as the keybinding does, and reports what the real
+ * page did with its `play`. Whether that starts playback without any click in the webview (spec
+ * #12, D3) only the real VS Code can say, so it is measured here and reported either way. What
+ * the command sends in each state is covered at Seam 1.
+ */
+async function playFromTheEditor(events: readonly SeenEvent[]): Promise<string> {
+  const lessonId = 'lesson.webm';
+  const about = (type: string) => (event: SeenEvent) =>
+    event.lessonId === lessonId && event.type === type;
+  if (events.some(about('played'))) {
+    return 'MEASURED: nothing, autoplay worked in this VS Code, so no play from a command was needed';
+  }
+  const code = vscode.window.activeTextEditor?.document;
+  assert.ok(code, 'the code editor is not active');
+
+  const from = events.length;
+  await vscode.commands.executeCommand('followalong.playPause');
+  assert.equal(vscode.window.activeTextEditor?.document, code, 'the command moved the focus');
+
+  const answer = await waitFor(
+    'the player to answer the play command',
+    () => events.slice(from).find((event) => about('played')(event) || about('paused')(event)),
+    10_000,
+  );
+  return answer.type === 'played'
+    ? 'MEASURED: play sent from the command started playback without a click'
+    : 'MEASURED: play sent from the command did NOT start playback without a click (the player refused it again, paused {byUser: false})';
 }
 
 /** Waits for the real player page to play the Lesson, or to report that autoplay was refused. */

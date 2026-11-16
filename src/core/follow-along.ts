@@ -29,7 +29,56 @@ export interface FollowAlong {
   attachResource(lessonId: string, absolutePath: string): Promise<void>;
   /** Opens a Resource of the open Course, by its tree id, in a tab beside the code. */
   openResource(resourceId: string): Promise<void>;
+  /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
+  playPause(): void;
   dispose(): void;
+}
+
+/** What the player reported about the current Lesson since its last `load`. */
+interface Playback {
+  /** Whether the Lesson is playing. */
+  readonly playing: boolean;
+  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
+  readonly awaitingAutoplay: boolean;
+  /** Set when the play/pause command sent `play`, until the player answers it. */
+  readonly awaitingPlayAnswer: boolean;
+  /** Whether the learner was told, in this run of refusals, to press play in the player. */
+  readonly toldToPressPlay: boolean;
+}
+
+function freshPlayback(autoplay: boolean): Playback {
+  return {
+    playing: false,
+    awaitingAutoplay: autoplay,
+    awaitingPlayAnswer: false,
+    toldToPressPlay: false,
+  };
+}
+
+/**
+ * What a `paused` event does to the record, and whether the learner is to be told to press play.
+ * - A refused autoplay is told on its own: the `load` that asked for it started the run.
+ * - A refused `play` from the command is told once per run of refusals, so repeated keypresses
+ *   do not stack messages. A `played` or `ended` (see `onPlayerEvent`) or a `load` ends the run.
+ */
+function afterPause(
+  playback: Playback,
+  byUser: boolean,
+): { readonly playback: Playback; readonly tellToPressPlay: boolean } {
+  const refused = !byUser;
+  const autoplayRefused = playback.awaitingAutoplay && refused;
+  const commandRefused = playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
+  return {
+    tellToPressPlay: autoplayRefused || commandRefused,
+    playback: {
+      ...freshPlayback(false),
+      toldToPressPlay: playback.toldToPressPlay || commandRefused,
+    },
+  };
+}
+
+function pressPlayText(lesson: Lesson): string {
+  return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
@@ -39,8 +88,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let current: Lesson | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
-  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
-  let awaitingAutoplay = false;
+  /** What the player last said about the current Lesson; starts again with every `load`. */
+  let playback = freshPlayback(false);
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -55,7 +104,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay: true,
     };
     player.send(command);
-    awaitingAutoplay = command.autoplay;
+    playback = freshPlayback(command.autoplay);
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -81,22 +130,21 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       case 'paused':
-        // A pause before the Lesson ever played, not by the learner: VS Code refused autoplay.
-        // Without a word the learner would face a stopped video and not know why.
+        // A pause the learner did not ask for after a `load` with autoplay, or after the command's
+        // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         if (event.lessonId === current?.id) {
-          if (awaitingAutoplay && !event.byUser) {
-            ui.showMessage({
-              severity: 'info',
-              text: `VS Code did not let “${current.title}” start by itself. Press play in the player to start it.`,
-            });
+          const after = afterPause(playback, event.byUser);
+          playback = after.playback;
+          if (after.tellToPressPlay) {
+            ui.showMessage({ severity: 'info', text: pressPlayText(current) });
           }
-          awaitingAutoplay = false;
         }
         break;
       case 'played':
       case 'ended':
         if (event.lessonId === current?.id) {
-          awaitingAutoplay = false;
+          // Also ends a run of refusals: the player did what it was asked.
+          playback = { ...freshPlayback(false), playing: event.type === 'played' };
         }
         break;
       case 'timeUpdate':
@@ -240,6 +288,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           text: `FollowAlong could not open “${basename(path)}”. Is the file still there?`,
         });
       }
+    },
+    playPause() {
+      if (current === undefined) {
+        ui.showMessage({
+          severity: 'info',
+          text: 'FollowAlong: no Lesson is open. Open a Course first.',
+        });
+        return;
+      }
+      if (!playerReady) {
+        // The page is still starting: it takes no command yet, and it plays the Lesson on `ready`.
+        logger.log({ level: 'debug', message: 'Play/pause ignored: the player is not ready yet.' });
+        return;
+      }
+      playback = { ...playback, awaitingPlayAnswer: !playback.playing };
+      player.send({ type: playback.playing ? 'pause' : 'play' });
     },
     dispose() {
       for (const subscription of subscriptions) {
