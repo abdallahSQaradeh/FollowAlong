@@ -41,6 +41,53 @@ describe('the Course picker', () => {
     expect(h.config.get('coursesRoots')).toEqual([root]);
   });
 
+  it('opens again after “Add Courses root…”, listing the Courses of the new root', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Some Course/intro.webm': 'v' });
+    h.ui.folderAnswers.push(learning);
+
+    const picking = h.core.pickCourse();
+    await settle();
+    h.ui.choose('Add Courses root…');
+    await settle();
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    h.ui.choose('Some Course');
+    await picking;
+
+    expect(h.player.shown.map((shown) => shown.resourceRoots[0])).toEqual([
+      join(learning, 'Some Course'),
+    ]);
+  });
+
+  it('adds a root after the ones already set, and never twice', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {});
+    const more = await h.folder('More', {});
+    h.config.set('coursesRoots', [learning]);
+    h.ui.folderAnswers.push(more, more);
+
+    void h.core.pickCourse();
+    await settle();
+    h.ui.choose('Add Courses root…');
+    await settle();
+    h.ui.choose('Add Courses root…');
+    await settle();
+
+    expect(h.config.get('coursesRoots')).toEqual([learning, more]);
+  });
+
+  it('writes nothing when the learner cancels the folder dialog', async () => {
+    const h = await createHarness();
+
+    const picking = h.core.pickCourse();
+    await settle();
+    h.ui.choose('Add Courses root…');
+    await picking;
+
+    expect(h.config.get('coursesRoots')).toBeUndefined();
+    expect(h.ui.picker).toBeUndefined();
+  });
+
   it('lists every Course under the Courses roots A–Z, then “Add Courses root…”', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {

@@ -558,23 +558,31 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         await openCourse(intent.folder);
         break;
       case 'addCoursesRoot':
-        await addCoursesRoot();
+        // The learner added a root to pick a Course from it: show the list again, with its Courses.
+        if (await addCoursesRoot()) {
+          await pickCourse();
+        }
         break;
       case undefined:
         break;
     }
   }
 
-  /** Asks for a folder and adds it to the Courses roots, after the ones already there. */
-  async function addCoursesRoot(): Promise<void> {
+  /**
+   * Asks for a folder and adds it to the Courses roots, after the ones already there. Resolves
+   * with whether the learner chose one (it may already have been a root).
+   */
+  async function addCoursesRoot(): Promise<boolean> {
     const root = await ui.chooseFolder({ title: 'Add Courses root', openLabel: 'Add' });
     if (root === undefined) {
-      return;
+      return false;
     }
     const roots = coursesRoots();
     if (!roots.includes(root)) {
       await config.update(coursesRootsSetting, [...roots, root]);
+      logger.log({ level: 'info', message: `Added the Courses root ${root}` });
     }
+    return true;
   }
 
   return {
