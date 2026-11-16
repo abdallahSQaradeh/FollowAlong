@@ -18,6 +18,8 @@ export const commands = {
   openCourse: 'followalong.openCourse',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */
   playLesson: playLessonCommand,
+  /** A playback controller command: command in, player message out. Bound to keys in package.json. */
+  playPause: 'followalong.playPause',
 } as const;
 
 /**
@@ -46,7 +48,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   });
 
   /** Runs a command, so an unexpected failure is logged and shown instead of lost. */
-  const register = (id: string, run: (...args: unknown[]) => Promise<void>) =>
+  const register = (id: string, run: (...args: unknown[]) => void | Promise<void>) =>
     vscode.commands.registerCommand(id, async (...args: unknown[]) => {
       try {
         await run(...args);
@@ -97,6 +99,9 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
         core.playLesson(lessonId);
       }
       return Promise.resolve();
+    }),
+    register(commands.playPause, () => {
+      core.playPause();
     }),
   );
   return testHooks;

@@ -41,6 +41,25 @@
         "command": "followalong.playLesson",
         "title": "Play Lesson",
         "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.playPause",
+        "title": "Play/Pause",
+        "category": "FollowAlong"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "followalong.playPause",
+        "key": "ctrl+alt+space",
+        "mac": "cmd+alt+space",
+        "when": "(editorTextFocus || terminalFocus) && !suggestWidgetVisible && !terminalSuggestWidgetVisible"
+      },
+      {
+        "command": "followalong.playPause",
+        "key": "ctrl+' space",
+        "mac": "cmd+' space",
+        "when": "editorTextFocus || terminalFocus"
       }
     ],
     "viewsContainers": {
