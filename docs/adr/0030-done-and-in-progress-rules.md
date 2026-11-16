@@ -48,24 +48,34 @@ could write over it.
 
 ## A seek while the start seek is pending
 
-After a `load` with `startAt` > 0, the next `seeked` is FollowAlong's own start seek only when it
-lands within 0.5 s of `startAt`; `seeked` carries no position, so the position is the `timeUpdate` the
-player posts just before it (HTML's seek steps fire `timeupdate`, then `seeked`; ADR 0010). Elsewhere it is the learner's, and it is recorded (and saved) like
-any seek, so a seek into the last 5 % marks the Lesson done. Before, any first `seeked` was
-swallowed: when the learner sought while a slow start seek was pending, Chromium dropped the start
-seek and fired one `seeked` at the learner's position, which was lost (review of #25). This
-replaces gate review H1's rule ("wherever it lands"), whose cause was a player that did not land
-the start seek on its target. ADR 0006 fixed that, so the rule is no longer needed.
+After a `load` with `startAt` > 0, the player's next `seeked` used to be taken as FollowAlong's own
+start seek wherever it landed. When the learner sought while a slow start seek was pending (a large
+WebM), Chromium dropped the start seek and fired one `seeked` at the learner's position, and the core
+swallowed it: nothing recorded, and a seek into the last 5 % did not mark the Lesson done (review of
+#25).
 
-A start seek that landed more than 0.5 s off would be taken for the learner's and saved there,
-drifting the Lesson 5 s back at each reopen. The player lands it on its target (ADR 0006), so this
-is a player bug to fix there, not to hide here.
+The player now tells them apart. `seeked` carries `startSeek` (ADR 0003):
+
+- During a seek, `currentTime` is its target. The seek whose target is within 0.5 s of `startAt` is
+  the start seek (the WebM stream moves a seek less than 0.1 s, ADR 0006); any other `seeking`,
+  the learner's included, is not. The last `seeking` before a `seeked` decides, so a learner's seek
+  that replaces the start seek is theirs, and a start seek that lands off its target is still the
+  start seek.
+- The core believes the flag: `startSeek: false` is recorded and saved like any seek, `true` is
+  swallowed, wherever the playhead landed.
+- A `seeked` without the flag keeps the rule of ADR 0010 and gate review H1: the first `seeked`
+  after a `load` with a start position is the start seek, wherever it lands. Nothing in FollowAlong
+  omits the flag now; it is the safe reading for a player that does.
+
+This keeps #25's guard against saving a mis-landed start seek (its test is unchanged) and records the
+learner's seek. Source: the orchestrator, who asked for player-side tagging over a position
+tolerance in the core.
 
 ## Considered options
 
-- **Tag the start seek in the player** (a field on `seeked`). Rejected for now: it changes the
-  protocol and Seam 2, and `webm-source` sets `currentTime` itself when it re-streams, so the player
-  cannot tell its own seeks apart cheaply.
+- **A 0.5 s tolerance in the core** (a `seeked` landing farther from `startAt` is the learner's).
+  Rejected: a start seek that lands off its target would then be saved as the learner's position,
+  wiping the Progress it was meant to keep (gate review of #25, H1).
 - **Keep a done mark across two windows in `mergeProgress` (the higher status wins).** Rejected
   here: the learner's un-mark (#29/#30) would then be undone by an older copy. #27 settles it with
   the re-read before each write.

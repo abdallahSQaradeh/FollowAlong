@@ -76,7 +76,17 @@ interface Lesson {
   failed: boolean;
   /** Whether `played` was posted since the last pause, so a recovered stall is not a new play. */
   playing: boolean;
+  /** Where the `load`'s `startAt` seek goes, until a seek lands; `undefined` once none is pending. */
+  startTarget: number | undefined;
+  /** Whether the seek under way is the one that applies `startTarget`. */
+  seekingToStart: boolean;
 }
+
+/**
+ * How far a seek's target may be from `startAt` and still be the seek that applies it: the WebM
+ * stream moves a seek onto buffered media less than 0.1 s away (ADR 0006).
+ */
+const startSeekToleranceSeconds = 0.5;
 
 /** The Lesson in the media element. */
 let current: Lesson | undefined;
@@ -118,6 +128,8 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
     stop: new AbortController(),
     failed: false,
     playing: false,
+    startTarget: command.startAt > 0 ? command.startAt : undefined,
+    seekingToStart: false,
   };
   current = lesson;
   const { signal } = lesson.stop;
@@ -284,8 +296,19 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   // Not through `on`: a Lesson that failed must lose the overlay too.
   media.addEventListener('playing', hideNext);
   media.addEventListener('seeking', hideNext);
-  on('seeked', ({ about }) => {
-    post({ type: 'seeked', ...about });
+  // `currentTime` is the target of a seek while it is under way, wherever it lands. A seek to the
+  // start position is FollowAlong's own; any other, such as the learner's on the seek bar while the
+  // start seek is still pending (the browser drops that one for theirs), is not. The last wins.
+  on('seeking', (lesson) => {
+    lesson.seekingToStart =
+      lesson.startTarget !== undefined &&
+      Math.abs(media.currentTime - lesson.startTarget) <= startSeekToleranceSeconds;
+  });
+  on('seeked', (lesson) => {
+    post({ type: 'seeked', ...lesson.about, startSeek: lesson.seekingToStart });
+    // A seek has landed: the start seek is over, or was dropped for another.
+    lesson.startTarget = undefined;
+    lesson.seekingToStart = false;
   });
   // Every change is reported, whoever made it, so the extension never drifts. The video's own
   // speed menu is hidden (`noplaybackrate`, ADR 0009), so today only `setRate` changes it.

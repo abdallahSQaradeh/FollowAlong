@@ -229,6 +229,44 @@ test.describe('the player', () => {
     expect((await player.events()).map((event) => event.type)).not.toContain('played');
   });
 
+  test('tells the seek that applies the start position from a step the learner asks for', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+
+    await player.post(load({ startAt: 1.5, autoplay: false }));
+    await player.waitForEvent({ type: 'seeked', lessonId, startSeek: true });
+    await player.post({ type: 'seekBy', seconds: 1 });
+
+    await player.waitForEvent({ type: 'seeked', lessonId, startSeek: false });
+    const seeks = (await player.events()).filter((event) => event.type === 'seeked');
+    expect(seeks.map((seek) => seek.startSeek)).toEqual([true, false]);
+  });
+
+  test('reports a seek the learner makes while the start seek is pending as theirs', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    // The seek bar: the learner moves the playhead as soon as the start seek has begun.
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.addEventListener(
+        'seeking',
+        () => {
+          video.currentTime = 2.5;
+        },
+        { once: true },
+      );
+    });
+
+    await player.post(load({ startAt: 1.5, autoplay: false }));
+
+    await player.waitForEvent({ type: 'seeked', lessonId, startSeek: false });
+    expect(
+      (await player.events()).some((event) => event.type === 'seeked' && event.startSeek),
+    ).toBe(false);
+    expect((await player.video()).currentTime).toBeCloseTo(2.5, 1);
+  });
+
   test('reports the end of the Lesson', async ({ page }) => {
     const player = await openPlayer(page);
 

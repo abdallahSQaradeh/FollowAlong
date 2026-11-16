@@ -25,9 +25,13 @@ function pause(h: Harness): void {
 }
 
 /** The learner moves the playhead to `position`: the player reports where it is, then `seeked`. */
-function seekTo(h: Harness, position: number): void {
+function seekTo(h: Harness, position: number, startSeek?: boolean): void {
   h.player.emit({ type: 'timeUpdate', lessonId, position, duration });
-  h.player.emit({ type: 'seeked', lessonId });
+  h.player.emit({
+    type: 'seeked',
+    lessonId,
+    ...(startSeek === undefined ? {} : { startSeek }),
+  });
 }
 
 /** Opens `lessons` as a Course and loads its first Lesson; its player is ready. */
@@ -214,11 +218,11 @@ describe('a learner seek while FollowAlong’s own start seek is pending', () =>
     return course;
   }
 
-  it('records the learner’s seek, not swallows it as the start seek', async () => {
+  it('records the learner’s seek, which the player tells from the start seek', async () => {
     const h = await createHarness();
     const course = await reopenedAt95(h);
     // Chromium aborts the slow start seek and reports one `seeked`, at the learner's position.
-    seekTo(h, 300);
+    seekTo(h, 300, false);
     await h.core.close();
 
     expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 295 });
@@ -227,18 +231,28 @@ describe('a learner seek while FollowAlong’s own start seek is pending', () =>
   it('marks the Lesson done when that seek lands in its last 5 %', async () => {
     const h = await createHarness();
     const course = await reopenedAt95(h);
-    seekTo(h, 590);
+    seekTo(h, 590, false);
     await h.core.close();
 
     expect(savedStatus(course)).toBe('done');
   });
 
-  it('still takes the seek to the start position as FollowAlong’s own', async () => {
+  it('takes the seek that applies the start position as FollowAlong’s own, wherever it lands', async () => {
     const h = await createHarness();
     const course = await reopenedAt95(h);
-    seekTo(h, 95.2);
+    seekTo(h, 0.1, true);
     await h.core.close();
 
     expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 95 });
+  });
+
+  it('records a learner seek made after the start seek landed', async () => {
+    const h = await createHarness();
+    const course = await reopenedAt95(h);
+    seekTo(h, 95, true);
+    seekTo(h, 300, false);
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 295 });
   });
 });

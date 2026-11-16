@@ -21,13 +21,6 @@ import {
 const saveIntervalMs = 5000;
 
 /**
- * How far from `startAt` a `seeked` may land and still be FollowAlong's own start seek, in
- * seconds. The player lands the start seek on its target (ADR 0006); anything farther is the
- * learner's.
- */
-const startSeekToleranceSeconds = 0.5;
-
-/**
  * The most the playhead may move between two `timeUpdate`s of a playing Lesson and still count as
  * play, in seconds. A bigger jump is a seek, which plays nothing. The player reports about every
  * 250 ms, a little more at 2× or while the page is in the background (2 s of picture a second at 2×).
@@ -106,9 +99,9 @@ interface LessonLoad {
    */
   engaged: boolean;
   /**
-   * Set by a `load` with a start position, until the player's next `seeked`: when that seek lands
-   * at `startAt`, it is the one applying it, FollowAlong's own. One landing elsewhere is the
-   * learner's (ADR 0030).
+   * Set by a `load` with a start position, until the player's next `seeked`. A player that tags its
+   * `seeked` (`startSeek`) is believed; one that does not is taken to mean this seek is the one
+   * applying `startAt`, FollowAlong's own, wherever it lands (gate review of #25, H1; ADR 0030).
    */
   startSeekPending: boolean;
   /** Seconds of picture played since this `load`: the 10 s a Lesson needs to be in progress. */
@@ -455,14 +448,13 @@ export function createLoadedLesson(
           // A Lesson moved off its end (a step back, the seek bar) is no longer ended.
           playback = { ...playback, ended: false };
         }
-        if (shown.startSeekPending) {
-          shown.startSeekPending = false;
-          if (Math.abs(position - shown.startAt) <= startSeekToleranceSeconds) {
-            // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
-            break;
-          }
-          // Far from `startAt`: the learner sought while the start seek was still pending, and
-          // the browser dropped it for theirs. It is theirs to record (ADR 0030).
+        // The player says which seek applied `startAt`. One that does not say is taken to be the
+        // first `seeked` after a `load` with a start position (ADR 0010).
+        const isStartSeek = event.startSeek ?? shown.startSeekPending;
+        shown.startSeekPending = false;
+        if (isStartSeek) {
+          // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
+          break;
         }
         shown.engaged = true;
         stopCountingPlay(shown);
