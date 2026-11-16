@@ -193,7 +193,7 @@ Where the player sits in the VS Code window: an editor group beside the code (th
 _Avoid_: Location, dock, layout, position
 
 **Mini strip**:
-The Video spot that is a short editor group above the code, as wide as the editor area. The learner resizes it with VS Code's own sash. It is the `miniStrip` value of `followalong.videoLocation`.
+The Video spot that is a short editor group above the code. The learner resizes it with VS Code's own sash. It is the `miniStrip` value of `followalong.videoLocation`.
 _Avoid_: Banner, header, top bar
 
 **Collapsed video**:

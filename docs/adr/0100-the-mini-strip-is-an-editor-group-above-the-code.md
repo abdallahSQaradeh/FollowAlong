@@ -22,24 +22,37 @@ binding notes on #50.
 
 ## How the adapter makes it
 
-One step of the queue of spot changes (`placing`, review of #49, item 2), so it never meets the
-close of the spot before it, and the last spot asked wins:
+**Every spot opens through the queue of spot changes** (`placing`, review of #49, item 2), the
+editor group beside the code now too: `show()` records the spot asked for (`awaitedSpot`) and queues
+its opening behind the close of the spot before it, so the spot asked for last is the one that
+opens. A group is made or found only once the spot before has gone, and each step looks again
+whether the player is still awaited in its spot (the learner may have asked for another one,
+collapsed the video, or VS Code may be closing).
 
-1. `workbench.action.newGroupAbove`: a new, empty, active group above the learner's. It is waited
-   for with the 5 s safety wait the views have; a refusal or a hang is the same as a view that
-   never opens: logged, the learner told once, the player counted as closed.
-2. The player's panel opens in the active group (`ViewColumn.Active`, `preserveFocus`).
-3. Where the learner has exactly the code and the strip, `vscode.setEditorLayout` sizes the strip
-   to 26 % of the editor area (the prototype's 0.26 / 0.74), the learner resizes it with the
-   sash (story 56). With more groups the layout is **not** touched: it is the learner's.
-4. `workbench.action.focusBelowGroup` makes the group the code is in the active group again (the
-   strip's group is active after step 1, which would send the next `Beside` there), and the usual
-   focus return hands keyboard focus back (ADR 0009), to the terminal if that is where the
-   learner was (#12 D12). The strip is not in a panel, so there is no `keepShown`.
+The strip's own steps:
 
-A second move while the group is being made is not lost: the player is awaited in the spot asked
-last, and a group made for a spot the learner has left again is closed (`closeGroup`, the group is
-the active one and nothing else has run, because the steps are queued).
+1. **Wait for the group of the spot before to close**, for at most 500 ms. Closing a tab leaves its
+   group behind for a moment; a new group made beside it would put the strip in the wrong place and
+   the group count would be wrong. A learner who keeps empty groups
+   (`workbench.editor.closeEmptyGroups` off) waits that moment each time.
+2. `workbench.action.newGroupAbove`: a new, empty, active group above the learner's. It has the 5 s
+   safety wait the views have; a refusal or a hang while the strip is still awaited is the same as
+   a view that never opens: logged, the learner told once, the player counted as closed. After the
+   learner has asked for another spot, a late or failed group is only noted.
+3. The player's panel opens in the active group (`ViewColumn.Active`, `preserveFocus`).
+4. Where the learner had exactly one group before (counted before step 2), `vscode.setEditorLayout`
+   sizes the strip to 26 % of the editor area (the prototype's 0.26 / 0.74); the learner resizes it
+   with the sash (story 56). With more groups the layout is **not** touched: it is the learner's.
+5. `workbench.action.focusBelowGroup` makes the group the code is in the active group again (the
+   strip's group is active after step 2, which would send the next `Beside` there), and the usual
+   focus return hands keyboard focus back (ADR 0009), to the terminal if that is where the learner
+   was (#12 D12). The strip is not in a panel, so there is no `keepShown`. Steps 4 and 5 are skipped
+   if the player has moved on or been collapsed since step 3.
+
+A group made for a spot the learner has left again while it was made is closed
+(`workbench.action.closeGroup`) **only if the active group is empty** (it is the one just made;
+the learner may have clicked into the code meanwhile, and then nothing is closed), and never while
+VS Code is going away (nothing closes on dispose, ADR 0092 finding 3).
 
 ## Leaving and collapsing
 
@@ -69,9 +82,20 @@ zoom in a 1000 × 200 page.
 
 ## Resources and the strip
 
-`PlayerPanel.viewColumn` is the strip's group, so a Resource never opens in it (ADR 0012). With the
-strip in column 1 and the code in column 2, the placement's "a new group at the end" is a group
-to the right of the code, under the strip: the strip keeps the full width.
+`PlayerPanel.viewColumn` is the strip's group, so a Resource never opens in it (ADR 0012). Where the
+learner had only the code, the strip is column 1 and the code column 2, and the placement's "a new
+group at the end" is a group to the right of the code, under the strip: the strip keeps the full
+width. With more groups the strip sits above the group the learner was in, and the Resource goes
+where the placement's rules put it.
+
+## Known limits
+
+- A group `newGroupAbove` makes after its 5 s wait ran out (VS Code very slow) is left as it is, an
+  empty group: the player was counted closed, or the learner had asked for another spot, and
+  closing a group that may by then be the learner's is worse. It is noted in the log.
+- A quick move to a view and back to the strip may still ask VS Code to open the view first (a
+  queued `<view>.focus` runs although the learner has moved on, as in #49). It shows the video's
+  container, not a page.
 
 ## Consequences
 

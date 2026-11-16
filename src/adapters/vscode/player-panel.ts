@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 import * as vscode from 'vscode';
 
-import type { Logger } from '../../core/logger.js';
+import { messageOf, type Logger } from '../../core/logger.js';
 import type { FocusedPart } from './focus-return.js';
 import type {
   Disposable,
@@ -52,6 +52,9 @@ const closeCommands: Readonly<Record<ViewSpot, string>> = {
 /** How long a move waits for VS Code to resolve the view of its spot, or open its group, in ms. */
 const viewWaitMs = 5000;
 
+/** How long the mini strip waits for the group of the spot before to close, in ms. */
+const groupsSettleMs = 500;
+
 /** How long after a move a view hidden by the focus return is shown again, in ms. */
 const keepShownMs = 1000;
 
@@ -89,11 +92,13 @@ export interface PlayerPlace {
 export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private host: Host | undefined;
   /**
-   * A spot the player was moved to, until VS Code resolves its view or opens the mini strip's
-   * group.
+   * The spot the player was moved to last, until its page starts: the editor group opens, the
+   * mini strip's group is made, or VS Code resolves the view. Every spot waits in the queue
+   * (`placing`) before it opens, so the spot asked for last is the one that opens.
    */
-  private awaitedView:
-    { readonly spot: ViewSpot | 'miniStrip'; readonly title: string } | undefined;
+  private awaitedSpot: { readonly spot: VideoSpot; readonly title: string } | undefined;
+  /** Set when the adapter is disposed: nothing of the layout is touched after that. */
+  private disposed = false;
   /** The webview views VS Code has resolved and not disposed yet, by spot. */
   private readonly views = new Map<ViewSpot, vscode.WebviewView>();
   private roots: readonly string[] = [];
@@ -159,35 +164,51 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       this.host.reveal();
       return sameRoots ? 'revealed' : 'created';
     }
-    if (this.awaitedView?.spot === spot) {
-      this.awaitedView = { spot, title };
+    if (this.awaitedSpot?.spot === spot) {
+      this.awaitedSpot = { spot, title };
       return 'created';
     }
     // Another spot (or none yet): a new page there (a panel and a view cannot share one, ADR 0049).
     // The spot is set at once; what VS Code has to do for it waits for the move before.
     const left = this.leave();
-    this.awaitedView = undefined;
+    this.awaitedSpot = { spot, title };
     // The old view's container is closed before its `when` clause hides it.
     const shown = this.after(left, () => this.showSpot(spot));
-    if (spot === 'editorSplit') {
-      this.host = this.openPanel(title, 'editorSplit', vscode.ViewColumn.Beside);
-    } else if (spot === 'miniStrip') {
-      // The group above the code is made first, in the order the moves were asked.
-      this.awaitedView = { spot, title };
-      void this.after(shown, () => this.openStrip());
-    } else {
-      this.awaitedView = { spot, title };
-      // The view shows only once its `when` clause holds: set the key first, then open it.
-      void this.after(shown, () => {
-        this.openView(spot);
-      });
-    }
+    // A view shows only once its `when` clause holds: the key is set first, then it opens. A
+    // panel opens `Beside` or above the group the learner is in, which only holds once the spot
+    // before it has gone.
+    void this.after(shown, () => this.open(spot));
     return 'created';
+  }
+
+  /** Opens the page of the spot the player is awaited in, if the learner has not asked for another. */
+  private open(spot: VideoSpot): void | Promise<void> {
+    switch (spot) {
+      case 'editorSplit': {
+        const title = this.awaitedTitle('editorSplit');
+        if (title !== undefined) {
+          this.awaitedSpot = undefined;
+          this.host = this.openPanel(title, 'editorSplit', vscode.ViewColumn.Beside);
+        }
+        return;
+      }
+      case 'miniStrip':
+        return this.openStrip();
+      case 'bottomPanel':
+      case 'secondarySidebar':
+        this.openView(spot);
+        return;
+    }
+  }
+
+  /** The title the player is awaited in `spot` with, or `undefined` if it is awaited elsewhere or nowhere. */
+  private awaitedTitle(spot: VideoSpot): string | undefined {
+    return this.awaitedSpot?.spot === spot ? this.awaitedSpot.title : undefined;
   }
 
   /** Collapses the player: its page goes, and the panel or sidebar that showed it closes (ADR 0092). */
   collapse(): void {
-    this.awaitedView = undefined;
+    this.awaitedSpot = undefined;
     const left = this.leave();
     void this.after(left, () => this.showSpot(undefined));
   }
@@ -241,9 +262,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   dispose(): void {
     // The learner's layout is theirs: nothing is closed on deactivate or reload (review of #49, item 3).
+    this.disposed = true;
     this.host?.drop();
     this.host = undefined;
-    this.awaitedView = undefined;
+    this.awaitedSpot = undefined;
     this.stopWatching();
     for (const subscription of this.subscriptions) {
       subscription.dispose();
@@ -312,56 +334,100 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   /**
    * Makes the mini strip: a new editor group above the one the learner types in, with the player
-   * in it (ADR 0100). The group is made first, as one more step of the queue of spot changes, so
-   * it never meets a close of the spot before it. Where the learner has just the code, the strip
-   * is sized to a quarter of the editor area; with more groups it is left as VS Code made it, so
-   * the learner's layout is not undone.
+   * in it (ADR 0100). It is a step of the queue of spot changes, so it never meets a close of the
+   * spot before it, and after each wait it looks again whether the player is still awaited here:
+   * the learner may have asked for another spot, collapsed the video or closed the window since.
+   * Where the learner has just the code, the strip is sized to about a quarter of the editor area;
+   * with more groups the layout is left as VS Code made it, so the learner's layout is not undone.
    */
   private async openStrip(): Promise<void> {
-    if (this.awaitedStripTitle() === undefined) {
+    if (this.awaitedTitle('miniStrip') === undefined) {
       // Moved on meanwhile.
       return;
     }
+    // The editor group of the spot before is still there, empty, until VS Code has closed it, and
+    // a new group would be made beside it.
+    await this.groupsSettled();
+    if (this.awaitedTitle('miniStrip') === undefined) {
+      return;
+    }
+    const groupsBefore = vscode.window.tabGroups.all.length;
     try {
       await this.within(
         vscode.commands.executeCommand('workbench.action.newGroupAbove'),
         'making a group above the code',
       );
     } catch (error) {
-      this.awaitedView = undefined;
+      if (this.awaitedTitle('miniStrip') === undefined) {
+        // Late, and for a spot the learner has left: only noted.
+        this.logger.log({
+          level: 'warn',
+          message: `The group for the mini strip came late or not at all: ${messageOf(error)}`,
+        });
+        return;
+      }
+      this.awaitedSpot = undefined;
       this.logger.log({
         level: 'error',
-        message: `Could not open the mini strip: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not open the mini strip: ${messageOf(error)}`,
       });
-      void vscode.window.showWarningMessage(
-        `FollowAlong could not show the video in the ${spotLabels.miniStrip.toLowerCase()}. Open the Lesson again, or move the video to another spot.`,
-      );
+      this.tellNoVideo('miniStrip');
       this.playerGone();
       return;
     }
-    // The next call is the last of this step: the group is active now, and holds nothing else.
-    const title = this.awaitedStripTitle();
+    const title = this.awaitedTitle('miniStrip');
     if (title === undefined) {
-      // Moved on while the group was made: the empty group goes again.
-      await this.run('workbench.action.closeGroup');
+      // Moved on while the group was made: the empty group goes again, unless the learner is in
+      // it already or VS Code is going away (nothing closes on dispose, review of #49, item 3).
+      if (!this.disposed && vscode.window.tabGroups.activeTabGroup.tabs.length === 0) {
+        await this.run('workbench.action.closeGroup');
+      }
       return;
     }
-    this.awaitedView = undefined;
-    this.host = this.openPanel(title, 'miniStrip', vscode.ViewColumn.Active);
-    if (vscode.window.tabGroups.all.length === 2) {
+    this.awaitedSpot = undefined;
+    const host = this.openPanel(title, 'miniStrip', vscode.ViewColumn.Active);
+    this.host = host;
+    if (groupsBefore === 1) {
       await this.run('vscode.setEditorLayout', {
         orientation: 1,
         groups: [{ size: stripShare }, { size: 1 - stripShare }],
       });
     }
     // The active group is the strip's: make it the code's again, and hand focus back (ADR 0009).
+    // Not if the player has moved on or been collapsed meanwhile: that is not this group.
+    if (this.host !== host) {
+      return;
+    }
     await this.run('workbench.action.focusBelowGroup');
-    void this.returnFocus();
+    if (this.host === host) {
+      void this.returnFocus();
+    }
   }
 
-  /** The title the player is awaited in the mini strip with, or `undefined` if it is not. */
-  private awaitedStripTitle(): string | undefined {
-    return this.awaitedView?.spot === 'miniStrip' ? this.awaitedView.title : undefined;
+  /**
+   * Resolves once no editor group is empty, or after a moment: closing the tab of the spot before
+   * leaves its group behind for a short while. A learner who keeps empty groups
+   * (`workbench.editor.closeEmptyGroups` off) waits the moment.
+   */
+  private groupsSettled(): Promise<void> {
+    const anyEmpty = (): boolean =>
+      vscode.window.tabGroups.all.some((group) => group.tabs.length === 0);
+    if (!anyEmpty()) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        watching.dispose();
+        resolve();
+      };
+      const watching = vscode.window.tabGroups.onDidChangeTabGroups(() => {
+        if (!anyEmpty()) {
+          done();
+        }
+      });
+      const timer = setTimeout(done, groupsSettleMs);
+    });
   }
 
   /** Runs a VS Code command for the mini strip; a command VS Code refuses is logged. */
@@ -371,7 +437,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     } catch (error) {
       this.logger.log({
         level: 'warn',
-        message: `Could not run ${command} for the mini strip: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not run ${command} for the mini strip: ${messageOf(error)}`,
       });
     }
   }
@@ -395,6 +461,13 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     });
   }
 
+  /** Tells the learner the video could not be shown in `spot`. */
+  private tellNoVideo(spot: VideoSpot): void {
+    void vscode.window.showWarningMessage(
+      `FollowAlong could not show the video in the ${spotLabels[spot].toLowerCase()}. Open the Lesson again, or move the video to another spot.`,
+    );
+  }
+
   /**
    * Shows the view of the spot the player is awaited in, and starts the page in whichever view
    * VS Code then shows. VS Code disposes a view its `when` clause hides and resolves a new one
@@ -403,7 +476,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
    * `.focus` command either way.
    */
   private openView(spot: ViewSpot): void {
-    if (this.awaitedView?.spot !== spot) {
+    if (this.awaitedSpot?.spot !== spot) {
       // Moved on meanwhile.
       return;
     }
@@ -418,18 +491,16 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     // A view that never comes (VS Code did not resolve it) must not leave the core waiting for a
     // page: after a while the player counts as gone, and the learner is told.
     const giveUp = setTimeout(() => {
-      if (this.awaitedView?.spot !== spot) {
+      if (this.awaitedSpot?.spot !== spot) {
         return;
       }
-      this.awaitedView = undefined;
+      this.awaitedSpot = undefined;
       this.stopWatching();
       this.logger.log({
         level: 'warn',
         message: `The ${spot} view did not open within ${String(viewWaitMs)} ms.`,
       });
-      void vscode.window.showWarningMessage(
-        `FollowAlong could not show the video in the ${spotLabels[spot].toLowerCase()}. Open the Lesson again, or move the video to another spot.`,
-      );
+      this.tellNoVideo(spot);
       this.playerGone();
     }, viewWaitMs);
     const stopWatchingVisibility = (): void => {
@@ -460,8 +531,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           message: `Could not open the ${spot} view: ${error instanceof Error ? error.message : String(error)}`,
         });
         // No player will show: the core must not wait for it.
-        if (this.awaitedView?.spot === spot) {
-          this.awaitedView = undefined;
+        if (this.awaitedSpot?.spot === spot) {
+          this.awaitedSpot = undefined;
           this.stopWatching();
           this.playerGone();
         }
@@ -502,11 +573,11 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   /** The player is awaited in `spot`, and `view` is the view VS Code shows there: start its page. */
   private adopt(spot: ViewSpot, view: vscode.WebviewView): void {
-    const awaited = this.awaitedView;
+    const awaited = this.awaitedSpot;
     if (awaited?.spot !== spot) {
       return;
     }
-    this.awaitedView = undefined;
+    this.awaitedSpot = undefined;
     this.stopWatching();
     this.host = this.viewHost(spot, view, awaited.title);
   }

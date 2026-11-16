@@ -379,7 +379,7 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
 const playerViewType = 'followalong.player';
 
 /** The editor groups that hold the player's tab. */
-function stripGroups(): vscode.TabGroup[] {
+function playerGroups(): vscode.TabGroup[] {
   return vscode.window.tabGroups.all.filter((group) =>
     group.tabs.some(
       (tab) =>
@@ -403,7 +403,7 @@ function layout(): string {
  * VS Code draws its page above the code editor, and it is shorter than the code.
  */
 async function theStripIsAboveTheCode(code: vscode.TextDocument): Promise<string> {
-  const [group, ...others] = stripGroups();
+  const [group, ...others] = playerGroups();
   assert.ok(group !== undefined && others.length === 0, 'no editor group holds the strip');
   assert.equal(
     group.viewColumn,
@@ -444,7 +444,7 @@ async function aPlayerOpensInTheStripFromTheSetting(
   await waitFor('the player in the editor group', () =>
     hooks.playerSpot()?.spot === 'editorSplit' ? true : undefined,
   );
-  const tab = stripGroups()
+  const tab = playerGroups()
     .flatMap((group) => group.tabs)
     .find(
       (candidate) =>

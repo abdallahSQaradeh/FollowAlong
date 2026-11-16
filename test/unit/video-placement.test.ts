@@ -684,7 +684,7 @@ describe('a move that was waiting when the Lesson changed', () => {
 });
 
 describe('the mini strip', () => {
-  it('takes a paused Lesson with its time, speed and zoom, and gives them back when it leaves', async () => {
+  it('takes a Lesson that pauses in the move with its time, speed and zoom, and gives them back when it leaves', async () => {
     const h = await createHarness();
     await playingZoomed(h);
 
