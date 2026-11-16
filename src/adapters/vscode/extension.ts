@@ -19,7 +19,10 @@ import { createResourcePlacement } from './resource-placement.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
 
 export const commands = {
-  /** Temporary: opens a folder as the Course. The Course picker replaces the folder dialog. */
+  /**
+   * `Ctrl+'` `C`: the Course picker. Run with a folder's URI (the smoke test), it opens that folder
+   * as the Course.
+   */
   openCourse: 'followalong.openCourse',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */
   playLesson: playLessonCommand,
@@ -123,23 +126,9 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
         core.dispose();
       },
     },
-    register(commands.openCourse, async (folder) => {
-      const target =
-        folder instanceof vscode.Uri
-          ? folder
-          : (
-              await vscode.window.showOpenDialog({
-                canSelectFiles: false,
-                canSelectFolders: true,
-                canSelectMany: false,
-                openLabel: 'Open Course',
-                title: 'Open Course',
-              })
-            )?.[0];
-      if (target !== undefined) {
-        await core.openCourse(target.fsPath);
-      }
-    }),
+    register(commands.openCourse, (folder) =>
+      folder instanceof vscode.Uri ? core.openCourse(folder.fsPath) : core.pickCourse(),
+    ),
     register(commands.attachResource, async (node, file) => {
       const lessonId =
         typeof node === 'object' && node !== null && 'id' in node ? node.id : undefined;

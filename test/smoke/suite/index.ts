@@ -103,6 +103,14 @@ export async function run(): Promise<void> {
   ]);
   say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
 
+  chordCommandsAreBound(extension.packageJSON, [['openCourse', 'Open Course…', "ctrl+' c"]]);
+  assert.deepEqual(
+    vscode.workspace.getConfiguration('followalong').get('coursesRoots'),
+    [],
+    'followalong.coursesRoots defaults to no root',
+  );
+  say("FollowAlong: Open Course… is bound to Ctrl+' C; no Courses root is set by default");
+
   chordCommandsAreBound(extension.packageJSON, [
     ['nextLesson', 'Next Lesson', "ctrl+' n"],
     ['previousLesson', 'Previous Lesson', "ctrl+' p"],
@@ -142,8 +150,93 @@ export async function run(): Promise<void> {
   );
   say('Previous Lesson and Next Lesson load their Lesson, and the tree selection follows it');
 
-  await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
-  say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+  const pickedRoot = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
+  try {
+    await aPickedCourseKeepsThePlayer(extension.extensionPath, hooks, pickedRoot);
+
+    await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
+    say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+  } finally {
+    // aResourceOpensBesideTheCode closed every editor, the player too, which held the Lesson open.
+    rmSync(pickedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  }
+}
+
+/**
+ * Sets a Courses root, opens the Course picker with the command `Ctrl+' C` runs, and accepts its
+ * first item, the root's only Course. Checks that the Course opens in the player panel that was
+ * already open, without a close (#12 D3, ADR 0022), and that the open folder is unchanged. Then it
+ * measures whether the click given to the panel's earlier page still lets the new page play.
+ */
+async function aPickedCourseKeepsThePlayer(
+  extensionPath: string,
+  hooks: TestHooks,
+  root: string,
+): Promise<void> {
+  const course = join(root, 'Picked Course');
+  mkdirSync(course);
+  copyFileSync(
+    join(extensionPath, 'test', 'fixtures', 'media', 'lesson.webm'),
+    join(course, 'picked.webm'),
+  );
+  const settings = vscode.workspace.getConfiguration('followalong');
+  await settings.update('coursesRoots', [root], vscode.ConfigurationTarget.Global);
+  const workspaceBefore = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath);
+  const playerTabs = (): vscode.Tab[] =>
+    vscode.window.tabGroups.all.flatMap((group) =>
+      group.tabs.filter(
+        (tab) =>
+          tab.input instanceof vscode.TabInputWebview &&
+          tab.input.viewType.endsWith('followalong.player'),
+      ),
+    );
+  const [playerBefore] = playerTabs();
+  assert.ok(playerBefore, 'no player is open before the Course picker');
+  try {
+    const picking = vscode.commands.executeCommand('followalong.openCourse');
+    // The picker shows once the scan is done; accepting before that does nothing.
+    await waitForAsync('the Course picker to open the picked Course', async () => {
+      await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+      return hooks.lessonTree().nodes.some((node) => node.id === 'picked.webm') ? true : undefined;
+    });
+    await picking;
+  } finally {
+    await settings.update('coursesRoots', undefined, vscode.ConfigurationTarget.Global);
+  }
+  say('the Course picker lists the Course under the Courses root, and picking it opens it');
+
+  const started = await waitFor('the picked Course’s Lesson to start or be refused', () =>
+    hooks.playerEvents.find(
+      (event) =>
+        event.lessonId === 'picked.webm' &&
+        (event.type === 'played' ||
+          event.type === 'error' ||
+          (event.type === 'paused' && event.byUser === false)),
+    ),
+  );
+  assert.notEqual(started.type, 'error', `the player failed: ${started.message ?? ''}`);
+  // Story 20: opening a Course never touches the workspace folder.
+  assert.deepEqual(
+    vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath),
+    workspaceBefore,
+    'opening a Course changed the open folder',
+  );
+  // The panel was not closed: the status bar items of a loaded Lesson stayed (Player.onDidClose
+  // unloads the Lesson), and the one player tab is still in the editor group it was in.
+  assert.equal(hooks.statusBar().length, 4, 'the status bar items went when the Course changed');
+  const playerTabsAfter = playerTabs();
+  assert.equal(playerTabsAfter.length, 1, 'another Course opened a second player tab');
+  assert.equal(
+    playerTabsAfter[0]?.group.viewColumn,
+    playerBefore.group.viewColumn,
+    'the player moved to another editor group',
+  );
+  say('the picked Course plays in the player panel that was open: no close, same editor group');
+  say(
+    started.type === 'played'
+      ? 'MEASURED: the picked Course’s Lesson autoplayed in the kept panel: the earlier click still counts (sticky activation survives the reload)'
+      : 'MEASURED: the picked Course’s Lesson was refused autoplay in the kept panel (paused {byUser: false}): the reload lost the earlier click',
+  );
 }
 
 /**

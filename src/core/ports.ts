@@ -23,7 +23,8 @@ export interface PlayerShowOptions {
 }
 
 /**
- * - `created`: a new player page is starting; it posts `ready` once it can take commands.
+ * - `created`: a new player page is starting (in a new player, or in the open one with other
+ *   resource roots); it posts `ready` once it can take commands.
  * - `revealed`: the player that was already open, with the same resource roots, was brought to
  *   the front; it posts nothing new.
  */
