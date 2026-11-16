@@ -48,7 +48,7 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 <div class="zoom-tools" role="toolbar" aria-label="Zoom">
 <output class="zoom-level" aria-label="Zoom level">1×</output>
 <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out">−</button>
-<button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button>
+<button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in">＋</button>
 <button type="button" data-zoom="area" aria-label="Zoom to an area" title="Zoom to an area: drag a box" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" fill="none" stroke="currentColor" stroke-dasharray="2 1.5"/></svg></button>
 <button type="button" data-zoom="reset" aria-label="Reset zoom" title="Reset zoom (double-click the picture)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 0 1.3-3.2M3.5 2.5v2.8h2.8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
 </div>

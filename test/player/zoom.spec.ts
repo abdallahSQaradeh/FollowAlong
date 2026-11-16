@@ -122,7 +122,9 @@ test.describe('a zoom drag', () => {
 });
 
 test.describe('while zoomed', () => {
-  test('the native control bar is off, since it would be magnified too', async ({ page }) => {
+  test('the native control bar is off, since it would be enlarged with the picture', async ({
+    page,
+  }) => {
     const player = await openPlayer(page);
     await loadPaused(player);
     expect((await player.video()).controls).toBe(true);
@@ -354,6 +356,7 @@ test.describe('the zoom', () => {
     await loadPaused(player);
 
     await page.reload();
+    await player.waitForEvent({ type: 'ready' });
     await page.waitForTimeout(300);
 
     expect(await page.evaluate(() => window.followalongSent)).toEqual([
@@ -372,5 +375,83 @@ test.describe('the zoom reset command', () => {
     expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
     expect((await player.video()).controls).toBe(true);
     await expect(page.getByLabel('Zoom level')).toHaveText('1×');
+  });
+});
+
+test.describe('area mode', () => {
+  function areaButton(page: Page) {
+    return page.getByRole('toolbar', { name: 'Zoom' }).getByRole('button', {
+      name: 'Zoom to an area',
+    });
+  }
+
+  test('ends after the next drag, even one too small to zoom', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    await areaButton(page).click();
+
+    await drag(page, { x: 320, y: 180 }, { x: 330, y: 184 });
+
+    await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'false');
+    expect((await player.events()).some((event) => event.type === 'zoomChanged')).toBe(false);
+  });
+
+  test('ends with a reset', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    await areaButton(page).click();
+
+    await player.post({ type: 'zoom', action: 'reset' });
+
+    await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+test.describe('a box drag that does not end normally', () => {
+  test('still lets the next click on the picture hand focus back when it lost the pointer', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    await page.mouse.move(320, 180);
+    await page.mouse.down();
+    await page.mouse.move(640, 360, { steps: 8 });
+    // The browser takes the pointer away (a window blur, say): no pointerup reaches the picture.
+    await page.evaluate(() => {
+      const overlay = document.querySelector('.overlay');
+      for (let pointerId = 0; pointerId < 4; pointerId += 1) {
+        if (overlay?.hasPointerCapture(pointerId) === true) {
+          overlay.releasePointerCapture(pointerId);
+        }
+      }
+    });
+    const toolbar = await page.getByRole('toolbar', { name: 'Zoom' }).boundingBox();
+    if (toolbar === null) {
+      throw new Error('the zoom toolbar is not on screen');
+    }
+    await page.mouse.move(toolbar.x + 2, toolbar.y + 2);
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const before = await interactions(player);
+
+    await page.mouse.click(600, 300);
+
+    await expect.poll(() => interactions(player)).toBe(before + 1);
+    expect((await player.events()).some((event) => event.type === 'zoomChanged')).toBe(false);
+  });
+
+  test('zooms nothing when a reset comes while the box is drawn', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    await page.mouse.move(100, 100);
+    await page.mouse.down();
+    await page.mouse.move(300, 300, { steps: 8 });
+
+    await player.post({ type: 'zoom', action: 'reset' });
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    await expect(page.locator('.zoom-box')).toBeHidden();
+    expect((await player.video()).paused).toBe(true);
   });
 });

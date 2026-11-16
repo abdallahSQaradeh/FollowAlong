@@ -4,22 +4,13 @@
  */
 import {
   parsePlayerCommand,
-  zoomLabel,
   type AboutLesson,
   type PlayerCommand,
   type PlayerEvent,
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
-import {
-  isZoomView,
-  wholePicture,
-  zoomBy,
-  zoomStep,
-  zoomToBox,
-  zoomTransform,
-  type ZoomView,
-} from './zoom.js';
+import { ZoomControls } from './zoom-controls.js';
 
 declare global {
   /** Provided by VS Code inside a webview (and by the Seam 2 harness in Playwright). */
@@ -249,7 +240,7 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       resumeRewind = command.seconds;
       break;
     case 'zoom':
-      showZoom(wholePicture, media);
+      zoomControls.reset();
       break;
   }
 }
@@ -367,7 +358,7 @@ function cancelPendingToggle(): void {
  */
 function clickOnPicture(clicks: number, media: HTMLVideoElement): void {
   cancelPendingToggle();
-  if (zoom.level === 1) {
+  if (!zoomControls.zoomed) {
     togglePlayback(media);
   } else if (clicks === 1) {
     pendingToggle = setTimeout(() => {
@@ -387,15 +378,13 @@ function reportInteractions(media: HTMLVideoElement, overlay: HTMLElement): void
     interactions.ended();
   };
   overlay.addEventListener('click', (event) => {
-    if (dragEnded) {
-      dragEnded = false;
-      return;
+    if (!zoomControls.takeDragClick()) {
+      clickOnPicture(event.detail, media);
     }
-    clickOnPicture(event.detail, media);
   });
   overlay.addEventListener('dblclick', () => {
     cancelPendingToggle();
-    showZoom(wholePicture, media);
+    zoomControls.reset();
   });
   // The overlay takes the pointer moves that would show the native control bar: pass them on.
   overlay.addEventListener('pointermove', (event) => {
@@ -440,172 +429,27 @@ function reportInteractions(media: HTMLVideoElement, overlay: HTMLElement): void
   media.addEventListener('volumechange', ended);
 }
 
-/** How far the pointer moves, in px, before a press on the picture is a drag and not a click. */
-const dragThreshold = 6;
-/** A box smaller than this, in px either way, zooms to nothing. */
-const smallestBox = 12;
-
-/** What the page keeps in VS Code's webview state. */
-interface PageState {
-  readonly zoom: ZoomView;
-}
-
-/** The zoom a page before this one left in the webview state, if any. */
-function storedZoom(): ZoomView | undefined {
-  const state = host.getState();
-  const stored: unknown =
-    typeof state === 'object' && state !== null && 'zoom' in state ? state.zoom : undefined;
-  return isZoomView(stored) ? stored : undefined;
-}
-
-/** What part of the picture the player shows now (ADR 0037). */
-let zoom: ZoomView = wholePicture;
-/** Set by the toolbar's area button: the next drag draws a box, whatever the zoom (ADR 0037). */
-let areaMode = false;
-
-function setAreaMode(on: boolean): void {
-  areaMode = on;
-  areaButton.setAttribute('aria-pressed', String(on));
-  document.body.classList.toggle('area-mode', on);
-}
-
-/** Set when a drag on the picture ended: the `click` the browser fires after it is not a click. */
-let dragEnded = false;
-
-/** Shows `view`, and reports a new zoom level. */
-function showZoom(view: ZoomView, media: HTMLVideoElement): void {
-  const before = zoom.level;
-  zoom = view;
-  // View state, not the Lesson's: it stays for the next Lesson and a reloaded page (ADR 0037).
-  host.setState({ zoom: view } satisfies PageState);
-  media.style.transform = zoomTransform(view);
-  // The native control bar would be magnified with the picture: it is off while zoomed, and the
-  // overlay then covers the whole player, so the strip along the bottom is picture too.
-  const zoomed = view.level > 1;
-  media.controls = !zoomed;
-  document.body.classList.toggle('zoomed', zoomed);
-  zoomLevel.textContent = zoomLabel(view.level);
-  if (view.level !== before) {
-    post({ type: 'zoomChanged', level: view.level });
+/** One element of the page, which the page's own HTML always has. */
+function part(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element === null) {
+    throw new Error(`The player page has no ${selector}.`);
   }
+  return element;
 }
 
-/**
- * A drag on the picture draws a box, and the player zooms to the area in it. The drag is one
- * gesture for Focus return (ADR 0009): focus is handed back once it ends, not during it.
- */
-function zoomGestures(media: HTMLVideoElement, overlay: HTMLElement, box: HTMLElement): void {
-  let drag:
-    | { readonly pointerId: number; readonly x: number; readonly y: number; moved: boolean }
-    | undefined;
-  /** The rectangle from where the drag began to (`x`, `y`), in px of the page. */
-  const rectangle = (start: { readonly x: number; readonly y: number }, x: number, y: number) => ({
-    x: Math.min(start.x, x),
-    y: Math.min(start.y, y),
-    width: Math.abs(x - start.x),
-    height: Math.abs(y - start.y),
-  });
-  overlay.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || !event.isPrimary) {
-      return;
-    }
-    // A drag whose `click` never came (it was cancelled) must not swallow this press's click.
-    dragEnded = false;
-    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
-    overlay.setPointerCapture(event.pointerId);
-  });
-  overlay.addEventListener('pointermove', (event) => {
-    if (drag?.pointerId !== event.pointerId) {
-      return;
-    }
-    const area = rectangle(drag, event.clientX, event.clientY);
-    if (!drag.moved && area.width + area.height <= dragThreshold) {
-      return;
-    }
-    if (!drag.moved) {
-      drag.moved = true;
-      interactions.beginGesture(event.pointerId);
-    }
-    box.style.left = `${String(area.x)}px`;
-    box.style.top = `${String(area.y)}px`;
-    box.style.width = `${String(area.width)}px`;
-    box.style.height = `${String(area.height)}px`;
-    box.removeAttribute('hidden');
-  });
-  const finish = (event: PointerEvent, zoomIn: boolean) => {
-    if (drag?.pointerId !== event.pointerId) {
-      return;
-    }
-    const start = drag;
-    drag = undefined;
-    box.setAttribute('hidden', '');
-    if (!start.moved) {
-      return;
-    }
-    dragEnded = zoomIn;
-    const area = rectangle(start, event.clientX, event.clientY);
-    const stage = overlay.parentElement?.getBoundingClientRect();
-    if (zoomIn && stage !== undefined && area.width >= smallestBox && area.height >= smallestBox) {
-      // Until #47 a plain drag also draws a box, so area mode only ends with it.
-      if (areaMode) {
-        setAreaMode(false);
-      }
-      showZoom(
-        zoomToBox(zoom, {
-          x: (area.x - stage.x) / stage.width,
-          y: (area.y - stage.y) / stage.height,
-          width: area.width / stage.width,
-          height: area.height / stage.height,
-        }),
-        media,
-      );
-    }
-    interactions.endGesture(event.pointerId);
-  };
-  overlay.addEventListener('pointerup', (event) => {
-    finish(event, true);
-  });
-  overlay.addEventListener('pointercancel', (event) => {
-    finish(event, false);
-  });
-}
-
-/** The toolbar's buttons (story 61). Their presses hand focus back like any click (ADR 0009). */
-function zoomToolbar(media: HTMLVideoElement): void {
-  const actions: Readonly<Record<string, () => void>> = {
-    in: () => {
-      showZoom(zoomBy(zoom, zoomStep), media);
-    },
-    out: () => {
-      showZoom(zoomBy(zoom, 1 / zoomStep), media);
-    },
-    area: () => {
-      setAreaMode(!areaMode);
-    },
-    reset: () => {
-      showZoom(wholePicture, media);
-    },
-  };
-  for (const button of document.querySelectorAll<HTMLElement>('.zoom-tools [data-zoom]')) {
-    const action = actions[button.dataset.zoom ?? ''];
-    button.addEventListener('click', () => {
-      action?.();
-    });
-  }
-}
-
-const overlay = document.querySelector<HTMLElement>('.overlay');
-if (overlay === null) {
-  throw new Error('The player page has no overlay.');
-}
-const zoomBox = document.querySelector<HTMLElement>('.zoom-box');
-const zoomLevelOutput = document.querySelector<HTMLElement>('.zoom-level');
-const areaModeButton = document.querySelector<HTMLElement>('.zoom-tools [data-zoom="area"]');
-if (zoomBox === null || zoomLevelOutput === null || areaModeButton === null) {
-  throw new Error('The player page has no zoom box or zoom toolbar.');
-}
-const zoomLevel: HTMLElement = zoomLevelOutput;
-const areaButton: HTMLElement = areaModeButton;
+const overlay = part('.overlay');
+const zoomControls = new ZoomControls({
+  media: video,
+  overlay,
+  box: part('.zoom-box'),
+  toolbar: part('.zoom-tools'),
+  interactions,
+  state: host,
+  zoomChanged: (level) => {
+    post({ type: 'zoomChanged', level });
+  },
+});
 
 nextOverlay.addEventListener('click', () => {
   if (current !== undefined && !current.failed) {
@@ -615,8 +459,6 @@ nextOverlay.addEventListener('click', () => {
 const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
 reportMediaEvents(video);
 reportInteractions(video, overlay);
-zoomGestures(video, overlay, zoomBox);
-zoomToolbar(video);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   const command = parsePlayerCommand(event.data);
   if (command !== undefined) {
@@ -625,7 +467,4 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
 });
 post({ type: 'ready', aacSupported: aac !== '' });
 // A reloaded page shows the zoom the page before it had, and so reports it after `ready`.
-const restored = storedZoom();
-if (restored !== undefined) {
-  showZoom(restored, video);
-}
+zoomControls.restore();

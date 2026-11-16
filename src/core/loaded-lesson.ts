@@ -205,6 +205,18 @@ export function createLoadedLesson(
    * the Lesson (ADR 0037): it stays from Lesson to Lesson, and a new page starts at 1×.
    */
   let zoom = 1;
+  /**
+   * What a player page that has just started is like (one that posted `ready`, or one that is
+   * starting or gone): it plays at normal speed and shows the whole picture, until it says
+   * otherwise.
+   */
+  function newPage(ready: boolean): void {
+    playerReady = ready;
+    rate = normalRate;
+    askedRates = [];
+    zoom = 1;
+  }
+
   /** What the status bar shows now; a new model is sent to the UI only when it differs. */
   let statusBar: StatusBarModel = hiddenStatusBar;
 
@@ -304,12 +316,9 @@ export function createLoadedLesson(
   function onPlayerEvent(event: PlayerEvent): void {
     switch (event.type) {
       case 'ready':
-        playerReady = true;
-        playerResumeRewind = 0;
-        rate = normalRate;
         // A page that kept its zoom reports it right after `ready`.
-        zoom = 1;
-        askedRates = [];
+        newPage(true);
+        playerResumeRewind = 0;
         logger.log({
           level: 'debug',
           message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
@@ -478,10 +487,7 @@ export function createLoadedLesson(
 
   /** The learner closed the player: a new page starts from scratch, at normal speed. */
   function onPlayerClosed(): void {
-    playerReady = false;
-    rate = normalRate;
-    zoom = 1;
-    askedRates = [];
+    newPage(false);
     // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
     void leave();
     unload(false);
@@ -511,11 +517,7 @@ export function createLoadedLesson(
     resetPlayhead(false);
     const shown = player.show({ title: lesson.title, resourceRoots });
     if (shown === 'created') {
-      // A new page is not ready, plays at normal speed, and is not zoomed until it says so.
-      playerReady = false;
-      rate = normalRate;
-      zoom = 1;
-      askedRates = [];
+      newPage(false);
     } else if (playerReady) {
       loadCurrent();
     }

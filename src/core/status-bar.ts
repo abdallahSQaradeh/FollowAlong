@@ -1,10 +1,10 @@
-import { zoomLabel } from '../protocol/player-messages.js';
-
 /**
  * The status bar items as a view model for the UI sink: play/pause, time, speed and back, shown
- * while a Lesson is loaded and gone otherwise, and the zoom level while the picture is zoomed. The core builds the model; the adapter only draws
- * it and runs the command a click names (spec #12, story 47).
+ * while a Lesson is loaded and gone otherwise, and the zoom level while the picture is zoomed. The
+ * core builds the model; the adapter only draws it and runs the command a click names (spec #12,
+ * stories 47 and 63).
  */
+import { zoomLabel } from '../protocol/player-messages.js';
 
 /** The commands a status bar item can run when clicked, named as the core knows them. */
 export type StatusBarCommand = 'playPause' | 'speedCycle' | 'seekBackShort' | 'zoomReset';

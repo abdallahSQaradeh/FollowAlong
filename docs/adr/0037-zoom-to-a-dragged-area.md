@@ -30,6 +30,8 @@ Q1–Q4 on it, which accepted each default below.
   item): one decimal, without a trailing `.0`: `1×`, `1.3×`, `2.4×`, `8×`. ＋ and − step by
   1.25× around the middle of what is shown. The level stops at 1 and at 8× (the prototype's
   maximum, beyond which the picture is only blur).
+- **The zoom controls are one module** (`src/player/zoom-controls.ts`): the box drag, the toolbar
+  and the webview state. What a click on the picture does stays with playback in `main.ts`.
 - **A drag is not a click** (#23). A press on the picture becomes a drag once the pointer moves
   more than 6 px. The drag draws a box. On release, a box of at least 12 px each way zooms as close
   as the whole box allows, centred on the box and kept inside the picture. The `click`
@@ -48,9 +50,13 @@ Q1–Q4 on it, which accepted each default below.
 - **A plain drag draws a box at any zoom, for now** (Q3). While zoomed it zooms further into the
   shown area. #47 changes this: a plain drag while zoomed pans, and Shift+drag draws a new box.
   **Area mode** (the toolbar's area button, `aria-pressed`) means the next drag draws a box,
-  whatever the zoom. It ends after that box zooms, or on a second press. Until #47 it changes
-  only the cursor, since every drag draws a box.
-- **The native control bar is off while zoomed.** It would be magnified with the picture. The
+  whatever the zoom. It ends with that drag, whether its box zooms or is too small, and with any
+  reset. Until #47 it changes only the cursor, since every drag draws a box.
+- **A drag that does not end with a release over the picture zooms nothing.** A `pointercancel`,
+  or a lost pointer capture with no `pointerup` (a blur), ends it and its gesture, so the next
+  click still hands focus back. A reset while a box is drawn drops the box: it was drawn over the
+  old view. The release that follows then neither zooms nor plays.
+- **The native control bar is off while zoomed.** It would be enlarged with the picture. The
   player sets `controls` to false, and the overlay then covers the whole player, so the strip
   along the bottom is picture: a click there plays or pauses. At 1× the bar and the overlay's
   72 px gap are as ADR 0009 describes. While zoomed the learner controls playback with the keys,

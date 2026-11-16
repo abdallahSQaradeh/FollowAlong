@@ -19,7 +19,7 @@ export interface ZoomView {
 export const wholePicture: ZoomView = { level: 1, left: 0, top: 0 };
 
 /** The closest the learner can zoom in (from the prototype: further is only blur). */
-export const maxZoomLevel = 8;
+const maxZoomLevel = 8;
 
 /** How much one press of ＋ or − zooms in or out (from the prototype). */
 export const zoomStep = 1.25;
@@ -38,10 +38,10 @@ function clamp(value: number, low: number, high: number): number {
 
 /** The view at `level`, centred as close to (`centreX`, `centreY`) as the picture's edges allow. */
 function centredView(level: number, centreX: number, centreY: number): ZoomView {
-  const zoom = clamp(level, 1, maxZoomLevel);
-  const span = 1 / zoom;
+  const clamped = clamp(level, 1, maxZoomLevel);
+  const span = 1 / clamped;
   return {
-    level: zoom,
+    level: clamped,
     left: clamp(centreX - span / 2, 0, 1 - span),
     top: clamp(centreY - span / 2, 0, 1 - span),
   };

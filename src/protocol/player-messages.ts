@@ -44,7 +44,10 @@ export type PlayerCommand =
    * player hides it again when a Lesson loads, plays or seeks.
    */
   | { readonly type: 'showNext'; readonly title: string }
-  /** Changes the picture's zoom (ADR 0037); the player answers with `zoomChanged`. */
+  /**
+   * Changes the picture's zoom (ADR 0037). The player reports `zoomChanged` when the level changes:
+   * a reset at 1× reports nothing.
+   */
   | { readonly type: 'zoom'; readonly action: ZoomAction };
 
 /**
