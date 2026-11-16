@@ -67,9 +67,10 @@ it with what this window recorded.
   fails or is left. Each `timeUpdate` only notes the position; the timer writes it. A save writes
   only when something was noted since the last one.
 - **Right away** on `paused` (any cause; `ended` follows a pause), on `seeked`, when the learner
-  plays another Lesson, opens another Course (only once the new folder could be read, so a missing
-  folder leaves the playing Lesson alone), and when the window closes: `deactivate` returns the
-  core's `close()`, which VS Code waits for briefly.
+  plays another Lesson (tree, Go to Lesson…, Next/Previous), opens another Course (only once the
+  new folder could be read, so a missing folder leaves the playing Lesson alone), closes the player
+  (`Player.onDidClose`, from #22), and when the window closes: `deactivate` returns the core's
+  `close()`, which VS Code waits for briefly.
 - **Late events of a Lesson left are ignored** from the moment the learner leaves it, so none is
   recorded into the Course opened next. One gap remains: once the next Lesson loads, an event in
   flight from a Lesson with the same id (the same path in another Course) cannot be told apart, since

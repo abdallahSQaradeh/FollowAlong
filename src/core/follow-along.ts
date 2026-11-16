@@ -11,6 +11,12 @@ import { openCourseData, type CourseData } from './course-data.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
+  buildStatusBar,
+  hiddenStatusBar,
+  type StatusBarCommand,
+  type StatusBarModel,
+} from './status-bar.js';
+import {
   findResource,
   newResource,
   noResources,
@@ -49,6 +55,12 @@ export interface FollowAlong {
   seekStep(size: StepSize, direction: StepDirection): void;
   /** The speed commands: moves the playback rate one rung up or down the speed ladder. */
   speedStep(direction: SpeedDirection): void;
+  /**
+   * A click on a status bar item: runs the command the item names. The speed item moves the
+   * playback rate one rung up the speed ladder, and from the top rung back to the bottom one,
+   * so repeated clicks go round.
+   */
+  statusBarClick(command: StatusBarCommand): void;
   /** The next Lesson in Course order, across Sections. */
   nextLesson(): void;
   /** The previous Lesson in Course order, across Sections. */
@@ -71,9 +83,6 @@ interface CurrentLesson {
    * where FollowAlong put it, and nothing is saved, so opening a Lesson never moves its position.
    */
   engaged: boolean;
-  /** Where the player last reported the playhead, and the Lesson's length. */
-  position: number;
-  duration: number;
 }
 
 /**
@@ -97,6 +106,11 @@ function nextRate(rate: number, direction: SpeedDirection): number {
   return direction === 'up'
     ? (speedLadder.find((rung) => rung > rate) ?? fastest)
     : (speedLadder.findLast((rung) => rung < rate) ?? slowest);
+}
+
+/** The rung a click on the status bar speed item goes to: one up, and round to the slowest. */
+function cycledRate(rate: number): number {
+  return rate >= fastest ? slowest : nextRate(rate, 'up');
 }
 
 /** The settings' defaults, in seconds (spec #12, Settings). */
@@ -167,6 +181,37 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Rates asked of the player that it has not reported yet, oldest first. */
   let askedRates: number[] = [];
 
+  /** The playhead and length the player last reported for the current Lesson, in seconds. */
+  let position = 0;
+  let duration = 0;
+  /** What the status bar shows now; a new model is sent to the UI only when it differs. */
+  let statusBar: StatusBarModel = hiddenStatusBar;
+
+  function refreshStatusBar(): void {
+    const next =
+      current === undefined
+        ? hiddenStatusBar
+        : buildStatusBar({
+            playing: playback.playing,
+            position,
+            duration,
+            rate,
+            shortStep: stepSeconds('short'),
+          });
+    if (JSON.stringify(next) === JSON.stringify(statusBar)) {
+      return;
+    }
+    statusBar = next;
+    ui.showStatusBar(next);
+  }
+
+  /** Starts what the player reported about a Lesson again: nothing yet. */
+  function resetPlayhead(autoplay: boolean): void {
+    playback = freshPlayback(autoplay);
+    position = 0;
+    duration = 0;
+  }
+
   function loadCurrent(): void {
     if (current === undefined) {
       return;
@@ -181,7 +226,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       autoplay,
     };
     player.send(command);
-    playback = freshPlayback(command.autoplay);
+    resetPlayhead(command.autoplay);
   }
 
   /** Saves every 5 s from now on, until the Lesson stops playing. */
@@ -271,8 +316,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'timeUpdate': {
         const shown = shownLesson(event);
         if (shown !== undefined) {
-          shown.position = event.position;
-          shown.duration = event.duration;
+          position = event.position;
+          duration = event.duration;
           if (shown.engaged) {
             progress?.record(shown.lesson.id, event.position, event.duration);
           }
@@ -287,10 +332,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         const isStartSeek =
           shown !== undefined &&
           !shown.engaged &&
-          Math.abs(shown.position - shown.startAt) < startSeekToleranceSeconds;
+          Math.abs(position - shown.startAt) < startSeekToleranceSeconds;
         if (shown !== undefined && !isStartSeek) {
           shown.engaged = true;
-          progress?.record(shown.lesson.id, shown.position, shown.duration);
+          progress?.record(shown.lesson.id, position, duration);
           void progress?.save();
         }
         break;
@@ -309,9 +354,36 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       }
     }
+    refreshStatusBar();
   }
 
-  const subscriptions: Disposable[] = [player.onEvent(onPlayerEvent)];
+  /** Forgets the loaded Lesson: nothing is loaded now, so the commands find no Lesson. */
+  function unloadLesson(): void {
+    current = undefined;
+    resetPlayhead(false);
+    refreshStatusBar();
+  }
+
+  /** The learner closed the player: a new page starts from scratch, at normal speed. */
+  function onPlayerClosed(): void {
+    playerReady = false;
+    rate = normalRate;
+    askedRates = [];
+    // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
+    void leaveCurrent();
+    unloadLesson();
+  }
+
+  const subscriptions: Disposable[] = [
+    player.onEvent(onPlayerEvent),
+    player.onDidClose(onPlayerClosed),
+    // The back item names the short step, so a changed setting shows at once.
+    config.onDidChange((affects) => {
+      if (affects(stepSettings.short)) {
+        refreshStatusBar();
+      }
+    }),
+  ];
 
   function dispose(): void {
     saveTimer?.dispose();
@@ -339,14 +411,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson, startAt: number, autoplay: boolean): void {
-    current = {
-      lesson,
-      startAt,
-      autoplay,
-      engaged: false,
-      position: startAt,
-      duration: 0,
-    };
+    current = { lesson, startAt, autoplay, engaged: false };
+    // Nothing is known about this Lesson until the player loads it and reports.
+    resetPlayhead(false);
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
     ui.selectLesson(lesson.id);
     const shown = player.show({
@@ -354,10 +421,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       resourceRoots: [course.folder, storage.folder],
     });
     if (shown === 'created') {
+      // A new page is not ready and plays at normal speed.
       playerReady = false;
+      rate = normalRate;
+      askedRates = [];
     } else if (playerReady) {
       loadCurrent();
     }
+    refreshStatusBar();
   }
 
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */
@@ -396,6 +467,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       throw error;
     }
     // The Lesson playing now is left only once the new Course can be opened.
+    const hadLesson = current !== undefined;
     await leaveCurrent();
     // Read first, then switch, so no click sees one Course's Resources next to another's folder.
     const data = openCourseData(folder, ports);
@@ -411,8 +483,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
       ui.showLessonTree({ message: text, nodes: [] });
       ui.showMessage({ severity: 'warning', text });
-      // A video already playing keeps playing (ADR 0007), but it is no Lesson of the open Course.
-      current = undefined;
+      // The player still shows the Lesson it had, but this Course has none to offer: the
+      // commands and the status bar items follow the Course the learner opened.
+      // The video would play on with every control gone, so it is stopped first.
+      if (hadLesson && playerReady) {
+        player.send({ type: 'pause' });
+      }
+      unloadLesson();
       return;
     }
     await storage.workspace.set(openCourseKey, folder);
@@ -455,6 +532,36 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return typeof value === 'number' && Number.isFinite(value) && value > 0
       ? value
       : defaultStepSeconds[size];
+  }
+
+  /** The play/pause command. */
+  function playPause(): void {
+    if (!hasPlayableLesson('Play/pause')) {
+      return;
+    }
+    playback = { ...playback, awaitingPlayAnswer: !playback.playing };
+    player.send({ type: playback.playing ? 'pause' : 'play' });
+  }
+
+  /** The step commands. */
+  function seekStep(size: StepSize, direction: StepDirection): void {
+    if (!hasPlayableLesson('Seek step')) {
+      return;
+    }
+    const seconds = stepSeconds(size);
+    player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
+  }
+
+  /** Asks the player for `next`, the rung a speed command chose. */
+  function setRate(next: number): void {
+    // Counted at once, so presses in a row climb before the player has answered the first.
+    if (next !== rate) {
+      // The player reports only a change, so a press that changes nothing has no answer to wait for.
+      askedRates.push(next);
+    }
+    rate = next;
+    player.send({ type: 'setRate', rate });
+    refreshStatusBar();
   }
 
   /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
@@ -604,38 +711,33 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
       }
     },
-    playPause() {
-      if (!hasPlayableLesson('Play/pause')) {
-        return;
-      }
-      playback = { ...playback, awaitingPlayAnswer: !playback.playing };
-      player.send({ type: playback.playing ? 'pause' : 'play' });
-    },
+    playPause,
+    seekStep,
     async close() {
       // An open under way leaves its Lesson and saves it first; then this window's Lesson.
       await opening;
       await leaveCurrent();
       dispose();
     },
-    seekStep(size, direction) {
-      if (!hasPlayableLesson('Seek step')) {
-        return;
-      }
-      const seconds = stepSeconds(size);
-      player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
-    },
     speedStep(direction) {
-      if (!hasPlayableLesson('Speed step')) {
-        return;
+      if (hasPlayableLesson('Speed step')) {
+        setRate(nextRate(rate, direction));
       }
-      // Counted at once, so presses in a row climb before the player has answered the first.
-      const next = nextRate(rate, direction);
-      if (next !== rate) {
-        // The player reports only a change, so a press that changes nothing has no answer to wait for.
-        askedRates.push(next);
+    },
+    statusBarClick(command) {
+      switch (command) {
+        case 'playPause':
+          playPause();
+          break;
+        case 'seekBackShort':
+          seekStep('short', 'back');
+          break;
+        case 'speedCycle':
+          if (hasPlayableLesson('Speed cycle')) {
+            setRate(cycledRate(rate));
+          }
+          break;
       }
-      rate = next;
-      player.send({ type: 'setRate', rate });
     },
     nextLesson() {
       moveToLesson(1);

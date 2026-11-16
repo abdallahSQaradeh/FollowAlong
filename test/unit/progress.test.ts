@@ -222,6 +222,18 @@ describe('remembering where the learner is in each Lesson', () => {
     }
   });
 
+  it('saves when the learner closes the player', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 70);
+    h.player.close();
+
+    // VS Code stops without a word afterwards: the save on close is what is left.
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 65 });
+  });
+
   it('saves when the VS Code window closes', async () => {
     const h = await createHarness();
     const course = await h.folder('course', lessons);

@@ -14,6 +14,7 @@ import { createFollowAlong, type FollowAlong } from '../../src/core/follow-along
 import type { LessonTreeModel } from '../../src/core/lesson-tree.js';
 import type { LogEntry, Logger } from '../../src/core/logger.js';
 import type { QuickPickModel } from '../../src/core/quick-pick.js';
+import type { StatusBarModel } from '../../src/core/status-bar.js';
 import {
   FileSystemError,
   type Clock,
@@ -39,6 +40,7 @@ export class FakePlayer implements PlayerPort {
   readonly shown: PlayerShowOptions[] = [];
   readonly sent: PlayerCommand[] = [];
   private readonly listeners = new Set<(event: PlayerEvent) => void>();
+  private readonly closeListeners = new Set<() => void>();
   private openRoots: readonly string[] | undefined;
 
   show(options: PlayerShowOptions): PlayerShowResult {
@@ -68,9 +70,17 @@ export class FakePlayer implements PlayerPort {
     this.sent.length = 0;
   }
 
+  onDidClose(listener: () => void): Disposable {
+    this.closeListeners.add(listener);
+    return { dispose: () => this.closeListeners.delete(listener) };
+  }
+
   /** The learner closed the player tab. */
   close(): void {
     this.openRoots = undefined;
+    for (const listener of this.closeListeners) {
+      listener();
+    }
   }
 
   emit(event: PlayerEvent): void {
@@ -174,6 +184,8 @@ export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
+  /** The status bar items the learner sees now; none until the core shows some. */
+  statusBar: StatusBarModel = { items: [] };
   /** The id of the Lesson the tree shows as selected. */
   selectedLesson: string | undefined;
   /** The Resources opened in a tab beside the code, in order. */
@@ -224,6 +236,10 @@ export class RecordingUi implements UiSink {
 
   showLessonTree(model: LessonTreeModel): void {
     this.lessonTree = model;
+  }
+
+  showStatusBar(model: StatusBarModel): void {
+    this.statusBar = model;
   }
 
   selectLesson(lessonId: string): void {

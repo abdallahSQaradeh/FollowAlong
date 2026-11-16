@@ -7,6 +7,7 @@ import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js'
 import type { LessonTreeModel } from './lesson-tree.js';
 import type { Logger } from './logger.js';
 import type { QuickPickModel } from './quick-pick.js';
+import type { StatusBarModel } from './status-bar.js';
 
 export interface Disposable {
   dispose(): void;
@@ -35,6 +36,8 @@ export interface PlayerPort {
   resourceUri(absolutePath: string): string;
   send(command: PlayerCommand): void;
   onEvent(listener: (event: PlayerEvent) => void): Disposable;
+  /** Calls `listener` when the learner closes the player: whatever it had loaded is gone. */
+  onDidClose(listener: () => void): Disposable;
 }
 
 // --- File system --------------------------------------------------------------------------------
@@ -153,6 +156,8 @@ export interface UiSink {
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined>;
   /** Replaces the Lesson tree in the activity bar. */
   showLessonTree(model: LessonTreeModel): void;
+  /** Replaces the status bar items: none while no Lesson is loaded. */
+  showStatusBar(model: StatusBarModel): void;
   /** Selects the Lesson in the Lesson tree, and scrolls it into view without taking focus. */
   selectLesson(lessonId: string): void;
   /** Opens a Resource in a tab beside the code, without touching the player or taking focus. */

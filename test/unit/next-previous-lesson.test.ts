@@ -152,6 +152,8 @@ describe('Next and Previous Lesson in a Course with no Lessons', () => {
     const empty = await h.folder('Empty', { 'notes.pdf': 'x' });
     await h.core.openCourse(empty);
     h.ui.messages.length = 0;
+    // Opening the empty Course stops the video that was playing (ADR 0018); the commands below send nothing.
+    h.player.clearSent();
 
     h.core.nextLesson();
     h.core.previousLesson();
