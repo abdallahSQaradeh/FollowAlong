@@ -100,6 +100,9 @@ export async function run(): Promise<void> {
     'followalong.previousLesson',
     'followalong.goToLesson',
     'followalong.attachToLoadedLesson',
+    'followalong.toggleLessonDone',
+    'followalong.markLessonDone',
+    'followalong.markLessonNotDone',
     'followalong.markSectionDone',
     'followalong.resetSection',
     'followalong.resetCourseProgress',
@@ -137,6 +140,11 @@ export async function run(): Promise<void> {
     ['attachToLoadedLesson', 'Attach Resource', "ctrl+' a"],
   ]);
   say("FollowAlong: Attach Resource is in the Command Palette, bound to Ctrl+' A");
+
+  chordCommandsAreBound(extension.packageJSON, [
+    ['toggleLessonDone', 'Mark done / not done', "ctrl+' d"],
+  ]);
+  say("FollowAlong: Mark done / not done is in the Command Palette, bound to Ctrl+' D");
 
   chordCommandsAreBound(extension.packageJSON, [
     ['nextLesson', 'Next Lesson', "ctrl+' n"],
@@ -644,6 +652,22 @@ function progressMenusAreDeclared(packageJson: unknown): void {
       .filter((entry) => entry.command === command)
       .map((entry) => entry.when);
     assert.deepEqual(inTree, ['view == followalong.lessons && viewItem == section']);
+    assert.ok(
+      palette.some((entry) => entry.command === command && entry.when === 'false'),
+      `${command} is not hidden from the Command Palette`,
+    );
+  }
+  // Story 78: the toggle is a Command Palette command; a Lesson's context menu offers Mark done
+  // and Mark not done.
+  assert.ok(
+    !palette.some((entry) => entry.command === 'followalong.toggleLessonDone'),
+    'followalong.toggleLessonDone is hidden from the Command Palette',
+  );
+  for (const command of ['followalong.markLessonDone', 'followalong.markLessonNotDone']) {
+    const inTree = (contributes?.menus?.['view/item/context'] ?? [])
+      .filter((entry) => entry.command === command)
+      .map((entry) => entry.when);
+    assert.deepEqual(inTree, ['view == followalong.lessons && viewItem == lesson']);
     assert.ok(
       palette.some((entry) => entry.command === command && entry.when === 'false'),
       `${command} is not hidden from the Command Palette`,
