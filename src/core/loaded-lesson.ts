@@ -1,0 +1,624 @@
+/**
+ * The Loaded Lesson: the Lesson the player holds, what the player reported about it, and the
+ * playback commands that drive it (play/pause, Rewind, steps, the speed ladder, the status bar).
+ * It owns the player page's side of the core: which `load` is current, whether the page takes
+ * commands, the rate it plays at, and saving Progress while the Lesson plays. The Course side
+ * (`follow-along.ts`) decides which Lesson to load and from which Course.
+ */
+import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
+import type { Lesson } from './course-model.js';
+import type { Disposable, Ports } from './ports.js';
+import type { ProgressRecorder } from './progress.js';
+import {
+  buildStatusBar,
+  hiddenStatusBar,
+  type StatusBarCommand,
+  type StatusBarModel,
+} from './status-bar.js';
+
+/** How often Progress is saved while a Lesson plays (spec #12, Progress store). */
+const saveIntervalMs = 5000;
+
+export type StepSize = 'short' | 'long';
+export type StepDirection = 'back' | 'forward';
+export type SpeedDirection = 'up' | 'down';
+
+/** What a playback command tells the learner when no Lesson is loaded. */
+export const noLessonText = 'FollowAlong: no Lesson is open. Open a Course first.';
+
+/** What the Loaded Lesson needs from the open Course. */
+export interface LessonCourse {
+  /** The open Course's Progress, which the Loaded Lesson's playhead is recorded into. */
+  progress(): ProgressRecorder | undefined;
+  /** The Lesson after `lesson` in the open Course's Course order, if there is one. */
+  lessonAfter(lesson: Lesson): Lesson | undefined;
+  /** The learner clicked the Next overlay of the Loaded Lesson: `next` is the Lesson it names. */
+  nextClicked(next: Lesson): void;
+}
+
+/** Where and how a Lesson is loaded. */
+export interface LoadOptions {
+  /** Where the playhead starts, in seconds. */
+  readonly startAt: number;
+  /** Whether it plays once loaded. */
+  readonly autoplay: boolean;
+  /** The folders the player may read media from (ADR 0022). */
+  readonly resourceRoots: readonly string[];
+}
+
+export interface LoadedLesson {
+  /** The Loaded Lesson, if any. */
+  lesson(): Lesson | undefined;
+  /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
+  load(lesson: Lesson, options: LoadOptions): void;
+  /**
+   * Leaves the Loaded Lesson (another Lesson, another Course, the window closes): no more saves
+   * on the clock, its late events are ignored, and the Course's Progress is saved. Resolves once
+   * that save, and any save still under way, is written.
+   */
+  leave(): Promise<void>;
+  /**
+   * Forgets the Loaded Lesson: nothing is loaded now, so the commands find no Lesson and the
+   * status bar items go. With `pause`, a ready player is paused first, so a video it still shows
+   * does not play on with every control gone.
+   */
+  unload(pause: boolean): void;
+  /**
+   * The play/pause command: pauses the Lesson if the player reports it playing, else resumes it,
+   * first stepping back by the `followalong.resumeRewind` setting (a manual resume, ADR 0016).
+   */
+  playPause(): void;
+  /** Resumes a paused Lesson with no rewind, for automatic resumes such as auto-resume. */
+  resumeWithoutRewind(): void;
+  /** Moves the playhead back or forward by the short or the long step setting. */
+  seekStep(size: StepSize, direction: StepDirection): void;
+  /** Moves the playback rate one rung up or down the speed ladder. */
+  speedStep(direction: SpeedDirection): void;
+  /** Runs the command a status bar item names, then hands focus back (ADR 0009, ADR 0018). */
+  statusBarClick(command: StatusBarCommand): void;
+  /** Stops listening to the player and the settings, and cancels the next save. */
+  dispose(): void;
+}
+
+/** The Lesson the player shows, and how it was loaded. */
+interface CurrentLesson {
+  readonly lesson: Lesson;
+  readonly startAt: number;
+  readonly autoplay: boolean;
+  /**
+   * Set once the Lesson has played or the learner moved its playhead. Until then the playhead is
+   * where FollowAlong put it, and nothing is saved, so opening a Lesson never moves its position.
+   */
+  engaged: boolean;
+  /**
+   * Set by a `load` with a start position, until the player's next `seeked`: that seek is the one
+   * applying `startAt`, FollowAlong's own, wherever it lands (gate review of #25, H1).
+   */
+  startSeekPending: boolean;
+}
+
+/** The fixed speed ladder (spec #12, story 41), slowest first. */
+const slowest = 0.75;
+const fastest = 2;
+const speedLadder = [slowest, 1, 1.25, 1.5, fastest] as const;
+const normalRate = 1;
+
+/** The rung one step from `rate`: the next one beyond it, or the end of the ladder. */
+function nextRate(rate: number, direction: SpeedDirection): number {
+  return direction === 'up'
+    ? (speedLadder.find((rung) => rung > rate) ?? fastest)
+    : (speedLadder.findLast((rung) => rung < rate) ?? slowest);
+}
+
+/** The rung a click on the status bar speed item goes to: one up, and round to the slowest. */
+function cycledRate(rate: number): number {
+  return rate >= fastest ? slowest : nextRate(rate, 'up');
+}
+
+/** The settings' defaults, in seconds (spec #12, Settings). */
+const defaultStepSeconds = { short: 5, long: 30 } as const;
+const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
+
+/** What the player reported about the current Lesson since its last `load`. */
+interface Playback {
+  /** Whether the Lesson is playing. */
+  readonly playing: boolean;
+  /** Whether the Lesson played to its end; a resume then restarts it, so it is not rewound. */
+  readonly ended: boolean;
+  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
+  readonly awaitingAutoplay: boolean;
+  /** Set when the play/pause command sent `play`, until the player answers it. */
+  readonly awaitingPlayAnswer: boolean;
+  /** Whether the learner was told, in this run of refusals, to press play in the player. */
+  readonly toldToPressPlay: boolean;
+}
+
+function freshPlayback(autoplay: boolean): Playback {
+  return {
+    playing: false,
+    ended: false,
+    awaitingAutoplay: autoplay,
+    awaitingPlayAnswer: false,
+    toldToPressPlay: false,
+  };
+}
+
+/**
+ * What a `paused` event does to the record, and whether the learner is to be told to press play.
+ * - A refused autoplay is told on its own: the `load` that asked for it started the run.
+ * - A refused `play` from the command is told once per run of refusals, so repeated keypresses
+ *   do not stack messages. A `played` or `ended` (see `onPlayerEvent`) or a `load` ends the run.
+ */
+function afterPause(
+  playback: Playback,
+  byUser: boolean,
+): { readonly playback: Playback; readonly tellToPressPlay: boolean } {
+  const refused = !byUser;
+  const autoplayRefused = playback.awaitingAutoplay && refused;
+  const commandRefused = playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
+  return {
+    tellToPressPlay: autoplayRefused || commandRefused,
+    playback: {
+      ...freshPlayback(false),
+      toldToPressPlay: playback.toldToPressPlay || commandRefused,
+    },
+  };
+}
+
+/** A seconds setting: any finite number above 0, else `fallback` (a hand-edited value may be bad). */
+function positiveSetting(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function pressPlayText(lesson: Lesson): string {
+  return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
+}
+
+export function createLoadedLesson(
+  ports: Pick<Ports, 'player' | 'clock' | 'ui' | 'logger' | 'config'>,
+  course: LessonCourse,
+): LoadedLesson {
+  const { player, clock, ui, logger, config } = ports;
+
+  let current: CurrentLesson | undefined;
+  /** How many `load`s were sent, and the `loadId` of the one that loaded `current`, if any. */
+  let loads = 0;
+  let currentLoad: number | undefined;
+  /** The next save while the Lesson plays. */
+  let saveTimer: Disposable | undefined;
+  /** Whether the open player page has posted `ready` and takes commands. */
+  let playerReady = false;
+  /** The Rewind the open player page holds; 0 for a page that has just started. */
+  let playerResumeRewind = 0;
+  /** What the player last said about the current Lesson; starts again with every `load`. */
+  let playback = freshPlayback(false);
+  /** The playback rate: what the player last reported, or what the core last asked for. */
+  let rate: number = normalRate;
+  /** Rates asked of the player that it has not reported yet, oldest first. */
+  let askedRates: number[] = [];
+
+  /** The playhead and length the player last reported for the current Lesson, in seconds. */
+  let position = 0;
+  let duration = 0;
+  /** What the status bar shows now; a new model is sent to the UI only when it differs. */
+  let statusBar: StatusBarModel = hiddenStatusBar;
+
+  function refreshStatusBar(): void {
+    const next =
+      current === undefined
+        ? hiddenStatusBar
+        : buildStatusBar({
+            playing: playback.playing,
+            position,
+            duration,
+            rate,
+            shortStep: stepSeconds('short'),
+          });
+    if (JSON.stringify(next) === JSON.stringify(statusBar)) {
+      return;
+    }
+    statusBar = next;
+    ui.showStatusBar(next);
+  }
+
+  /** Starts what the player reported about a Lesson again: nothing yet. */
+  function resetPlayhead(autoplay: boolean): void {
+    playback = freshPlayback(autoplay);
+    position = 0;
+    duration = 0;
+    // Until the next `load`, no event is about the Lesson the player should show.
+    currentLoad = undefined;
+  }
+
+  function loadCurrent(): void {
+    if (current === undefined) {
+      return;
+    }
+    const { lesson, startAt, autoplay } = current;
+    const command: Extract<PlayerCommand, { type: 'load' }> = {
+      type: 'load',
+      lessonId: lesson.id,
+      videoUri: player.resourceUri(lesson.path),
+      container: lesson.container,
+      startAt,
+      autoplay,
+      loadId: loads + 1,
+    };
+    player.send(command);
+    // The player seeks to a start position once it can: that `seeked` is not the learner's.
+    current.startSeekPending = startAt > 0;
+    resetPlayhead(command.autoplay);
+    loads += 1;
+    currentLoad = loads;
+    sendResumeRewind();
+  }
+
+  /**
+   * Tells the player the Rewind for the click that resumes a Lesson there (ADR 0016), when it
+   * differs from what the player holds. A fresh player page holds 0, so the default sends nothing.
+   */
+  function sendResumeRewind(): void {
+    const seconds = resumeRewindSeconds();
+    if (seconds !== playerResumeRewind) {
+      playerResumeRewind = seconds;
+      player.send({ type: 'setResumeRewind', seconds });
+    }
+  }
+
+  /** Saves every 5 s from now on, until the Lesson stops playing. */
+  function startSaving(): void {
+    saveTimer ??= clock.schedule(saveIntervalMs, () => {
+      saveTimer = undefined;
+      void course.progress()?.save();
+      if (playback.playing) {
+        startSaving();
+      }
+    });
+  }
+
+  /** The Lesson stopped playing (paused, ended, failed or left): no more saves on the clock. */
+  function stopSaving(): void {
+    saveTimer?.dispose();
+    saveTimer = undefined;
+  }
+
+  /**
+   * The Lesson the player shows now, if `event` is about it and not a late one about the last. The
+   * same Lesson id is not enough: the page outlives a Course (ADR 0022), and another Course can
+   * hold a Lesson with the same id, so the event must also come from the current `load`.
+   */
+  function shownLesson(event: AboutLesson): CurrentLesson | undefined {
+    return event.lessonId === current?.lesson.id &&
+      currentLoad !== undefined &&
+      event.loadId === currentLoad
+      ? current
+      : undefined;
+  }
+
+  function onPlayerEvent(event: PlayerEvent): void {
+    switch (event.type) {
+      case 'ready':
+        playerReady = true;
+        playerResumeRewind = 0;
+        rate = normalRate;
+        askedRates = [];
+        logger.log({
+          level: 'debug',
+          message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
+        });
+        if (current?.engaged === true) {
+          // A page that reloaded mid-Lesson starts again where the playhead was, not where the
+          // Lesson first started: its start seek then saves nothing and moves nothing back.
+          current = {
+            ...current,
+            startAt: position,
+            autoplay: playback.playing,
+            engaged: false,
+          };
+        }
+        loadCurrent();
+        break;
+      case 'error': {
+        logger.log({
+          level: 'error',
+          message: `Player error in ${event.lessonId}: ${event.message}`,
+        });
+        const shown = shownLesson(event);
+        if (shown !== undefined) {
+          // The player posts nothing more for a failed Lesson (ADR 0003), not even a pause.
+          stopSaving();
+          ui.showMessage({
+            severity: 'error',
+            text: `FollowAlong could not play “${shown.lesson.title}”: ${event.message}`,
+          });
+        }
+        break;
+      }
+      case 'paused': {
+        const shown = shownLesson(event);
+        if (shown === undefined) {
+          break;
+        }
+        // A pause the learner did not ask for after a `load` with autoplay, or after the command's
+        // `play`: VS Code refused it. Without a word the learner would face a stopped video.
+        const after = afterPause(playback, event.byUser);
+        playback = after.playback;
+        if (after.tellToPressPlay) {
+          ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
+        }
+        stopSaving();
+        if (shown.engaged) {
+          void course.progress()?.save();
+        }
+        break;
+      }
+      case 'played': {
+        const shown = shownLesson(event);
+        if (shown !== undefined) {
+          // Also ends a run of refusals: the player did what it was asked.
+          playback = { ...freshPlayback(false), playing: true };
+          shown.engaged = true;
+          startSaving();
+        }
+        break;
+      }
+      case 'ended': {
+        const shown = shownLesson(event);
+        if (shown !== undefined) {
+          // Ended: a resume then restarts the Lesson, so it is not rewound (ADR 0016).
+          playback = { ...freshPlayback(false), ended: true };
+          stopSaving();
+          offerNextLesson(shown.lesson);
+        }
+        break;
+      }
+      case 'timeUpdate': {
+        const shown = shownLesson(event);
+        if (shown !== undefined) {
+          position = event.position;
+          duration = event.duration;
+          if (shown.engaged) {
+            course.progress()?.record(shown.lesson.id, event.position, event.duration);
+          }
+        }
+        break;
+      }
+      case 'seeked': {
+        // A seek is the learner moving the playhead, playing or not: it counts, and saves now.
+        // The player's timeUpdate at the new position comes before it (HTML seek steps).
+        const shown = shownLesson(event);
+        if (shown === undefined) {
+          break;
+        }
+        if (playback.ended) {
+          // A Lesson moved off its end (a step back, the seek bar) is no longer ended.
+          playback = { ...playback, ended: false };
+        }
+        if (shown.startSeekPending) {
+          // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
+          shown.startSeekPending = false;
+          break;
+        }
+        shown.engaged = true;
+        const progress = course.progress();
+        progress?.record(shown.lesson.id, position, duration);
+        void progress?.save();
+        break;
+      }
+      case 'nextClicked': {
+        // A click for a Lesson the learner has left, or one no Course holds any more, is stale.
+        const shown = shownLesson(event);
+        const next = shown === undefined ? undefined : course.lessonAfter(shown.lesson);
+        if (next !== undefined) {
+          // A Lesson switch like any other: the Lesson left is saved, the next resumes 5 s back.
+          course.nextClicked(next);
+        }
+        break;
+      }
+      case 'rateChanged': {
+        // The answer to a press still counts it and every press before it; a late answer must not
+        // undo the presses after it. A rate the core did not ask for replaces them: the player
+        // reports every change, whoever made it, so the core never works from a stale rate.
+        const answered = askedRates.indexOf(event.rate);
+        if (answered === -1) {
+          askedRates = [];
+          rate = event.rate;
+        } else {
+          askedRates = askedRates.slice(answered + 1);
+          rate = askedRates.at(-1) ?? event.rate;
+        }
+        break;
+      }
+      case 'userInteracted':
+        ui.returnFocus();
+        break;
+    }
+    refreshStatusBar();
+  }
+
+  /**
+   * The Lesson has ended: the player stops on its last frame and, when a Lesson follows in Course
+   * order, shows "Next: <title>". The core never loads it by itself (spec #12, story 50); that is
+   * the learner's click on the overlay, or `nextLesson`.
+   */
+  function offerNextLesson(lesson: Lesson): void {
+    const next = course.lessonAfter(lesson);
+    if (next !== undefined) {
+      player.send({ type: 'showNext', title: next.title });
+    }
+  }
+
+  function leave(): Promise<void> {
+    stopSaving();
+    // From now on its late events are ignored, so none is recorded into the next Course.
+    current = undefined;
+    // Also waits for a save still under way, such as the one of the Lesson before.
+    return course.progress()?.save() ?? Promise.resolve();
+  }
+
+  function unload(pause: boolean): void {
+    if (pause && playerReady) {
+      player.send({ type: 'pause' });
+    }
+    current = undefined;
+    resetPlayhead(false);
+    refreshStatusBar();
+  }
+
+  /** The learner closed the player: a new page starts from scratch, at normal speed. */
+  function onPlayerClosed(): void {
+    playerReady = false;
+    rate = normalRate;
+    askedRates = [];
+    // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
+    void leave();
+    unload(false);
+  }
+
+  const subscriptions: Disposable[] = [
+    player.onEvent(onPlayerEvent),
+    player.onDidClose(onPlayerClosed),
+    // The back item names the short step, so a changed setting shows at once.
+    config.onDidChange((affects) => {
+      if (affects(stepSettings.short)) {
+        refreshStatusBar();
+      }
+      if (playerReady && affects('resumeRewind')) {
+        sendResumeRewind();
+      }
+    }),
+  ];
+
+  function load(lesson: Lesson, options: LoadOptions): void {
+    const { startAt, autoplay, resourceRoots } = options;
+    // A save timer left from the Lesson before must not write into this Lesson's Course.
+    stopSaving();
+    current = { lesson, startAt, autoplay, engaged: false, startSeekPending: false };
+    // Nothing is known about this Lesson until the player loads it and reports.
+    resetPlayhead(false);
+    const shown = player.show({ title: lesson.title, resourceRoots });
+    if (shown === 'created') {
+      // A new page is not ready and plays at normal speed.
+      playerReady = false;
+      rate = normalRate;
+      askedRates = [];
+    } else if (playerReady) {
+      loadCurrent();
+    }
+    refreshStatusBar();
+  }
+
+  /**
+   * Whether a playback command can be sent now. Tells the learner when no Lesson is open; ignores
+   * the command while the page is still starting, because it takes no command yet and plays the
+   * Lesson when it is ready.
+   */
+  function hasPlayableLesson(command: string): boolean {
+    if (current === undefined) {
+      ui.showMessage({ severity: 'info', text: noLessonText });
+      return false;
+    }
+    if (!playerReady) {
+      logger.log({ level: 'debug', message: `${command} ignored: the player is not ready yet.` });
+      return false;
+    }
+    return true;
+  }
+
+  /** The step in seconds, read when the command runs so a changed setting counts at once. */
+  function stepSeconds(size: StepSize): number {
+    return positiveSetting(config.get(stepSettings[size]), defaultStepSeconds[size]);
+  }
+
+  /** The seconds a manual resume steps back, read when the command runs; 0 when unset or invalid. */
+  function resumeRewindSeconds(): number {
+    return positiveSetting(config.get('resumeRewind'), 0);
+  }
+
+  /** Sends `play`, after a `seekBy` back of `rewind` seconds when that is above 0. */
+  function resume(rewind: number): void {
+    const wasAwaiting = playback.awaitingPlayAnswer;
+    playback = { ...playback, awaitingPlayAnswer: true };
+    // A second press before the player answers must not rewind again.
+    if (rewind > 0 && !playback.ended && !wasAwaiting) {
+      player.send({ type: 'seekBy', seconds: -rewind });
+    }
+    player.send({ type: 'play' });
+  }
+
+  function playPause(): void {
+    if (!hasPlayableLesson('Play/pause')) {
+      return;
+    }
+    if (playback.playing) {
+      player.send({ type: 'pause' });
+      return;
+    }
+    resume(resumeRewindSeconds());
+  }
+
+  function seekStep(size: StepSize, direction: StepDirection): void {
+    if (!hasPlayableLesson('Seek step')) {
+      return;
+    }
+    const seconds = stepSeconds(size);
+    player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
+  }
+
+  /** Asks the player for `next`, the rung a speed command chose. */
+  function setRate(next: number): void {
+    // Counted at once, so presses in a row climb before the player has answered the first.
+    if (next !== rate) {
+      // The player reports only a change, so a press that changes nothing has no answer to wait for.
+      askedRates.push(next);
+    }
+    rate = next;
+    player.send({ type: 'setRate', rate });
+    refreshStatusBar();
+  }
+
+  return {
+    lesson: () => current?.lesson,
+    load,
+    leave,
+    unload,
+    playPause,
+    resumeWithoutRewind() {
+      // Silent: an automatic resume must not tell the learner anything they did not ask for.
+      if (current === undefined || !playerReady || playback.playing) {
+        return;
+      }
+      resume(0);
+    },
+    seekStep,
+    speedStep(direction) {
+      if (hasPlayableLesson('Speed step')) {
+        setRate(nextRate(rate, direction));
+      }
+    },
+    statusBarClick(command) {
+      switch (command) {
+        case 'playPause':
+          playPause();
+          break;
+        case 'seekBackShort':
+          seekStep('short', 'back');
+          break;
+        case 'speedCycle':
+          if (hasPlayableLesson('Speed cycle')) {
+            setRate(cycledRate(rate));
+          }
+          break;
+      }
+      // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
+      // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
+      ui.returnFocus();
+    },
+    dispose() {
+      saveTimer?.dispose();
+      for (const subscription of subscriptions) {
+        subscription.dispose();
+      }
+    },
+  };
+}

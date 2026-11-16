@@ -72,6 +72,20 @@ describe('attaching a Resource from the chord', () => {
     expect(resourceLabels(h, '02 Two.webm')).toEqual([]);
   });
 
+  it('attaches to the Lesson of the Course it was pressed in, if another Course opens meanwhile', async () => {
+    const { h, notes } = await playingFirstLesson();
+    const other = await h.folder('other', { '01 One.webm': 'v' });
+
+    const attached = h.core.attachToLoadedLesson();
+    await h.core.openCourse(other);
+    h.ui.answerFileDialog(notes);
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+    const stored = await readFile(join(notes, '..', '.followalong', 'resources.json'), 'utf8');
+    expect(stored).toContain('notes.md');
+  });
+
   it('never pauses or otherwise commands the player', async () => {
     const { h, notes } = await playingFirstLesson();
     h.player.clearSent();
