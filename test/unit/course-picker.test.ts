@@ -256,8 +256,8 @@ describe('the Course picker', () => {
     await second;
 
     expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
-      [learning, h.storage.folder],
-      [learning, h.storage.folder],
+      [learning, join(h.storage.folder, 'courses')],
+      [learning, join(h.storage.folder, 'courses')],
     ]);
     expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: 'b.webm' }]);
   });
@@ -271,7 +271,7 @@ describe('the Course picker', () => {
     await h.core.openCourse(elsewhere);
 
     expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
-      [learning, elsewhere, h.storage.folder],
+      [learning, elsewhere, join(h.storage.folder, 'courses')],
     ]);
   });
 
@@ -322,7 +322,7 @@ describe('the Course picker', () => {
 
     expect(h.config.get('coursesRoots')).toEqual([learning, ...spellings]);
     expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
-      [learning, h.storage.folder],
+      [learning, join(h.storage.folder, 'courses')],
     ]);
   });
 
@@ -351,7 +351,7 @@ describe('the Course picker', () => {
       },
     ]);
     expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
-      [learning, h.storage.folder],
+      [learning, join(h.storage.folder, 'courses')],
     ]);
   });
 
@@ -395,7 +395,7 @@ describe('the Course picker', () => {
     await h.core.openCourse(otherCase);
 
     expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
-      [learning, otherCase, h.storage.folder],
+      [learning, otherCase, join(h.storage.folder, 'courses')],
     ]);
   });
 });

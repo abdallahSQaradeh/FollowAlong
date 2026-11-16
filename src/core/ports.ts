@@ -18,7 +18,10 @@ export interface Disposable {
 export interface PlayerShowOptions {
   /** The tab title: the Lesson's title. */
   readonly title: string;
-  /** Absolute folders the player may read media from: the Course and the extension storage. */
+  /**
+   * Absolute folders the player may read media from: the Courses roots, the Course when it is
+   * outside them, and the fallback root of Course data (ADR 0022, ADR 0024).
+   */
   readonly resourceRoots: readonly string[];
 }
 

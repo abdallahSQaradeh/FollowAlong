@@ -6,7 +6,12 @@ import { basename } from 'node:path';
 
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
-import { openCourseData, UnreadableCourseDataError, type CourseData } from './course-data.js';
+import {
+  fallbackRoot,
+  openCourseData,
+  UnreadableCourseDataError,
+  type CourseData,
+} from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
 import { scanCourses } from './course-scanner.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
@@ -140,7 +145,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     loaded.load(lesson, {
       startAt,
       autoplay,
-      resourceRoots: playerFolders(readCoursesRoots(config).roots, course.folder, storage.folder),
+      resourceRoots: playerFolders(
+        readCoursesRoots(config).roots,
+        course.folder,
+        fallbackRoot(storage.folder),
+      ),
     });
     offerTerminalKeys();
   }

@@ -91,16 +91,17 @@ export async function addCoursesRoot(config: Config, root: string): Promise<bool
 
 /**
  * The folders the player may read media from: the Courses roots, the Course folder when it is
- * outside them, and the extension storage. A change reloads the player page, which loses the
- * click that lets it start playback (#12 D3), so Courses under the same roots share them.
+ * outside them, and the fallback root of Course data (`<storage>/courses`, ADR 0024), not the
+ * whole extension storage. A change reloads the player page, which loses the click that lets it
+ * start playback (#12 D3), so Courses under the same roots share them.
  */
 export function playerFolders(
   roots: readonly string[],
   courseFolder: string,
-  storageFolder: string,
+  courseDataFallbackRoot: string,
 ): string[] {
   const underARoot = roots.some((root) => isSpelledInside(courseFolder, root));
-  return [...roots, ...(underARoot ? [] : [courseFolder]), storageFolder];
+  return [...roots, ...(underARoot ? [] : [courseFolder]), courseDataFallbackRoot];
 }
 
 /**

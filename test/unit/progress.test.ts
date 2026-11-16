@@ -386,7 +386,7 @@ describe('reopening the workspace', () => {
     h.player.ready();
 
     expect(h.player.shown).toEqual([
-      { title: 'Closures', resourceRoots: [course, h.storage.folder] },
+      { title: 'Closures', resourceRoots: [course, join(h.storage.folder, 'courses')] },
     ]);
     expect(h.player.sent).toMatchObject([
       { type: 'load', lessonId: '03 Closures.webm', startAt: 65, autoplay: false },

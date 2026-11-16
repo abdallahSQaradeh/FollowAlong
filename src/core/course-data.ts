@@ -69,13 +69,21 @@ export interface CourseData {
 
 type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
 
+/**
+ * `<storage>/courses`: where the fallback copies of every Course's data live. It is the same for
+ * every Course, so the player may read prepared sound there without a page reload (ADR 0024).
+ */
+export function fallbackRoot(storageFolder: string): string {
+  return join(storageFolder, 'courses');
+}
+
 /** `<storage>/courses/<folder name>-<hash of the absolute path>`: readable, and unique per path. */
 function fallbackFolder(course: string, storageFolder: string): string {
   const hash = createHash('sha256').update(course).digest('hex').slice(0, 16);
   const name = basename(course)
     .replace(/[^\p{L}\p{N} ._-]/gu, '_')
     .slice(0, 60);
-  return join(storageFolder, 'courses', `${name}-${hash}`);
+  return join(fallbackRoot(storageFolder), `${name}-${hash}`);
 }
 
 /** `course` is the Course folder's absolute path, which also keys the fallback storage. */
@@ -194,7 +202,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     target = fallback;
     logger.log({
       level: 'info',
-      message: `The Course folder ${course} is read-only; keeping FollowAlong's data for it in ${join(storage.folder, 'courses')}.`,
+      message: `The Course folder ${course} is read-only; keeping FollowAlong's data for it in ${fallbackRoot(storage.folder)}.`,
     });
   }
 
