@@ -52,6 +52,22 @@ describe('remembering where the learner is in each Lesson', () => {
     });
   });
 
+  it('starts a Lesson left in its first 5 s at 0:00', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    playTo(h, '02 Setup.webm', 3.2);
+    pause(h, '02 Setup.webm');
+
+    expect(await reopen(h, course)).toMatchObject({
+      lessonId: '02 Setup.webm',
+      startAt: 0,
+      autoplay: false,
+    });
+  });
+
   it('saves every 5 s while the Lesson plays', async () => {
     const h = await createHarness();
     const course = await h.folder('course', lessons);
@@ -138,6 +154,30 @@ describe('remembering where the learner is in each Lesson', () => {
     expect(await reopen(h, first)).toMatchObject({ lessonId: '02 Setup.webm', startAt: 75 });
   });
 
+  it('never saves an event of the Lesson left behind into the Course opened next', async () => {
+    const h = await createHarness();
+    const first = await h.folder('first', lessons);
+    const second = await h.folder('second', lessons);
+    await h.core.openCourse(first);
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    playTo(h, '02 Setup.webm', 80);
+
+    // The old Lesson keeps reporting while the second Course opens, at every step of the way.
+    const opening = { done: false };
+    const opened = h.core.openCourse(second).then(() => {
+      opening.done = true;
+    });
+    for (let position = 81; !opening.done; position += 1) {
+      h.player.emit({ type: 'timeUpdate', lessonId: '02 Setup.webm', position, duration: 600 });
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    await opened;
+    await h.core.close();
+
+    expect(await reopen(h, second)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 0 });
+  });
+
   it('saves when the VS Code window closes', async () => {
     const h = await createHarness();
     const course = await h.folder('course', lessons);
@@ -202,6 +242,31 @@ describe('reopening the workspace', () => {
     expect(h.player.sent).toMatchObject([
       { type: 'load', lessonId: '01 Intro.webm', startAt: 0, autoplay: false },
     ]);
+  });
+
+  it('lets a Course the learner opens win over the one being restored at startup', async () => {
+    const h = await createHarness();
+    // Many Sections: reading it takes longer than reading the Course the learner picks.
+    const remembered = await h.folder(
+      'remembered',
+      Object.fromEntries(
+        Array.from({ length: 30 }, (_, index) => [`Section ${String(index)}/lesson.webm`, 'video']),
+      ),
+    );
+    const picked = await h.folder('picked', lessons);
+    await h.core.openCourse(remembered);
+
+    h.restart();
+    await Promise.all([h.core.restoreCourse(), h.core.openCourse(picked)]);
+    h.player.ready();
+
+    expect(h.player.shown.at(-1)?.resourceRoots[0]).toBe(picked);
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: '01 Intro.webm', autoplay: true },
+    ]);
+    h.restart();
+    await h.core.restoreCourse();
+    expect(h.player.shown.at(-1)?.resourceRoots[0]).toBe(picked);
   });
 
   it('opens nothing when no Course was open in the workspace', async () => {

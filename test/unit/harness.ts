@@ -142,7 +142,8 @@ class MemoryStore implements KeyValueStore {
 
   set(key: string, value: unknown): Promise<void> {
     this.values.set(key, structuredClone(value));
-    return Promise.resolve();
+    // A VS Code memento writes to disk: its promise settles on a later turn, not at once.
+    return new Promise((resolve) => setImmediate(resolve));
   }
 }
 

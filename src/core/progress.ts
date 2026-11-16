@@ -33,7 +33,7 @@ export interface CourseProgress {
 }
 
 /** How far before the saved position a Lesson starts again (spec #12, Resume). */
-export const resumeRewindSeconds = 5;
+const resumeRewindSeconds = 5;
 
 function isFields(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,11 +83,19 @@ export const progressFile: CourseDataFile<CourseProgress> = {
   merge: mergeProgress,
 };
 
+/** A Lesson's entry: only the record's own keys count, never one inherited from `Object`. */
+function entryOf(
+  lessons: Readonly<Record<string, LessonProgress>>,
+  lessonId: string,
+): LessonProgress | undefined {
+  return Object.hasOwn(lessons, lessonId) ? lessons[lessonId] : undefined;
+}
+
 /** Per Lesson, and for the last Lesson played, the entry saved later wins. */
-export function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
+function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
   const lessons: Record<string, LessonProgress> = { ...a.lessons };
   for (const [lessonId, lesson] of Object.entries(b.lessons)) {
-    const other = Object.hasOwn(lessons, lessonId) ? lessons[lessonId] : undefined;
+    const other = entryOf(lessons, lessonId);
     if (other === undefined || lesson.savedAt > other.savedAt) {
       lessons[lessonId] = lesson;
     }
@@ -101,7 +109,7 @@ export function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgr
 
 /** Where a Lesson starts when the learner comes back to it: 5 s before its saved position. */
 export function resumePosition(progress: CourseProgress, lessonId: string): number {
-  const saved = Object.hasOwn(progress.lessons, lessonId) ? progress.lessons[lessonId] : undefined;
+  const saved = entryOf(progress.lessons, lessonId);
   return Math.max(0, (saved?.position ?? 0) - resumeRewindSeconds);
 }
 

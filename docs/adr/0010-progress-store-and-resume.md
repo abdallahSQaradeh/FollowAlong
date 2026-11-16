@@ -70,6 +70,11 @@ it with what this window recorded.
   plays another Lesson, opens another Course (only once the new folder could be read, so a missing
   folder leaves the playing Lesson alone), and when the window closes: `deactivate` returns the
   core's `close()`, which VS Code waits for briefly.
+- **A Lesson left is left for good:** its late events (a `timeUpdate` still in flight) are ignored
+  from the moment the learner leaves it, so none is recorded into the Course opened next.
+- **One open at a time:** Course opens, including the restore at startup, run in the order they
+  were asked for, so a Course the learner opens while the remembered one is being restored is the
+  one left open (and remembered).
 - **One save at a time:** saves are chained, so an older one never lands after a newer one, and
   `close()` and opening another Course wait for every save before them.
 - **A failed save** is logged and shown to the learner once per open Course. A Course moved away

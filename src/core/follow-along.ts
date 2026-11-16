@@ -150,8 +150,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     saveTimer = undefined;
   }
 
-  /** Whether `event` is about the Lesson the player shows now, not a late one about the last. */
-  function isCurrent(event: { readonly lessonId: string }): CurrentLesson | undefined {
+  /** The Lesson the player shows now, if `event` is about it and not a late one about the last. */
+  function shownLesson(event: { readonly lessonId: string }): CurrentLesson | undefined {
     return event.lessonId === current?.lesson.id ? current : undefined;
   }
 
@@ -170,7 +170,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           level: 'error',
           message: `Player error in ${event.lessonId}: ${event.message}`,
         });
-        const shown = isCurrent(event);
+        const shown = shownLesson(event);
         if (shown !== undefined) {
           // The player posts nothing more for a failed Lesson (ADR 0003), not even a pause.
           stopSaving();
@@ -182,7 +182,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       }
       case 'paused': {
-        const shown = isCurrent(event);
+        const shown = shownLesson(event);
         if (shown === undefined) {
           break;
         }
@@ -200,7 +200,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       }
       case 'played': {
-        const shown = isCurrent(event);
+        const shown = shownLesson(event);
         if (shown !== undefined) {
           // Also ends a run of refusals: the player did what it was asked.
           playback = { ...freshPlayback(false), playing: true };
@@ -210,13 +210,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       }
       case 'ended':
-        if (isCurrent(event) !== undefined) {
+        if (shownLesson(event) !== undefined) {
           playback = freshPlayback(false);
           stopSaving();
         }
         break;
       case 'timeUpdate': {
-        const shown = isCurrent(event);
+        const shown = shownLesson(event);
         if (shown !== undefined) {
           shown.position = event.position;
           shown.duration = event.duration;
@@ -230,7 +230,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         // A seek is the learner moving the playhead, playing or not: it counts, and saves now.
         // The player's timeUpdate at the new position comes before it (HTML seek steps). One seek
         // is FollowAlong's own: the one that puts a Lesson that has not played yet at its start.
-        const shown = isCurrent(event);
+        const shown = shownLesson(event);
         const isStartSeek =
           shown !== undefined &&
           !shown.engaged &&
@@ -264,6 +264,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return Promise.resolve();
     }
     stopSaving();
+    // From now on its late events are ignored, so none is recorded into the next Course.
+    current = undefined;
     // Also waits for a save still under way, such as the one of the Lesson before.
     return progress?.save() ?? Promise.resolve();
   }
@@ -357,14 +359,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
   }
 
+  /** Opens run one after another, so the one asked for last is the Course left open. */
+  let opening: Promise<void> = Promise.resolve();
+  function openInTurn(folder: string, restoring: boolean): Promise<void> {
+    const next = opening.then(() => open(folder, restoring));
+    opening = next.catch(() => undefined);
+    return next;
+  }
+
   return {
     openCourse(folder) {
-      return open(folder, false);
+      return openInTurn(folder, false);
     },
     async restoreCourse() {
       const folder = storage.workspace.get(openCourseKey);
       if (typeof folder === 'string') {
-        await open(folder, true);
+        await openInTurn(folder, true);
       }
     },
     playLesson,
