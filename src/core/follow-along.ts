@@ -127,6 +127,12 @@ export interface FollowAlong {
    */
   unhideCourse(): Promise<void>;
   /**
+   * `FollowAlong: Clear audio cache`: deletes every prepared sound file of every Course, in Course
+   * data and in the fallback storage, and nothing else. The sound of the Lesson that is loaded
+   * stays, because the player is reading it. Says how much it deleted; resolves once done.
+   */
+  clearAudioCache(): Promise<void>;
+  /**
    * The text of a document open in VS Code changed: auto-pause's input (spec #12, Auto-pause).
    * Cursor moves are not edits, so they never reach it.
    */
@@ -792,6 +798,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     playLesson,
     pickCourse,
     unhideCourse: () => unhideCourse(ports),
+    clearAudioCache: async () => {
+      await audioCache.clear();
+    },
     async goToLesson() {
       if (refusedWhileOpening()) {
         return;

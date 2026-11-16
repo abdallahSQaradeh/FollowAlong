@@ -114,6 +114,7 @@ export async function run(): Promise<void> {
   for (const command of [
     'followalong.openCourse',
     'followalong.unhideCourse',
+    'followalong.clearAudioCache',
     'followalong.playLesson',
     'followalong.attachResource',
     'followalong.openResource',
@@ -178,6 +179,13 @@ export async function run(): Promise<void> {
     'followalong.coursesRoots defaults to no root',
   );
   say("FollowAlong: Open Course… is bound to Ctrl+' C; no Courses root is set by default");
+
+  assert.equal(
+    vscode.workspace.getConfiguration('followalong').get('audioCacheLimit'),
+    5,
+    'followalong.audioCacheLimit defaults to 5 GB',
+  );
+  say('the audio cache limit defaults to 5 GB');
 
   chordCommandsAreBound(extension.packageJSON, [
     ['attachToLoadedLesson', 'Attach Resource', "ctrl+' a"],

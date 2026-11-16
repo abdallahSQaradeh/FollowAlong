@@ -153,3 +153,44 @@ describe('the audio cache limit', () => {
     });
   });
 });
+
+describe('Clear audio cache', () => {
+  it('deletes every prepared sound file in both stores, and nothing else', async () => {
+    const h = await createHarness();
+    const first = await h.folder('first', {
+      ...lessons(3),
+      '01 Lesson.pdf': 'notes',
+      '.followalong/sound/README.txt': 'not sound',
+    });
+    await h.core.openCourse(first);
+    h.player.ready(false);
+    await finishAll(h);
+    // Another Course, read-only, keeps its sound in the extension's storage.
+    const second = await h.folder('second', lessons(2));
+    makeReadOnly(second);
+    await h.core.openCourse(second);
+    h.player.ready(false);
+    await finishAll(h);
+    expect(await kept(first)).toEqual(['01', '02', '03']);
+    expect(await keptInStorage(h)).toEqual(['01', '02']);
+    const others = async (folder: string): Promise<string[]> =>
+      (await h.listFiles(folder)).filter((file) => !file.endsWith('.mp3'));
+    const before = { first: await others(first), second: await others(second) };
+    const storage = (await h.listFiles(h.storage.folder)).filter((file) => !file.endsWith('.mp3'));
+
+    await h.core.clearAudioCache();
+
+    expect(await kept(first)).toEqual([]);
+    // The Lesson that is loaded keeps its sound, which the player is reading.
+    expect(await keptInStorage(h)).toEqual(['01']);
+    expect(await others(first)).toEqual(before.first);
+    expect(await others(second)).toEqual(before.second);
+    expect((await h.listFiles(h.storage.folder)).filter((file) => !file.endsWith('.mp3'))).toEqual(
+      storage,
+    );
+    expect(h.ui.messages.at(-1)).toEqual({
+      severity: 'info',
+      text: 'FollowAlong deleted 4 prepared sound files (52 bytes). The open Lesson’s sound stays.',
+    });
+  });
+});
