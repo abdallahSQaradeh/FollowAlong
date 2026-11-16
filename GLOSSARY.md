@@ -17,8 +17,12 @@ One video inside a Course.
 _Avoid_: Episode, clip, lecture
 
 **Course picker**:
-The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, or add a Courses root. It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
+The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, add a Courses root, or _Browse…_ folders (the **Folder browser**). It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
 _Avoid_: Course list, library view
+
+**Folder browser**:
+The list behind _Browse…_ in the Course picker, shown inside the same quick pick. It walks folders from the Courses roots (or the drives or home folder when there is no root), with a way back up. A folder that holds videos can be opened as a Course; picking a video opens its folder as the Course and plays that video.
+_Avoid_: File explorer, folder dialog, tree
 
 **Course list cache**:
 The Courses the last scan of the Courses roots found, kept on this machine (not in any Course folder) so the Course picker can open from it before the rescan is done. It is used only for the same Courses roots, and a copy that cannot be read is ignored.
