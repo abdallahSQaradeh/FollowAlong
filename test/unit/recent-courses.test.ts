@@ -568,6 +568,30 @@ describe('picking the Course that is already open', () => {
     expect(h.ui.selectedLesson).toBe('02 Setup.webm');
   });
 
+  it('does not read its folder again', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Learning', { 'A/01 Intro.webm': 'v', 'A/02 Setup.webm': 'v' });
+    h.config.set('coursesRoots', [root]);
+    await h.core.openCourse(join(root, 'A'));
+    h.player.ready();
+    h.player.clearSent();
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    // A drive that has gone slow: an open that read the folder again would wait here.
+    const release = h.holdReads(join(root, 'A'));
+
+    h.ui.choose('A');
+    const settled = await Promise.race([
+      picking.then(() => 'picked'),
+      new Promise((resolve) => setTimeout(resolve, 200, 'still reading')),
+    ]);
+    release();
+    await picking;
+
+    expect(settled).toBe('picked');
+    expect(h.player.sent).toEqual([]);
+  });
+
   it('opens the Course again, paused where the learner left it, when the player was closed', async () => {
     const h = await createHarness();
     const root = await h.folder('Learning', { 'A/01 Intro.webm': 'v', 'A/02 Setup.webm': 'v' });
