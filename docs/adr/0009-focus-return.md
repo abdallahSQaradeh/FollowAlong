@@ -88,6 +88,10 @@ noremoteplayback"`, `disablepictureinpicture`, `disableremoteplayback`). It open
   picture-in-picture. Download does not apply to a local file. The control bar keeps play, time,
   mute, volume, fullscreen and the seek bar. The fullscreen button is not reported as an
   interaction.
+
+  ![The overflow menu's "Playback speed" item above the overlay's lower edge (yellow)](assets/0009-overflow-menu-under-overlay.png)
+  ![The control bar without the overflow menu](assets/0009-control-bar.png)
+
 - Chromium pauses a playing Lesson while the seek bar is scrubbed and plays it on release. The
   core receives `paused {byUser: true}` and then `played`, and the release can post
   `userInteracted` twice (the gesture's end, then the `play`). Focus returns twice to the same
