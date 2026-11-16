@@ -45,8 +45,12 @@ A folder under a Courses root that groups several Courses and is not one itself.
 _Avoid_: Genre, topic folder, group
 
 **Known Course**:
-A folder that holds FollowAlong's own `.followalong` folder and has a Lesson somewhere below it: it counts as a Course even when its Lessons are only in subfolders.
+A folder that holds FollowAlong's own `.followalong` folder, or is one of the Recent Courses, and has a Lesson somewhere below it: it counts as a Course even when its Lessons are only in subfolders.
 _Avoid_: Opened Course, tracked Course
+
+**Recent Courses**:
+The Courses the learner opened last (5 at most, newest first), kept on this machine and listed first in the Course picker. The Course open in this window is tagged _(open)_. One whose folder has moved shows as _missing_, with _Locate…_ to point it at its new folder and _Remove_ to drop it.
+_Avoid_: History, favourites, last opened
 
 **Title list**:
 A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with one line per Lesson, giving the instructor's real Lesson titles in Lesson order.
