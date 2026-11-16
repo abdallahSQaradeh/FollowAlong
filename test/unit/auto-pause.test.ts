@@ -90,4 +90,86 @@ describe('auto-pause while typing', () => {
       expect(edit(h, { scheme: 'file', path: fallbackFile, inActiveEditor: true })).toEqual([]);
     });
   });
+
+  describe('when it acts', () => {
+    it('does nothing with auto-pause off', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'off');
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('is off unless the learner turns it on', async () => {
+      const h = await createHarness();
+      await openLesson(h, undefined);
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('treats a setting it does not know as off', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'Pause');
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('does nothing while the Lesson is paused', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      h.player.emit({ type: 'paused', lessonId, byUser: true });
+
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('does nothing after the Lesson ended', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      h.player.emit({ type: 'ended', lessonId });
+
+      expect(edit(h)).toEqual([]);
+    });
+
+    it('pauses once for a burst of keystrokes before the player reports the pause', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+
+      expect([...edit(h), ...edit(h), ...edit(h)]).toEqual([{ type: 'pause' }]);
+    });
+
+    it('pauses again for the first edit after the learner resumed the Lesson', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
+    it('acts from the moment the learner turns it on, mid-Lesson', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'off');
+      h.player.emit({ type: 'played', lessonId });
+      h.config.set('autoPause', 'pause');
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
+    it('stops from the moment the learner turns it off, mid-Lesson', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      h.config.set('autoPause', 'off');
+
+      expect(edit(h)).toEqual([]);
+    });
+  });
 });

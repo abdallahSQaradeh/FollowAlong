@@ -560,6 +560,7 @@ export function createLoadedLesson(
         if (shown !== undefined) {
           // Also ends a run of refusals: the player did what it was asked.
           playback = { ...freshPlayback(false), playing: true };
+          feedAutoPause({ type: 'played' });
           shown.engaged = true;
           stopCountingPlay(shown);
           startSaving();

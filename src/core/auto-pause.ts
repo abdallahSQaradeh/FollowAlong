@@ -29,7 +29,9 @@ export type AutoPauseInput =
   /** The setting changed, or is read for the first time. */
   | { readonly type: 'modeChanged'; readonly mode: AutoPauseMode }
   /** The learner edited the active editor's document; `playing`: the Lesson is playing. */
-  | { readonly type: 'typed'; readonly playing: boolean };
+  | { readonly type: 'typed'; readonly playing: boolean }
+  /** The player reports the Loaded Lesson playing. */
+  | { readonly type: 'played' };
 
 /** What the Loaded Lesson does for a step: `pause` sends the player `pause`. */
 export type AutoPauseEffect = 'pause';
@@ -50,6 +52,9 @@ export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): Aut
       return state === 'armed' && input.playing
         ? { state: 'autoPaused', effects: ['pause'] }
         : { state, effects: [] };
+    case 'played':
+      // Playing again, whoever started it: the next edit pauses it again.
+      return { state: state === 'autoPaused' ? 'armed' : state, effects: [] };
   }
 }
 
