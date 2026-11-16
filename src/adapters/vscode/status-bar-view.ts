@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 
 import type {
   StatusBarIcon,
+  StatusBarMarker,
   StatusBarItemId,
   StatusBarItemModel,
   StatusBarModel,
@@ -26,6 +27,10 @@ const codicons: Readonly<Record<StatusBarIcon, string>> = {
   back: 'debug-step-back',
   zoom: 'zoom-in',
   sound: 'sync~spin',
+};
+
+const markerCodicons: Readonly<Record<StatusBarMarker, string>> = {
+  autoPause: 'keyboard',
 };
 
 export class StatusBarView implements vscode.Disposable {
@@ -71,7 +76,11 @@ export class StatusBarView implements vscode.Disposable {
       item.name = `FollowAlong: ${model.id}`;
       this.items.set(model.id, item);
     }
-    item.text = [model.icon === undefined ? '' : `$(${codicons[model.icon]})`, model.text]
+    item.text = [
+      model.icon === undefined ? '' : `$(${codicons[model.icon]})`,
+      model.marker === undefined ? '' : `$(${markerCodicons[model.marker]})`,
+      model.text,
+    ]
       .filter((part) => part !== '')
       .join(' ');
     item.tooltip = model.tooltip;

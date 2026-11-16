@@ -2,7 +2,7 @@
  * The Courses roots (ADR 0022): the `followalong.coursesRoots` setting, read and written through
  * the Config port, and the folders the player may read media from, which follow from it.
  */
-import { posix, resolve, sep } from 'node:path';
+import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
 
 import type { Config } from './ports.js';
 
@@ -63,6 +63,15 @@ export function keyOf(normalised: string): string {
  */
 export function sameFolder(a: string, b: string): boolean {
   return keyOf(normalisedRoot(a) ?? a) === keyOf(normalisedRoot(b) ?? b);
+}
+
+/**
+ * Whether `path` lies inside `folder`, at any depth (not `folder` itself), as the paths are spelled:
+ * callers that compare across letter case pass both through {@link keyOf} first.
+ */
+export function isInsideFolder(folder: string, path: string): boolean {
+  const inside = relative(folder, path);
+  return inside !== '' && !isAbsolute(inside) && inside.split(sep)[0] !== '..';
 }
 
 /** The setting's entries that are text, as written. */
