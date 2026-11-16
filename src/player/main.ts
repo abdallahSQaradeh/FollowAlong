@@ -54,6 +54,7 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
 
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
+  hideNext();
   // A pause command whose `pause` event the new load cancels must not mark the next pause.
   pauseRequested = false;
   const lesson: Lesson = {
@@ -128,6 +129,30 @@ function setRate(rate: number, media: HTMLVideoElement): void {
   media.playbackRate = rate;
 }
 
+/** The "Next: <title>" overlay over the picture of a Lesson that has ended. */
+const nextOverlayElement = document.querySelector<HTMLElement>('.next');
+if (nextOverlayElement === null) {
+  throw new Error('The player page has no Next overlay.');
+}
+const nextOverlay = nextOverlayElement;
+
+function hideNext(): void {
+  nextOverlay.setAttribute('hidden', '');
+}
+
+/**
+ * Shows the overlay, but only over a Lesson that is still at its end: the extension answers
+ * `ended` asynchronously, and a learner who has pressed play or loaded another Lesson since
+ * must not find it over a playing picture.
+ */
+function showNext(title: string, media: HTMLVideoElement): void {
+  if (!media.ended) {
+    return;
+  }
+  nextOverlay.textContent = `Next: ${title}`;
+  nextOverlay.removeAttribute('hidden');
+}
+
 function run(command: PlayerCommand, media: HTMLVideoElement): void {
   switch (command.type) {
     case 'load':
@@ -147,6 +172,9 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       break;
     case 'setRate':
       setRate(command.rate, media);
+      break;
+    case 'showNext':
+      showNext(command.title, media);
       break;
   }
 }
@@ -185,6 +213,9 @@ function reportMediaEvents(media: HTMLVideoElement): void {
     post({ type: 'paused', lessonId: lesson.lessonId, byUser: !pauseRequested && !media.ended });
     pauseRequested = false;
   });
+  // The learner plays the Lesson again, or steps back into it: it is not at its end any more.
+  on('playing', hideNext);
+  on('seeking', hideNext);
   on('seeked', ({ lessonId }) => {
     post({ type: 'seeked', lessonId });
   });
@@ -209,6 +240,11 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   });
 }
 
+nextOverlay.addEventListener('click', () => {
+  if (current !== undefined && !current.failed) {
+    post({ type: 'nextClicked', lessonId: current.lessonId });
+  }
+});
 const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
 reportMediaEvents(video);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
