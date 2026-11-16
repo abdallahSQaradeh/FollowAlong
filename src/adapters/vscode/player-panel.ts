@@ -11,13 +11,14 @@ import { join } from 'node:path';
 import * as vscode from 'vscode';
 
 import type { Logger } from '../../core/logger.js';
+import type { FocusedPart } from './focus-return.js';
 import type {
   Disposable,
   PlayerPort,
   PlayerShowOptions,
   PlayerShowResult,
 } from '../../core/ports.js';
-import type { VideoSpot } from '../../core/video-placement.js';
+import { spotLabels, type VideoSpot } from '../../core/video-placement.js';
 import { renderPlayerHtml } from '../../player/page.js';
 import {
   parsePlayerEvent,
@@ -37,6 +38,9 @@ export const playerViews: Readonly<
   bottomPanel: { view: 'followalong.videoPanel', container: 'followalong-video-panel' },
   secondarySidebar: { view: 'followalong.videoSidebar', container: 'followalong-video-sidebar' },
 };
+
+/** How long a move waits for VS Code to resolve the view of its spot, in ms. */
+const viewWaitMs = 5000;
 
 /** How long after a move a view hidden by the focus return is shown again, in ms. */
 const keepShownMs = 1000;
@@ -80,7 +84,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     private readonly extensionPath: string,
     private readonly logger: Logger,
     /** Hands focus back to the code after VS Code focused a view it opened. */
-    private readonly returnFocus: () => Promise<void>,
+    private readonly returnFocus: () => Promise<FocusedPart>,
   ) {
     for (const spot of ['bottomPanel', 'secondarySidebar'] as const) {
       this.subscriptions.push(
@@ -241,8 +245,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
    * Shows the view of the spot the player is awaited in, and starts the page in whichever view
    * VS Code then shows. VS Code disposes a view its `when` clause hides and resolves a new one
    * when it shows again (trace, CI run 43897862321), so the page starts in the view it resolves
-   * now; a view it still holds is used once it is visible. The container is opened with its
-   * command either way.
+   * now; a view it still holds is used once it is visible. The view is opened with its own
+   * `.focus` command either way.
    */
   private openView(spot: ViewSpot): void {
     if (this.awaitedView?.spot !== spot) {
@@ -255,17 +259,43 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
         this.adopt(spot, existing);
       }
     });
-    this.stopWatching = () => {
+    // A view that never comes (VS Code did not resolve it) must not leave the core waiting for a
+    // page: after a while the player counts as gone, and the learner is told.
+    const giveUp = setTimeout(() => {
+      if (this.awaitedView?.spot !== spot) {
+        return;
+      }
+      this.awaitedView = undefined;
+      this.stopWatching();
+      this.logger.log({
+        level: 'warn',
+        message: `The ${spot} view did not open within ${String(viewWaitMs)} ms.`,
+      });
+      void vscode.window.showWarningMessage(
+        `FollowAlong could not show the video in the ${spotLabels[spot].toLowerCase()}. Open the Lesson again, or move the video to another spot.`,
+      );
+      this.playerGone();
+    }, viewWaitMs);
+    const stopWatchingVisibility = (): void => {
       watching?.dispose();
     };
-    // Opening the container focuses the view: focus goes back to the code once it is open.
-    vscode.commands.executeCommand(`workbench.view.extension.${playerViews[spot].container}`).then(
+    this.stopWatching = () => {
+      clearTimeout(giveUp);
+      stopWatchingVisibility();
+    };
+    // `<view>.focus` opens the container and brings the view back also when the learner hid it
+    // from the container's menu. It focuses the view: focus goes back to the code once it is open.
+    vscode.commands.executeCommand(`${playerViews[spot].view}.focus`).then(
       () => {
         if (existing?.visible === true) {
           this.adopt(spot, existing);
         }
-        void this.returnFocus().then(() => {
-          this.keepShown(spot);
+        void this.returnFocus().then((focused) => {
+          // Focus return wins (#12 D12): a terminal the learner types in stays in front, even
+          // when it hides the video in the bottom panel.
+          if (focused !== 'terminal') {
+            this.keepShown(spot);
+          }
         });
       },
       (error: unknown) => {

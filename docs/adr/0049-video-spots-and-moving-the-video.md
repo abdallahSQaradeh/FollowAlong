@@ -48,10 +48,17 @@ additively (Q4):
 - **An ended Lesson lands paused at its end** (condition c). A page at the end of a Lesson is
   paused, so its snapshot says it does not play, and so does the core's own record when the page
   does not answer: the new page loads it at its end without `autoplay`. The Next overlay is not
-  shown again; the learner's next press restarts the Lesson or `Next Lesson` moves on.
+  shown again. The core keeps it ended across the move, and the start seek of the new page does
+  not clear that, so the learner's next press restarts the Lesson without a Rewind (ADR 0016),
+  or `Next Lesson` moves on (gate review of #49, item 5).
 - **A page that does not answer** within 1 s (Clock port, condition b) is moved with what the core
-  knows: the last reported playhead, play state and speed; the zoom resets to the whole picture. A page
-  still starting is moved at once, the Lesson starting where it was going to.
+  knows: the last reported playhead, play state and speed; the zoom resets to the whole picture.
+  A Lesson loaded with autoplay that has not played yet (its sound may still be preparing) still
+  counts as playing, unless it ended (item 6). A page still starting is moved at once, the Lesson
+  starting where it was going to, and it keeps the speed and zoom the page before it was to take
+  over, so two moves in a row lose nothing (item 1).
+- **A second move while the first waits for its snapshot** is not dropped: the move goes to the
+  spot the learner asked for last (item 7).
 - **Progress is saved at the snapshot's playhead** before the move, for a Lesson the learner has
   played or moved, so a crash during the move loses nothing.
 - **Nothing is sent to the page that is going.** The move ends its `load`: a sidecar sound that
@@ -84,10 +91,12 @@ tab into an auxiliary window (#51) was not measured here.
   container; the editor split is the webview panel of before (`followalong.player`). The views
   retain their page while hidden, so the Lesson plays on while the panel or sidebar is closed.
 - **Opening a view spot** first sets the context key (awaited, so the view's `when` clause holds),
-  then runs `workbench.view.extension.<container>`, which focuses the view; the adapter hands focus
-  back to the code at once (ADR 0009), as `preserveFocus` does for the panel. If VS Code cannot
-  open the view, the adapter reports the player closed, so the core does not wait for a page that
-  will not come.
+  then runs the view's own `<view>.focus` command, which also brings back a view the learner hid
+  from the container's menu (item 3). It focuses the view; the adapter hands focus back at once
+  (ADR 0009), as `preserveFocus` does for the panel. If VS Code cannot open the view, or no view
+  comes within 5 s, the adapter reports the player closed and, for the wait, tells the learner
+  once, so the core never waits for a page that will not come. The view's description is the
+  Lesson's title. The learner resizes every spot with VS Code's own sashes (story 56).
 - **A view's page is started only once VS Code shows that view.** VS Code disposes a view its
   `when` clause hides and resolves a new one when the spot is used again (measured with a trace in
   CI run 43897862321), so the page goes into the view VS Code resolves, never into one it has let
@@ -96,8 +105,9 @@ tab into an auxiliary window (#51) was not measured here.
   player moved there from an editor group, handing focus back to the code editor hid the panel
   25 ms later. The adapter then shows the view again with `WebviewView.show(true)`, which keeps
   the focus in the code, and watches for such a hide for 1 s after the move. CI run 43899415033
-  passes the smoke step that moves back into the bottom panel on Ubuntu and Windows. The view's description is the Lesson's
-  title. The learner resizes every spot with VS Code's own sashes (story 56).
+  passes the smoke step that moves back into the bottom panel on Ubuntu and Windows. **Not when
+  focus went back to a terminal** (item 4): focus return wins (#12 D12), so the terminal the
+  learner types in stays in front, and the video waits behind it.
 - **Closing.** Closing the player tab, or a view VS Code disposes, is a close as before; the page
   dropped for a move is not.
 - **Resources** (D4): in a view spot the player is in no editor group, so a Resource opens
@@ -108,6 +118,7 @@ tab into an auxiliary window (#51) was not measured here.
 
 - In the bottom panel the video is a tab beside the terminal: the panel shows one of them at a
   time. A Focus return to a terminal (ADR 0009) shows the terminal tab, which hides the video until
-  the learner drags the video view beside it. Manual QA (#64), and a note for the orchestrator.
+  the learner drags the video view beside it. FollowAlong does not fight this (#12 D12: focus
+  return wins); it is recorded on #12 as a known limitation, pending Windows QA (#64).
 - `ZoomView` and its check `isZoomView` moved into the protocol module, which both sides import;
   `src/player/zoom.ts` re-exports them.

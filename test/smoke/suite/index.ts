@@ -262,10 +262,51 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
       await vscode.commands.executeCommand('followalong.moveVideo', spot);
       say(await theLessonLoadsIn(hooks, spot, from, code));
     }
+
+    say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
   } finally {
     await settings.update('videoLocation', undefined, vscode.ConfigurationTarget.Global);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  }
+}
+
+/** Whether VS Code's context key `key` (such as `editorTextFocus`) holds now. */
+async function hasFocus(key: string): Promise<boolean> {
+  return (await vscode.commands.executeCommand('getContextKeyValue', key)) === true;
+}
+
+/**
+ * Focus return wins over the video (#12 D12): when the learner last typed in a terminal and the
+ * video moves to the bottom panel, focus goes back to that terminal, which then stays in front
+ * even though it hides the video there (gate review of #49, item 4).
+ */
+async function aTerminalKeepsItsFocusOverTheBottomPanel(hooks: TestHooks): Promise<string> {
+  await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+  await waitFor('the player in the editor group', () =>
+    hooks.playerSpot()?.spot === 'editorSplit' ? true : undefined,
+  );
+  const terminal = vscode.window.createTerminal({ name: 'FollowAlong smoke' });
+  try {
+    terminal.show(false);
+    await waitForAsync('the terminal to take the focus', async () =>
+      (await hasFocus('terminalFocus')) ? true : undefined,
+    );
+    await vscode.commands.executeCommand('followalong.moveVideo', 'bottomPanel');
+    await waitFor('the player in the bottom panel', () =>
+      hooks.playerSpot()?.spot === 'bottomPanel' ? true : undefined,
+    );
+    // Longer than the adapter's 1 s watch for a hidden view.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(await hasFocus('terminalFocus'), true, 'the terminal lost the focus');
+    assert.equal(
+      hooks.playerSpot()?.visible,
+      false,
+      'the video was brought in front of the terminal the learner was typing in',
+    );
+    return 'after a move to the bottom panel, the terminal the learner typed in keeps the focus and stays in front';
+  } finally {
+    terminal.dispose();
   }
 }
 
@@ -301,8 +342,14 @@ async function theLessonLoadsIn(
     const hosted = hooks.playerSpot();
     return hosted?.spot === spot && hosted.visible ? hosted : undefined;
   });
-  await waitFor(`the focus back in the code after the player opened in ${spot}`, () =>
-    vscode.window.activeTextEditor?.document === code ? true : undefined,
+  // Keyboard focus itself, not only the active editor: VS Code keeps reporting the code editor as
+  // the active one while focus sits in a webview view (gate review of #49, item 2).
+  await waitForAsync(
+    `keyboard focus back in the code after the player opened in ${spot}`,
+    async () =>
+      (await hasFocus('editorTextFocus')) && vscode.window.activeTextEditor?.document === code
+        ? true
+        : undefined,
   );
   return `the Lesson loads in the ${where.spot} spot (length ${String(loaded.duration)} s), and the code keeps the focus`;
 }
