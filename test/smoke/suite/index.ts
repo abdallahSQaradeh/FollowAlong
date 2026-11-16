@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import * as vscode from 'vscode';
@@ -114,10 +115,10 @@ async function opensACourseBesideTheCode(extensionPath: string): Promise<void> {
   });
   await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
 
-  await vscode.commands.executeCommand(
-    'followalong.openCourse',
-    vscode.Uri.file(join(extensionPath, 'test', 'fixtures', 'media')),
-  );
+  // A copy of the fixtures: FollowAlong writes its Course data into the Course it plays.
+  const course = join(mkdtempSync(join(tmpdir(), 'followalong-smoke-course-')), 'media');
+  cpSync(join(extensionPath, 'test', 'fixtures', 'media'), course, { recursive: true });
+  await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
 
   const playerGroup = await waitFor('the player tab', () =>
     vscode.window.tabGroups.all.find((group) =>

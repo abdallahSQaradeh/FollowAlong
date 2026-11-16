@@ -317,4 +317,21 @@ describe('Progress kept with the Course', () => {
     h.core.playLesson('01 Intro.webm');
     expect(h.player.sent.at(-1)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 45 });
   });
+
+  it('keeps Progress in the extension storage when the Course is read-only, and resumes from it', async () => {
+    const h = await createHarness();
+    const course = await h.folder('read-only course', lessons);
+    makeReadOnly(course);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 64);
+    pause(h, '01 Intro.webm');
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 59 });
+    expect(await h.listFiles(course)).toEqual(Object.keys(lessons));
+    expect(await h.listFiles(h.storage.folder)).toEqual([
+      expect.stringMatching(/^courses\/read-only course-[0-9a-f]{16}\/progress\.json$/),
+    ]);
+    expect(h.ui.messages).toEqual([]);
+  });
 });

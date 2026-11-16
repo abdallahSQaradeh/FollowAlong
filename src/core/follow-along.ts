@@ -182,6 +182,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   const subscriptions: Disposable[] = [player.onEvent(onPlayerEvent)];
 
+  function dispose(): void {
+    saveTimer?.dispose();
+    for (const subscription of subscriptions) {
+      subscription.dispose();
+    }
+  }
+
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
 
@@ -192,7 +199,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return Promise.resolve();
     }
     stopPlaying(left);
-    return left.engaged && progress !== undefined ? progress.save() : Promise.resolve();
+    // Also waits for a save still under way, such as the one of the Lesson before.
+    return progress?.save() ?? Promise.resolve();
   }
 
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
@@ -288,13 +296,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     async close() {
       await leaveCurrent();
-      this.dispose();
+      dispose();
     },
-    dispose() {
-      saveTimer?.dispose();
-      for (const subscription of subscriptions) {
-        subscription.dispose();
-      }
-    },
+    dispose,
   };
 }
