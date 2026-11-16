@@ -1,0 +1,26 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/lesson/aac.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf60.16.100
+  Duration: 00:00:01.00, start: 0.000000, bitrate: 101 kb/s
+  Stream #0:0[0x1](und): Video: h264 (Constrained Baseline) (avc1 / 0x31637661), yuv420p(progressive), 64x36 [SAR 1:1 DAR 16:9], 14 kb/s, 10 fps, 10 tbr, 10240 tbn (default)
+    Metadata:
+      handler_name    : VideoHandler
+      vendor_id       : [0][0][0][0]
+      encoder         : Lavc60.31.102 libx264
+  Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+      vendor_id       : [0][0][0][0]
+Stream mapping:
+  Stream #0:1 -> #0:0 (aac (native) -> mp3 (libmp3lame))
+Output #0, mp3, to '/lesson/out.mp3':
+  Metadata:
+    TSSE            : Lavf60.16.100
+  Stream #0:0: Audio: mp3, 44100 Hz, mono, fltp (default)
+    Metadata:
+      encoder         : Lavc60.31.102 libmp3lame
+size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x55ea88003800] video:0kB audio:5kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 4.406056%
+size=       5kB time=00:00:01.01 bitrate=  42.2kbits/s speed=96.7x    

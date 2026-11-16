@@ -26,6 +26,7 @@ const codicons: Readonly<Record<StatusBarIcon, string>> = {
   pause: 'debug-pause',
   back: 'debug-step-back',
   zoom: 'zoom-in',
+  sound: 'sync~spin',
 };
 
 const markerCodicons: Readonly<Record<StatusBarMarker, string>> = {

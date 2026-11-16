@@ -52,6 +52,10 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 <button type="button" data-zoom="area" aria-label="Zoom to an area" title="Zoom to an area: drag a box" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" fill="none" stroke="currentColor" stroke-dasharray="2 1.5"/></svg></button>
 <button type="button" data-zoom="reset" aria-label="Reset zoom" title="Reset zoom (double-click the picture)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 0 1.3-3.2M3.5 2.5v2.8h2.8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
 </div>
+<div class="sound-notice" hidden>
+<p class="sound-text"></p>
+<button class="play-without-sound" type="button" hidden>Play without sound</button>
+</div>
 <button class="next" type="button" hidden></button>
 </main>
 <audio preload="auto"></audio>
