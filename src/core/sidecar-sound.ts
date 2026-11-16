@@ -2,7 +2,7 @@
  * The audio sidecar service (spec #12, Sound for MP4 Lessons; ADR 0034). VS Code cannot decode
  * AAC, the sound of every MP4 Lesson, so when the player says it cannot, the Lesson's sound is
  * converted to MP3 with ffmpeg and kept in Course data (`.followalong/sound`, or the fallback
- * storage of a read-only Course). The player plays it beside the muted video.
+ * storage of a read-only Course). The player plays it beside the video.
  *
  * Each MP3 is named by the Lesson's path relative to the Course, its size and its last change, so
  * it is reused on the next open and a Lesson file replaced on disk is converted again.

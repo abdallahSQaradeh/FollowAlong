@@ -1,6 +1,6 @@
 /**
  * The audio sidecar service (spec #12, Sound for MP4 Lessons; ticket #41): VS Code cannot decode
- * AAC, so an MP4 Lesson's sound is converted to MP3 and played beside the muted video.
+ * AAC, so an MP4 Lesson's sound is converted to MP3 and played beside the video.
  */
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

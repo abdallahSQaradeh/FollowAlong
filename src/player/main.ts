@@ -32,12 +32,16 @@ if (soundElement === null) {
   throw new Error('The player page has no <audio> element.');
 }
 /**
- * The hidden `<audio>` that plays an MP4 Lesson's sound, converted to MP3, beside the muted video
- * when the page cannot decode AAC (the audio sidecar, ADR 0034). The video is the clock: the sound
- * follows its play, pause, seeks and rate.
+ * The hidden `<audio>` that plays an MP4 Lesson's sound, converted to MP3, beside the video when
+ * the page cannot decode AAC (the audio sidecar, ADR 0034). The video is the clock: the sound
+ * follows its play, pause, seeks, rate, volume and mute.
  */
 const sidecar: HTMLAudioElement = soundElement;
-/** Whether the page decodes AAC, the sound of every MP4 Lesson; VS Code does not. */
+/**
+ * Whether the page decodes AAC, the sound of every MP4 Lesson; VS Code does not. The one check
+ * behind both `ready {aacSupported}` and the sidecar: a page that can play the video's own sound
+ * never plays a sidecar, so the sound never plays twice (ADR 0034).
+ */
 const aacSupported = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') !== '';
 /** How far the sidecar may drift from the video before it is moved back to it, in seconds. */
 const maxDriftSeconds = 0.1;
@@ -92,7 +96,7 @@ interface Lesson {
   playing: boolean;
   /**
    * Where the Lesson's sound comes from: its own track (`own`); the sidecar, still to come
-   * (`awaited`) or playing beside the muted video (`sidecar`); or none, because it could not be
+   * (`awaited`) or playing beside the video (`sidecar`); or none, because it could not be
    * prepared (`none`).
    */
   sound: 'own' | 'awaited' | 'sidecar' | 'none';
@@ -177,17 +181,14 @@ function dropSound(): void {
 }
 
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
-  // The learner's mute: on the video, or on the sidecar while the player kept the video muted.
-  const learnerMuted = mutedForSound() ? sidecar.muted : media.muted;
   current?.stop.abort();
   hideNext();
   dropSound();
-  // An MP4 whose AAC sound the page cannot decode waits for its sound, muted. The native controls
-  // are hidden meanwhile: their play button would start the picture without its sound.
+  // An MP4 whose AAC sound the page cannot decode waits for its sound. The native controls are
+  // hidden meanwhile: their play button would start the picture without its sound. The video is
+  // not muted: its own sound is one the page cannot play, and its volume and mute stay the
+  // learner's controls, which the sidecar follows.
   const awaitsSound = command.container === 'mp4' && !aacSupported;
-  // The video stays muted while its sound is the sidecar's; the learner's mute moves with it.
-  sidecar.muted = learnerMuted;
-  media.muted = awaitsSound || learnerMuted;
   media.controls = !awaitsSound;
   // A pause or play whose event the new load cancels must not mark the next one.
   pauseBy = undefined;
@@ -241,11 +242,6 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
   }
 }
 
-/** Whether the player keeps the video muted because the Lesson's sound is not its own. */
-function mutedForSound(): boolean {
-  return current !== undefined && current.sound !== 'own';
-}
-
 /** Moves the sidecar to the video's playhead and rate. */
 function alignSound(media: HTMLVideoElement): void {
   sidecar.defaultPlaybackRate = media.playbackRate;
@@ -256,9 +252,10 @@ function alignSound(media: HTMLVideoElement): void {
 }
 
 /**
- * The wait for the Lesson's sound is over: it arrived (`audioUri`), and plays beside the muted
- * video from now on, or it could not be prepared, and the Lesson plays muted (ticket #42 adds a
- * choice there). A play asked for meanwhile goes ahead.
+ * The wait for the Lesson's sound is over: it arrived (`audioUri`), and plays beside the video
+ * from now on, or it could not be prepared, and the Lesson plays without sound (ticket #42
+ * replaces that with an overlay and a "Play without sound" button). A play asked for meanwhile
+ * goes ahead.
  */
 function soundSettled(audioUri: string | undefined, media: HTMLVideoElement): void {
   const lesson = current;
@@ -294,7 +291,7 @@ function play(media: HTMLVideoElement): void {
   }
   if (lesson?.sound === 'sidecar' && media.paused) {
     // The sound first: VS Code refuses sound until the learner has clicked in the page (#12 D3),
-    // and the muted picture alone would start where the sound cannot.
+    // so the picture never starts where its sound cannot.
     startSound(media).then(
       () => {
         // A pause or another Lesson since then (a pause stops the sidecar again).
@@ -531,14 +528,11 @@ function followWithSound(media: HTMLVideoElement): void {
       alignSound(media);
     }
   });
+  // The native volume slider and mute button, both ways, whatever plays: the sidecar holds the
+  // learner's volume and mute from one Lesson to the next.
   media.addEventListener('volumechange', () => {
     sidecar.volume = media.volume;
-    // The video is kept muted, so its mute button can only unmute it: that press is the learner's
-    // mute button for the sound, which is the sidecar's. The video goes back to muted.
-    if (mutedForSound() && !media.muted) {
-      sidecar.muted = !sidecar.muted;
-      media.muted = true;
-    }
+    sidecar.muted = media.muted;
   });
 }
 

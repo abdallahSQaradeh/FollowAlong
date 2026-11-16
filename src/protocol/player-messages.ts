@@ -46,13 +46,14 @@ export type PlayerCommand =
   | { readonly type: 'showNext'; readonly title: string }
   /**
    * The loaded MP4 Lesson's sound, converted to MP3 because the player cannot decode AAC (ADR 0034).
-   * The player plays it in a hidden `<audio>` that follows the muted video. Sent after the `load`
+   * The player plays it in a hidden `<audio>` that follows the video. Sent after the `load`
    * it belongs to, and only while that `load` is the current one.
    */
   | { readonly type: 'soundReady'; readonly audioUri: string }
   /**
-   * The loaded MP4 Lesson's sound could not be prepared: the player stops waiting for it and plays
-   * the video muted (ADR 0034). Ticket #42 puts an overlay and a "Play without sound" button here.
+   * The loaded MP4 Lesson's sound could not be prepared: the player stops waiting for it and lets
+   * the video play without sound (ADR 0034). Ticket #42 replaces that with an overlay and a "Play
+   * without sound" button.
    */
   | { readonly type: 'soundFailed'; readonly message: string };
 

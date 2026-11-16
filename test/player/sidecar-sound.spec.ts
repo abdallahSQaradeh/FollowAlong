@@ -1,8 +1,8 @@
 /**
- * Seam 2: an MP4 Lesson whose AAC sound the player cannot decode plays muted, beside its sound
- * converted to MP3 (the audio sidecar, ADR 0034). The video is the clock; the sound follows its
- * play, pause, seeks and rate, within about 0.1 s. Stock Chromium decodes AAC, so the harness
- * forces the "AAC unsupported" answer VS Code gives.
+ * Seam 2: an MP4 Lesson whose AAC sound the player cannot decode plays beside its sound converted
+ * to MP3 (the audio sidecar, ADR 0034). The video is the clock; the sound follows its play, pause,
+ * seeks and rate, within about 0.1 s, and its volume and mute. Stock Chromium decodes AAC, so the
+ * harness forces the "AAC unsupported" answer VS Code gives.
  */
 import type { Page } from '@playwright/test';
 
@@ -60,7 +60,7 @@ async function expectSoundInStep(player: PlayerHarness): Promise<void> {
 }
 
 test.describe('sound for an MP4 Lesson when AAC does not play', () => {
-  test('waits for the sound, then plays the muted video with it, in step', async ({ page }) => {
+  test('waits for the sound, then plays the video with it, in step', async ({ page }) => {
     const player = await openPlayer(page, { aac: false });
     await player.post(loadMp4());
     await aMoment();
@@ -71,11 +71,11 @@ test.describe('sound for an MP4 Lesson when AAC does not play', () => {
     await player.post(soundReady);
     await player.waitForEvent({ type: 'played', lessonId });
 
-    const video = await player.video();
-    expect(video.muted).toBe(true);
-    expect(video.paused).toBe(false);
-    expect((await player.sound()).source).toBe(media.sidecarMp3);
-    expect((await player.sound()).muted).toBe(false);
+    expect((await player.video()).paused).toBe(false);
+    const sound = await player.sound();
+    expect(sound.source).toBe(media.sidecarMp3);
+    expect(sound.muted).toBe(false);
+    expect(sound.volume).toBe(1);
     await expectSoundInStep(player);
   });
 
@@ -155,23 +155,25 @@ test.describe('sound for an MP4 Lesson when AAC does not play', () => {
     await expectSoundInStep(player);
   });
 
-  test('plays the muted video when the sound could not be prepared', async ({ page }) => {
+  test('plays the video, without a sidecar, when the sound could not be prepared', async ({
+    page,
+  }) => {
     const player = await openPlayer(page, { aac: false });
     await player.post(loadMp4());
     await aMoment();
     await player.post({ type: 'soundFailed', message: 'spawn ffmpeg ENOENT' });
     await player.waitForEvent({ type: 'played', lessonId });
 
-    const video = await player.video();
-    expect(video.muted).toBe(true);
-    expect(video.paused).toBe(false);
-    expect((await player.sound()).source).toBe('');
+    expect((await player.video()).paused).toBe(false);
+    const sound = await player.sound();
+    expect(sound.source).toBe('');
+    expect(sound.paused).toBe(true);
   });
 
   test('stays paused, sound and all, until a click when VS Code refuses to play sound', async ({
     page,
   }) => {
-    // Without a user gesture Chromium lets a muted video play, but not the sound (#12 D3).
+    // Without a user gesture Chromium refuses to play sound (#12 D3), as VS Code does.
     const player = await openPlayer(page, { aac: false, userGestures: false });
     await player.postAll([loadMp4(), soundReady]);
     await player.waitForEvent({ type: 'paused', lessonId, byUser: false });
@@ -273,52 +275,65 @@ async function pressMute(player: PlayerHarness, page: Page): Promise<void> {
   await player.video();
 }
 
-test('the mute button and the volume slider act on the sound of the sidecar', async ({ page }) => {
+test('the sidecar follows the volume slider and the mute button, both ways', async ({ page }) => {
   const player = await openPlayer(page, { aac: false });
   await player.postAll([loadMp4(), soundReady]);
   await player.waitForEvent({ type: 'played', lessonId });
 
   await pressMute(player, page);
   await expect.poll(async () => (await player.sound()).muted).toBe(true);
-  expect((await player.video()).muted).toBe(true);
-
   await pressMute(player, page);
   await expect.poll(async () => (await player.sound()).muted).toBe(false);
-  expect((await player.video()).muted).toBe(true);
 
-  await page.evaluate(() => {
-    const video = document.querySelector('video');
-    if (video !== null) {
-      video.volume = 0.4;
-    }
-  });
-  await expect.poll(async () => (await player.sound()).volume).toBeCloseTo(0.4);
+  for (const volume of [0.4, 1]) {
+    await page.evaluate((level) => {
+      const video = document.querySelector('video');
+      if (video !== null) {
+        video.volume = level;
+      }
+    }, volume);
+    await expect.poll(async () => (await player.sound()).volume).toBeCloseTo(volume);
+  }
+  await expectSoundInStep(player);
 });
 
-test("keeps the learner's mute from an MP4 Lesson with a sidecar to a WebM Lesson and back", async ({
-  page,
-}) => {
+test("gives the next MP4 Lesson's sidecar the mute the learner chose before", async ({ page }) => {
   const player = await openPlayer(page, { aac: false });
-  await player.postAll([loadMp4(), soundReady]);
-  await player.waitForEvent({ type: 'played', lessonId });
-  await pressMute(player, page);
-  await expect.poll(async () => (await player.sound()).muted).toBe(true);
-  const webm: PlayerCommand = {
+  await player.post({
     type: 'load',
     lessonId: 'Section 1/04 Scope.webm',
     videoUri: media.webm,
     container: 'webm',
     startAt: 0,
     autoplay: false,
-  };
-
-  await player.post(webm);
-  expect((await player.video()).muted).toBe(true);
-
+  });
   await pressMute(player, page);
-  await expect.poll(async () => (await player.video()).muted).toBe(false);
+  await expect.poll(async () => (await player.video()).muted).toBe(true);
+
+  await player.postAll([loadMp4(), soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+
+  expect((await player.video()).muted).toBe(true);
+  expect((await player.sound()).muted).toBe(true);
+});
+
+test('the sidecar plays only while the video plays, also from its native play button', async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
   await player.postAll([loadMp4({ autoplay: false }), soundReady]);
   await aMoment();
-  expect((await player.video()).muted).toBe(true);
-  expect((await player.sound()).muted).toBe(false);
+  expect((await player.sound()).paused).toBe(true);
+
+  // What the native play and pause buttons do.
+  await page.evaluate(() => document.querySelector('video')?.play());
+  await player.waitForEvent({ type: 'played', lessonId });
+  await expectSoundInStep(player);
+
+  await page.evaluate(() => {
+    document.querySelector('video')?.pause();
+  });
+  await player.waitForEvent({ type: 'paused', lessonId });
+  await aMoment();
+  expect((await player.sound()).paused).toBe(true);
 });
