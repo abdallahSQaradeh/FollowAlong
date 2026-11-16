@@ -26,6 +26,12 @@ export interface LessonProgress {
   readonly savedAt: number;
   /** Whether the Lesson is in progress or done (ADR 0030); no mark means not started. */
   readonly status?: StoredStatus;
+  /**
+   * When `status` was last set, by play or by hand (ms since the epoch). Two copies of an entry
+   * merge their positions by `savedAt` and their statuses by this, so a done mark is not lost to a
+   * newer save of the place alone (ADR 0074). Absent when it is {@link statusSetAt}'s default.
+   */
+  readonly statusAt?: number;
 }
 
 /** The Lesson played last in the Course. */
@@ -57,15 +63,19 @@ function parseLesson(raw: unknown): LessonProgress | undefined {
   if (!isFields(raw)) {
     return undefined;
   }
-  const { position, duration, savedAt, status } = raw;
+  const { position, duration, savedAt, status, statusAt } = raw;
   if (!isSeconds(position) || !isSeconds(duration) || !isSeconds(savedAt)) {
     return undefined;
   }
+  if (statusAt !== undefined && !isSeconds(statusAt)) {
+    return undefined;
+  }
+  const stamp = statusAt === undefined ? {} : { statusAt };
   if (status === undefined) {
-    return { position, duration, savedAt };
+    return { position, duration, savedAt, ...stamp };
   }
   return status === 'inProgress' || status === 'done'
-    ? { position, duration, savedAt, status }
+    ? { position, duration, savedAt, status, ...stamp }
     : undefined;
 }
 
@@ -107,14 +117,47 @@ export function lessonEntry(
   return Object.hasOwn(lessons, lessonId) ? lessons[lessonId] : undefined;
 }
 
-/** Per Lesson, and for the last Lesson played, the entry saved later wins. */
+/**
+ * When an entry's status was last set: its `statusAt`, else `savedAt` for an entry with a status
+ * (written before `statusAt` existed, or set when its place was saved), else never (0).
+ */
+function statusSetAt(entry: LessonProgress): number {
+  return entry.statusAt ?? (entry.status === undefined ? 0 : entry.savedAt);
+}
+
+/** An entry with this place and status; `statusAt` is written only when it is not the default. */
+function entryOf(
+  place: Pick<LessonProgress, 'position' | 'duration' | 'savedAt'>,
+  status: StoredStatus | undefined,
+  statusAt: number,
+): LessonProgress {
+  const { position, duration, savedAt } = place;
+  const entry: LessonProgress =
+    status === undefined
+      ? { position, duration, savedAt }
+      : { position, duration, savedAt, status };
+  return statusSetAt(entry) === statusAt ? entry : { ...entry, statusAt };
+}
+
+/**
+ * Two entries of one Lesson (ADR 0074): the place saved later, with the status set later. `a` wins
+ * a tie.
+ */
+function mergeEntry(a: LessonProgress, b: LessonProgress): LessonProgress {
+  const place = b.savedAt > a.savedAt ? b : a;
+  const marked = statusSetAt(b) > statusSetAt(a) ? b : a;
+  return place === marked ? place : entryOf(place, marked.status, statusSetAt(marked));
+}
+
+/**
+ * Per Lesson, the place saved later and the status set later (ADR 0074); for the last Lesson
+ * played, the one saved later. `a` wins a tie.
+ */
 function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
   const lessons: Record<string, LessonProgress> = { ...a.lessons };
   for (const [lessonId, lesson] of Object.entries(b.lessons)) {
     const other = lessonEntry(lessons, lessonId);
-    if (other === undefined || lesson.savedAt > other.savedAt) {
-      lessons[lessonId] = lesson;
-    }
+    lessons[lessonId] = other === undefined ? lesson : mergeEntry(other, lesson);
   }
   const last =
     a.last === undefined || (b.last !== undefined && b.last.savedAt > a.last.savedAt)
@@ -130,6 +173,11 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
  */
 function savedAfter(before: { readonly savedAt: number } | undefined, now: number): number {
   return before === undefined ? now : Math.max(now, before.savedAt + 1);
+}
+
+/** The stamp for a change made now to a Lesson's status: after both of the entry's stamps. */
+function changedAfter(before: LessonProgress | undefined, now: number): number {
+  return before === undefined ? now : Math.max(now, before.savedAt + 1, statusSetAt(before) + 1);
 }
 
 /** A Lesson's state: not started, in progress or done (ADR 0030). */
@@ -262,47 +310,60 @@ export async function openProgress(
    */
   function changeEntries(
     lessonIds: readonly string[],
-    change: (before: LessonProgress | undefined) => Omit<LessonProgress, 'savedAt'>,
+    change: (before: LessonProgress | undefined, stamp: number) => LessonProgress,
   ): void {
     const lessons: Record<string, LessonProgress> = { ...progress.lessons };
     for (const lessonId of lessonIds) {
       const before = lessonEntry(lessons, lessonId);
-      lessons[lessonId] = { ...change(before), savedAt: savedAfter(before, clock.now()) };
+      lessons[lessonId] = change(before, changedAfter(before, clock.now()));
     }
     progress = { ...progress, lessons };
     unsaved = true;
   }
 
   function resetEntries(lessonIds: readonly string[]): void {
-    changeEntries(lessonIds, () => ({ position: 0, duration: 0 }));
+    changeEntries(lessonIds, (_before, stamp) =>
+      entryOf({ position: 0, duration: 0, savedAt: stamp }, undefined, stamp),
+    );
   }
 
   return {
     current: () => progress,
     record(lessonId, seen) {
-      const savedAt = clock.now();
+      const now = clock.now();
       const { position, duration } = seen;
-      const status = statusAfter(lessonStatus(progress, lessonId), seen);
+      const before = lessonEntry(progress.lessons, lessonId);
+      // After what it replaces, as every change is: the next write merges this window's own last
+      // write back in, and must not let it win (a reset stamped 1 ms ahead, a clock gone back).
+      const savedAt = savedAfter(before, now);
+      const statusBefore = lessonStatus(progress, lessonId);
+      const status = statusAfter(statusBefore, seen);
+      // The status keeps its stamp unless play changed it: another window's later mark wins.
+      const statusAt =
+        status !== statusBefore
+          ? changedAfter(before, now)
+          : before === undefined
+            ? 0
+            : statusSetAt(before);
       progress = {
         lessons: {
           ...progress.lessons,
-          [lessonId]: {
-            position,
-            duration,
-            savedAt,
-            ...(status === 'notStarted' ? {} : { status }),
-          },
+          [lessonId]: entryOf(
+            { position, duration, savedAt },
+            status === 'notStarted' ? undefined : status,
+            statusAt,
+          ),
         },
-        last: { lessonId, savedAt },
+        last: { lessonId, savedAt: savedAfter(progress.last, now) },
       };
       unsaved = true;
     },
     markDone(lessonIds) {
-      changeEntries(lessonIds, (before) => ({
-        position: before?.position ?? 0,
-        duration: before?.duration ?? 0,
-        status: 'done',
-      }));
+      // Only the status changes: the place stays as it was saved, so another window's newer
+      // place wins the merge (ADR 0074). A Lesson with nothing saved is done at 0:00.
+      changeEntries(lessonIds, (before, stamp) =>
+        entryOf(before ?? { position: 0, duration: 0, savedAt: 0 }, 'done', stamp),
+      );
     },
     reset: resetEntries,
     resetAll() {

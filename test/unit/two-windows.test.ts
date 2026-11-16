@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
 import { createHarness, type FakePlayer, type Harness, type OtherWindow } from './harness.js';
 
 const intro = 'Basics/01 Intro.webm';
@@ -15,6 +16,24 @@ function playTo(player: FakePlayer, lessonId: string, position: number): void {
 /** The learner pauses: Progress is saved right away. */
 function pause(player: FakePlayer, lessonId: string): void {
   player.emit({ type: 'paused', lessonId, byUser: true });
+}
+
+/** The Lesson nodes' glyphs by Lesson id, as the learner reads them in the tree. */
+function glyphs(h: Harness): Record<string, string> {
+  const walk = (nodes: readonly LessonTreeNode[]): [string, string][] =>
+    nodes.flatMap((node) => {
+      if (node.kind === 'section') {
+        return walk(node.children);
+      }
+      return node.kind === 'lesson' ? [[node.id, node.glyph] as [string, string]] : [];
+    });
+  return Object.fromEntries(walk(h.ui.lessonTree?.nodes ?? []));
+}
+
+/** Time passes on both windows' clocks. */
+function wait(h: Harness, other: OtherWindow, ms: number): void {
+  h.clock.advance(ms);
+  other.clock.advance(ms);
 }
 
 /** A Course open in two VS Code windows: the harness's window and `other`. */
@@ -105,5 +124,42 @@ describe('two windows on the same Course', () => {
     pause(other.player, intro);
 
     expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 295 });
+  });
+
+  it('keeps a done mark from one window when the other, still playing the Lesson, saves its place', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    other.core.playLesson(intro);
+    playTo(other.player, intro, 100);
+    pause(other.player, intro);
+    await h.settle();
+    wait(h, other, 1_000);
+
+    await h.core.markLessonDone(intro);
+    wait(h, other, 1_000);
+    playTo(other.player, intro, 120);
+    pause(other.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 115 });
+    expect(glyphs(h)[intro]).toBe('✓');
+  });
+});
+
+describe('one window, with the file read again before each write', () => {
+  it('keeps the place a Lesson plays on to right after it was reset', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { [intro]: 'video', [setup]: 'video' });
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.core.playLesson(intro);
+    playTo(h.player, intro, 300);
+    pause(h.player, intro);
+    await h.settle();
+
+    // Within the same millisecond: the reset is stamped after the save it replaces.
+    await h.core.markLessonNotDone(intro);
+    playTo(h.player, intro, 310);
+    pause(h.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 305 });
   });
 });
