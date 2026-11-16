@@ -132,6 +132,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     this.host?.drop();
     this.host = undefined;
     this.awaitedView = undefined;
+    this.stopWatching();
     if (spot === 'editorSplit') {
       void this.showSpot(spot);
       this.host = this.openPanel(title);
@@ -234,55 +235,77 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   }
 
   /**
-   * Shows the view of the spot the player is awaited in. A view VS Code resolved before takes a new
-   * page at once; otherwise VS Code resolves the view when its container opens. Either way the
-   * container is opened with its command: `WebviewView.show` does not bring back a container that
-   * its `when` clause hid (smoke test, CI run 43894818485).
+   * Shows the view of the spot the player is awaited in, and starts the page in whichever view
+   * VS Code then shows: a view it resolves now, or one it resolved before once that is visible
+   * again. A view hidden by its `when` clause is not brought back by `WebviewView.show`, and the
+   * page must not start in one that stays hidden (smoke test, CI runs 43894818485, 43895921006).
+   * The container is opened with its command either way.
    */
   private openView(spot: ViewSpot): void {
-    const awaited = this.awaitedView;
-    if (awaited?.spot !== spot) {
+    if (this.awaitedView?.spot !== spot) {
       // Moved on meanwhile.
       return;
     }
     const existing = this.views.get(spot);
-    if (existing !== undefined) {
-      this.awaitedView = undefined;
-      this.host = this.viewHost(spot, existing, awaited.title);
-    }
+    const watching = existing?.onDidChangeVisibility(() => {
+      if (existing.visible) {
+        this.adopt(spot, existing);
+      }
+    });
+    this.stopWatching = () => {
+      watching?.dispose();
+    };
     // Opening the container focuses the view: focus goes back to the code once it is open.
-    vscode.commands
-      .executeCommand(`workbench.view.extension.${playerViews[spot].container}`)
-      .then(this.returnFocus, (error: unknown) => {
+    vscode.commands.executeCommand(`workbench.view.extension.${playerViews[spot].container}`).then(
+      () => {
+        if (existing?.visible === true) {
+          this.adopt(spot, existing);
+        }
+        this.returnFocus();
+      },
+      (error: unknown) => {
         this.logger.log({
           level: 'error',
           message: `Could not open the ${spot} view: ${error instanceof Error ? error.message : String(error)}`,
         });
         // No player will show: the core must not wait for it.
-        if (this.awaitedView?.spot === spot || this.host?.spot === spot) {
+        if (this.awaitedView?.spot === spot) {
           this.awaitedView = undefined;
-          this.host?.drop();
+          this.stopWatching();
           this.playerGone();
         }
-      });
+      },
+    );
+  }
+
+  /** Stops waiting for a view VS Code resolved before to become visible. */
+  private stopWatching: () => void = () => undefined;
+
+  /** The player is awaited in `spot`, and `view` is the view VS Code shows there: start its page. */
+  private adopt(spot: ViewSpot, view: vscode.WebviewView): void {
+    const awaited = this.awaitedView;
+    if (awaited?.spot !== spot) {
+      return;
+    }
+    this.awaitedView = undefined;
+    this.stopWatching();
+    this.host = this.viewHost(spot, view, awaited.title);
   }
 
   /** VS Code resolved the view of `spot`: it is the player when the player is awaited there. */
   private viewResolved(spot: ViewSpot, view: vscode.WebviewView): void {
     this.views.set(spot, view);
     view.onDidDispose(() => {
-      this.views.delete(spot);
+      // VS Code may have resolved a newer view for the spot since.
+      if (this.views.get(spot) === view) {
+        this.views.delete(spot);
+      }
       // A view hidden for a move is not a close; the learner closing the view is.
       if (this.host?.webview === view.webview) {
         this.playerGone();
       }
     });
-    const awaited = this.awaitedView;
-    if (awaited?.spot !== spot) {
-      return;
-    }
-    this.awaitedView = undefined;
-    this.host = this.viewHost(spot, view, awaited.title);
+    this.adopt(spot, view);
   }
 
   /** A new player page in `view`, titled `title`. */
