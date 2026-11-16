@@ -62,6 +62,43 @@ describe('remembering where the learner is in each Lesson', () => {
     expect(await reopen(h, second)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 0 });
   });
 
+  it('plays no Lesson of the Course being left while the next one reads its Progress', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'First/01 Intro.webm': 'video',
+      'First/02 Setup.webm': 'video',
+      'Second/01 Intro.webm': 'video',
+      'Second/02 Setup.webm': 'video',
+    });
+    h.config.set('coursesRoots', [learning]);
+    const second = join(learning, 'Second');
+    await h.core.openCourse(join(learning, 'First'));
+    h.player.ready();
+    // The open has left the Lesson that played and reads the new Course's Progress from a slow
+    // disk: the Course open is still the first one.
+    const read = h.holdFileReads(join(second, '.followalong', 'progress.json'));
+    const write = h.holdWorkspaceWrite();
+    const opening = h.core.openCourse(second);
+    await read.reached;
+
+    // The tree still shows the first Course: the learner clicks a Lesson in it.
+    h.player.clearSent();
+    h.core.playLesson('02 Setup.webm');
+    const sentForTheClick = [...h.player.sent];
+    // The page reports on it all the same, also once the new Course's Progress is open.
+    playTo(h, '02 Setup.webm', 300);
+    read.release();
+    await write.reached;
+    playTo(h, '02 Setup.webm', 310);
+    pause(h, '02 Setup.webm');
+    write.release();
+    await opening;
+    h.clock.advance(10_000);
+
+    expect(sentForTheClick).toEqual([]);
+    expect(await reopen(h, second)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 0 });
+  });
+
   it('saves nothing into a Course from a late report about the previous Course’s Lesson of the same id', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
