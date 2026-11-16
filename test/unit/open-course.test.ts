@@ -27,6 +27,7 @@ describe('opening a Course', () => {
         container: 'webm',
         startAt: 0,
         autoplay: true,
+        loadId: 1,
       },
     ]);
   });

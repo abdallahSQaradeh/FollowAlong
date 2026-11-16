@@ -20,6 +20,13 @@ export type PlayerCommand =
       /** Seconds from the start of the Lesson. */
       readonly startAt: number;
       readonly autoplay: boolean;
+      /**
+       * Which load this is: the extension counts its loads, and the player echoes the number on
+       * every event about the Lesson, so a late event from an earlier load of the same page (the
+       * same `lessonId` in another Course, ADR 0022) is recognisable. Optional: without it the
+       * events carry none.
+       */
+      readonly loadId?: number;
     }
   | { readonly type: 'play' }
   | { readonly type: 'pause' }
@@ -38,25 +45,33 @@ export type PlayerCommand =
    */
   | { readonly type: 'showNext'; readonly title: string };
 
-/** Player → extension. Events about a Lesson carry its `lessonId`, so late events are recognisable. */
+/**
+ * What every event about a Lesson carries, so late events are recognisable: the Lesson's id, and
+ * the `loadId` of the `load` that brought it, when that `load` had one.
+ */
+export interface AboutLesson {
+  readonly lessonId: string;
+  readonly loadId?: number;
+}
+
+/** Player → extension. */
 export type PlayerEvent =
   | { readonly type: 'ready'; readonly aacSupported: boolean }
-  | {
+  | (AboutLesson & {
       readonly type: 'timeUpdate';
-      readonly lessonId: string;
       readonly position: number;
       readonly duration: number;
-    }
-  | { readonly type: 'played'; readonly lessonId: string }
-  | { readonly type: 'paused'; readonly lessonId: string; readonly byUser: boolean }
-  | { readonly type: 'ended'; readonly lessonId: string }
+    })
+  | (AboutLesson & { readonly type: 'played' })
+  | (AboutLesson & { readonly type: 'paused'; readonly byUser: boolean })
+  | (AboutLesson & { readonly type: 'ended' })
   /** The playhead has arrived at the place a seek asked for (also after a seek bar drag). */
-  | { readonly type: 'seeked'; readonly lessonId: string }
+  | (AboutLesson & { readonly type: 'seeked' })
   /** The playback rate is now `rate`, whoever changed it (a `setRate` or the video's own menu). */
-  | { readonly type: 'rateChanged'; readonly lessonId: string; readonly rate: number }
-  | { readonly type: 'error'; readonly lessonId: string; readonly message: string }
+  | (AboutLesson & { readonly type: 'rateChanged'; readonly rate: number })
+  | (AboutLesson & { readonly type: 'error'; readonly message: string })
   /** The learner clicked the "Next: <title>" overlay shown for this Lesson's end. */
-  | { readonly type: 'nextClicked'; readonly lessonId: string }
+  | (AboutLesson & { readonly type: 'nextClicked' })
   /**
    * The learner finished an interaction with the player page (a click, a key, a native control,
    * the release of a seek-bar drag), so the extension hands keyboard focus back to the Practice
@@ -78,6 +93,11 @@ function isSeconds(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
+/** A load number: a whole number from 0 up. */
+function isLoadId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
 /** A playback rate a media element accepts in practice: finite and above 0. */
 function isRate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -90,15 +110,24 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
   }
   switch (raw.type) {
     case 'load': {
-      const { lessonId, videoUri, container, startAt, autoplay } = raw;
+      const { lessonId, videoUri, container, startAt, autoplay, loadId } = raw;
       if (
         isText(lessonId) &&
         isText(videoUri) &&
         (container === 'mp4' || container === 'webm') &&
         isSeconds(startAt) &&
-        typeof autoplay === 'boolean'
+        typeof autoplay === 'boolean' &&
+        (loadId === undefined || isLoadId(loadId))
       ) {
-        return { type: 'load', lessonId, videoUri, container, startAt, autoplay };
+        return {
+          type: 'load',
+          lessonId,
+          videoUri,
+          container,
+          startAt,
+          autoplay,
+          ...(loadId === undefined ? {} : { loadId }),
+        };
       }
       return undefined;
     }
@@ -134,29 +163,31 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
   if (type === 'userInteracted') {
     return { type };
   }
-  if (!isText(lessonId)) {
+  const { loadId } = raw;
+  if (!isText(lessonId) || !(loadId === undefined || isLoadId(loadId))) {
     return undefined;
   }
+  const about: AboutLesson = { lessonId, ...(loadId === undefined ? {} : { loadId }) };
   switch (type) {
     case 'timeUpdate': {
       const { position, duration } = raw;
       // A WebM fed through MediaSource reports an unknown (NaN) or infinite duration until the
       // whole file is appended; the player sends 0 then, so both fields are always finite.
       return isSeconds(position) && isSeconds(duration)
-        ? { type, lessonId, position, duration }
+        ? { type, ...about, position, duration }
         : undefined;
     }
     case 'played':
     case 'ended':
     case 'seeked':
     case 'nextClicked':
-      return { type, lessonId };
+      return { type, ...about };
     case 'rateChanged':
-      return isRate(raw.rate) ? { type, lessonId, rate: raw.rate } : undefined;
+      return isRate(raw.rate) ? { type, ...about, rate: raw.rate } : undefined;
     case 'paused':
-      return typeof raw.byUser === 'boolean' ? { type, lessonId, byUser: raw.byUser } : undefined;
+      return typeof raw.byUser === 'boolean' ? { type, ...about, byUser: raw.byUser } : undefined;
     case 'error':
-      return isText(raw.message) ? { type, lessonId, message: raw.message } : undefined;
+      return isText(raw.message) ? { type, ...about, message: raw.message } : undefined;
     default:
       return undefined;
   }

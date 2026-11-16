@@ -4,7 +4,7 @@
  */
 import { basename } from 'node:path';
 
-import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
+import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
@@ -167,6 +167,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** The Lesson the player should show. */
   let current: Lesson | undefined;
+  /** How many `load`s were sent, and the `loadId` of the one that loaded `current`, if any. */
+  let loads = 0;
+  let currentLoad: number | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
   /** The Rewind the open player page holds; 0 for a page that has just started. */
@@ -207,6 +210,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     playback = freshPlayback(autoplay);
     position = 0;
     duration = 0;
+    // Until the next `load`, no event is about the Lesson the player should show.
+    currentLoad = undefined;
+  }
+
+  /**
+   * Whether an event about a Lesson comes from the `load` that loaded the current Lesson: the same
+   * Lesson id is not enough, because the page outlives a Course (ADR 0022) and another Course can
+   * hold a Lesson with the same id.
+   */
+  function isCurrentLoad(event: AboutLesson): boolean {
+    return currentLoad !== undefined && event.loadId === currentLoad;
   }
 
   function loadCurrent(): void {
@@ -220,9 +234,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       container: current.container,
       startAt: 0,
       autoplay: true,
+      loadId: loads + 1,
     };
     player.send(command);
     resetPlayhead(command.autoplay);
+    loads += 1;
+    currentLoad = loads;
     sendResumeRewind();
   }
 
@@ -256,7 +273,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           level: 'error',
           message: `Player error in ${event.lessonId}: ${event.message}`,
         });
-        if (event.lessonId === current?.id) {
+        if (event.lessonId === current?.id && isCurrentLoad(event)) {
           ui.showMessage({
             severity: 'error',
             text: `FollowAlong could not play “${current.title}”: ${event.message}`,
@@ -266,7 +283,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'paused':
         // A pause the learner did not ask for after a `load` with autoplay, or after the command's
         // `play`: VS Code refused it. Without a word the learner would face a stopped video.
-        if (event.lessonId === current?.id) {
+        if (event.lessonId === current?.id && isCurrentLoad(event)) {
           const after = afterPause(playback, event.byUser);
           playback = after.playback;
           if (after.tellToPressPlay) {
@@ -276,7 +293,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       case 'played':
       case 'ended':
-        if (event.lessonId === current?.id) {
+        if (event.lessonId === current?.id && isCurrentLoad(event)) {
           // Also ends a run of refusals: the player did what it was asked.
           playback = {
             ...freshPlayback(false),
@@ -290,7 +307,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       case 'nextClicked':
         // A click for a Lesson the learner has left, or one no Course holds any more, is stale.
-        if (event.lessonId === current?.id) {
+        if (event.lessonId === current?.id && isCurrentLoad(event)) {
           const next = lessonBeside(1);
           if (next?.target !== undefined) {
             play(next.course, next.target);
@@ -312,7 +329,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       case 'seeked':
         // A Lesson moved off its end (a step back, the seek bar) is no longer ended.
-        if (event.lessonId === current?.id && playback.ended) {
+        if (event.lessonId === current?.id && isCurrentLoad(event) && playback.ended) {
           playback = { ...playback, ended: false };
         }
         break;
@@ -320,7 +337,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         ui.returnFocus();
         break;
       case 'timeUpdate':
-        if (event.lessonId === current?.id) {
+        if (event.lessonId === current?.id && isCurrentLoad(event)) {
           position = event.position;
           duration = event.duration;
         }

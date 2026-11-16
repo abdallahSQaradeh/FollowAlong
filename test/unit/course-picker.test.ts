@@ -274,4 +274,29 @@ describe('the Course picker', () => {
       [learning, elsewhere, h.storage.folder],
     ]);
   });
+
+  it('ignores a late event from the Lesson of the previous Course in the same player page', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'First Course/01.webm': 'v',
+      'Second Course/01.webm': 'v',
+      'Second Course/02.webm': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    await h.core.openCourse(join(learning, 'First Course'));
+    h.player.ready();
+    const firstLoad = h.player.sent.at(-1);
+    await h.core.openCourse(join(learning, 'Second Course'));
+    h.player.clearSent();
+
+    // The page is kept (same Courses roots), so a report it sent about the first Course's
+    // 01.webm can arrive after the second Course's 01.webm was loaded.
+    h.player.emit({
+      type: 'ended',
+      lessonId: '01.webm',
+      ...(firstLoad?.type === 'load' ? { loadId: firstLoad.loadId } : {}),
+    });
+
+    expect(h.player.sent).toEqual([]);
+  });
 });

@@ -4,6 +4,7 @@
  */
 import {
   parsePlayerCommand,
+  type AboutLesson,
   type PlayerCommand,
   type PlayerEvent,
 } from '../protocol/player-messages.js';
@@ -67,7 +68,8 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 interface Lesson {
-  readonly lessonId: string;
+  /** What every event about this Lesson carries: its id and the `loadId` of its `load`. */
+  readonly about: AboutLesson;
   /** Stops streaming this Lesson. */
   readonly stop: AbortController;
   /** Set once `error` was posted: nothing else is reported for this Lesson. */
@@ -98,7 +100,7 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
   }
   lesson.failed = true;
   lesson.stop.abort();
-  post({ type: 'error', lessonId: lesson.lessonId, message });
+  post({ type: 'error', ...lesson.about, message });
   media.pause();
 }
 
@@ -109,7 +111,10 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
   pauseBy = undefined;
   playRequested = false;
   const lesson: Lesson = {
-    lessonId: command.lessonId,
+    about: {
+      lessonId: command.lessonId,
+      ...(command.loadId === undefined ? {} : { loadId: command.loadId }),
+    },
     stop: new AbortController(),
     failed: false,
     playing: false,
@@ -158,7 +163,7 @@ function play(media: HTMLVideoElement): void {
       error instanceof DOMException &&
       error.name === 'NotAllowedError'
     ) {
-      post({ type: 'paused', lessonId: lesson.lessonId, byUser: false });
+      post({ type: 'paused', ...lesson.about, byUser: false });
     }
   });
 }
@@ -239,10 +244,10 @@ function reportMediaEvents(media: HTMLVideoElement): void {
       }
     });
   };
-  const reportTime = ({ lessonId }: Lesson) => {
+  const reportTime = ({ about }: Lesson) => {
     // A MediaSource stream reports NaN or Infinity until the end of the stream is known.
     const duration = Number.isFinite(media.duration) ? media.duration : 0;
-    post({ type: 'timeUpdate', lessonId, position: media.currentTime, duration });
+    post({ type: 'timeUpdate', ...about, position: media.currentTime, duration });
   };
   on('timeupdate', reportTime);
   // Also when the length becomes known, so the extension has it before the Lesson plays.
@@ -255,7 +260,7 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   on('playing', (lesson) => {
     if (!lesson.playing) {
       lesson.playing = true;
-      post({ type: 'played', lessonId: lesson.lessonId });
+      post({ type: 'played', ...lesson.about });
     }
   });
   on('pause', (lesson) => {
@@ -263,7 +268,7 @@ function reportMediaEvents(media: HTMLVideoElement): void {
     const byUser = pauseBy !== 'extension' && !media.ended;
     // The learner's, and not already reported by the click on the picture that asked for it.
     const byControlBar = byUser && pauseBy !== 'picture';
-    post({ type: 'paused', lessonId: lesson.lessonId, byUser });
+    post({ type: 'paused', ...lesson.about, byUser });
     pauseBy = undefined;
     if (byControlBar) {
       interactions.ended();
@@ -279,8 +284,8 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   // Not through `on`: a Lesson that failed must lose the overlay too.
   media.addEventListener('playing', hideNext);
   media.addEventListener('seeking', hideNext);
-  on('seeked', ({ lessonId }) => {
-    post({ type: 'seeked', lessonId });
+  on('seeked', ({ about }) => {
+    post({ type: 'seeked', ...about });
   });
   // Also for a rate the learner picks in the video's own menu, so the extension never drifts.
   // `ratechange` also fires for a change of `defaultPlaybackRate`, which `setRate` makes too, and
@@ -291,12 +296,12 @@ function reportMediaEvents(media: HTMLVideoElement): void {
     }
     reportedRate = media.playbackRate;
     if (current !== undefined && !current.failed) {
-      post({ type: 'rateChanged', lessonId: current.lessonId, rate: reportedRate });
+      post({ type: 'rateChanged', ...current.about, rate: reportedRate });
     }
   });
   on('ended', (lesson) => {
     lesson.playing = false;
-    post({ type: 'ended', lessonId: lesson.lessonId });
+    post({ type: 'ended', ...lesson.about });
   });
   on('error', (lesson) => {
     fail(lesson, media.error?.message ?? 'the video failed', media);
@@ -383,7 +388,7 @@ if (overlay === null) {
 
 nextOverlay.addEventListener('click', () => {
   if (current !== undefined && !current.failed) {
-    post({ type: 'nextClicked', lessonId: current.lessonId });
+    post({ type: 'nextClicked', ...current.about });
   }
 });
 const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');

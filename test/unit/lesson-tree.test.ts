@@ -188,6 +188,7 @@ describe('the Lesson tree of an opened Course', () => {
       container: 'webm',
       startAt: 0,
       autoplay: true,
+      loadId: 2,
     });
   });
 
@@ -205,6 +206,7 @@ describe('the Lesson tree of an opened Course', () => {
         container: 'mp4',
         startAt: 0,
         autoplay: true,
+        loadId: 1,
       },
     ]);
   });

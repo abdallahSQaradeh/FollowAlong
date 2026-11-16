@@ -46,6 +46,8 @@ export class FakePlayer implements PlayerPort {
   private readonly listeners = new Set<(event: PlayerEvent) => void>();
   private readonly closeListeners = new Set<() => void>();
   private openRoots: readonly string[] | undefined;
+  /** The `loadId` of the last `load` the page received. */
+  private loadId: number | undefined;
 
   show(options: PlayerShowOptions): PlayerShowResult {
     this.shown.push(options);
@@ -62,6 +64,9 @@ export class FakePlayer implements PlayerPort {
 
   send(command: PlayerCommand): void {
     this.sent.push(command);
+    if (command.type === 'load') {
+      this.loadId = command.loadId;
+    }
   }
 
   onEvent(listener: (event: PlayerEvent) => void): Disposable {
@@ -87,9 +92,18 @@ export class FakePlayer implements PlayerPort {
     }
   }
 
+  /**
+   * The page reports an event. An event about a Lesson carries the `loadId` of the page's last
+   * `load`, as the real page echoes it, unless the test gives one (a late event from an earlier
+   * load).
+   */
   emit(event: PlayerEvent): void {
+    const stamped =
+      'lessonId' in event && !('loadId' in event) && this.loadId !== undefined
+        ? { ...event, loadId: this.loadId }
+        : event;
     for (const listener of this.listeners) {
-      listener(event);
+      listener(stamped);
     }
   }
 

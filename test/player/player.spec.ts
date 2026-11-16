@@ -54,6 +54,25 @@ test.describe('the player', () => {
     expect(last?.duration).toBeCloseTo(webmDuration, 1);
   });
 
+  test('echoes the loadId of the load on every event about the Lesson', async ({ page }) => {
+    const player = await openPlayer(page);
+
+    await player.post(load({ loadId: 7 }));
+    await player.waitForEvent({ type: 'played', lessonId });
+    await player.post({ type: 'seekBy', seconds: 1 });
+    await player.waitForEvent({ type: 'seeked', lessonId });
+    await player.post({ type: 'pause' });
+    await player.waitForEvent({ type: 'paused', lessonId });
+
+    const aboutTheLesson = (await player.events()).filter((event) => 'lessonId' in event);
+    expect(new Set(aboutTheLesson.map((event) => event.type))).toEqual(
+      new Set(['timeUpdate', 'played', 'seeked', 'paused']),
+    );
+    for (const event of aboutTheLesson) {
+      expect(event).toMatchObject({ lessonId, loadId: 7 });
+    }
+  });
+
   test('plays an MP4 Lesson straight from its file', async ({ page }) => {
     const player = await openPlayer(page);
     const mp4Id = 'Section 1/02 Setup.mp4';

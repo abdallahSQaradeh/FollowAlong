@@ -63,6 +63,7 @@ describe('Go to Lesson…', () => {
         container: 'mp4',
         startAt: 0,
         autoplay: true,
+        loadId: 2,
       },
     ]);
   });
