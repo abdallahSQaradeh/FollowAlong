@@ -150,6 +150,13 @@ export interface ConversionRequest {
   readonly input: string;
   /** The sound file to write. */
   readonly output: string;
+  /**
+   * Whether ffmpeg runs at a lower process priority than the editor, so a conversion never makes
+   * the machine feel slow while the learner works (spec #12, story 68). The core asks for it for
+   * every conversion; the adapter does what its platform allows, and a refusal never fails the
+   * conversion.
+   */
+  readonly lowPriority: boolean;
   readonly onProgress: (percent: number) => void;
   readonly signal: AbortSignal;
 }
