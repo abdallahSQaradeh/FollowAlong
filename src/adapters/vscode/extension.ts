@@ -75,6 +75,9 @@ export interface TestHooks {
   selectedLesson(): string | undefined;
 }
 
+/** Saves Progress when the window closes; set while the extension is active. */
+let closeCore: (() => Promise<void>) | undefined;
+
 export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
@@ -102,17 +105,22 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     terminalSettings: createTerminalSettings(),
   });
 
+  closeCore = () => core.close();
+
+  /** Logs an unexpected failure and shows it, instead of losing it. */
+  const report = (what: string, error: unknown) => {
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    logger.log({ level: 'error', message: `${what} failed: ${message}` });
+    void vscode.window.showErrorMessage(`FollowAlong: ${what} failed. See the FollowAlong output.`);
+  };
+
   /** Runs a command, so an unexpected failure is logged and shown instead of lost. */
   const register = (id: string, run: (...args: unknown[]) => void | Promise<void>) =>
     vscode.commands.registerCommand(id, async (...args: unknown[]) => {
       try {
         await run(...args);
       } catch (error) {
-        const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-        logger.log({ level: 'error', message: `${id} failed: ${message}` });
-        void vscode.window.showErrorMessage(
-          `FollowAlong: ${id} failed. See the FollowAlong output.`,
-        );
+        report(id, error);
       }
     });
 
@@ -221,9 +229,17 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );
+  // Reopening the workspace brings back the Course that was open in it (story 21).
+  core.restoreCourse().catch((error: unknown) => {
+    report('Reopening the Course', error);
+  });
   return testHooks;
 }
 
-export function deactivate(): void {
-  // Everything is disposed through context.subscriptions.
+/** VS Code waits for the returned promise (a few seconds at most) before the window closes. */
+export function deactivate(): Promise<void> | undefined {
+  const close = closeCore;
+  closeCore = undefined;
+  // Everything else is disposed through context.subscriptions.
+  return close?.();
 }

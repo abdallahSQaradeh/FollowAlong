@@ -41,5 +41,18 @@ readable.
   a path each time (Windows paths are case-insensitive).
 - A Course that becomes read-only after FollowAlong wrote to it keeps its old `.followalong` files.
   In a later session, reads prefer them over the newer fallback files until a write falls back
-  again. The Progress tickets, which write often and merge per Lesson (story 85), should decide
-  whether to merge the two copies.
+  again, unless the file defines a `merge`: then both copies are read and merged. Progress does
+  (ADR 0010).
+- A copy that exists but cannot be used (damaged, from a newer FollowAlong, or failing to read with
+  anything but `notFound`) is remembered by the store and never replaced (spec #12, D5, as
+  amended). If it is the copy in `.followalong`, `write` puts the data in the fallback storage and
+  resolves with `{ keptElsewhere: <its path> }`; if the copy the data must go to is unusable too,
+  `write` rejects with `UnreadableCourseDataError`. A write first reads the file it would replace
+  when this store has not read it yet (a read can stop at the other location's copy) or its last
+  read failed outright, and a later read that finds the file usable or gone makes it writable
+  again. When a copy whose read had failed reads fine at write time, its data never reached the
+  caller: a file with `merge` has it merged into the write (`write` resolves with `merged`, so the
+  caller can catch up), and one without `merge` is not written this time. A read error no longer
+  fails `read`: that copy is skipped like a damaged one, and logged once while it stays unusable.
+- `.followalong` is created without its parents (ADR 0010), so a write never makes a Course folder
+  that moved away while open; it fails with `notFound` instead.

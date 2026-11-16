@@ -23,11 +23,48 @@ export interface CourseDataFile<T> {
   readonly version: number;
   /** Turns stored data of `version` (at most the current one) into `T`, or `undefined`. */
   parse(data: unknown, version: number): T | undefined;
+  /**
+   * Combines the copies in `.followalong` and in the fallback storage, when both hold the file
+   * (a Course that turned read-only after FollowAlong wrote to it). Without it, `read` returns the
+   * copy of the location written last in this session, else the one in `.followalong`.
+   */
+  merge?(inCourse: T, inFallback: T): T;
+}
+
+/**
+ * A write refused because the file it would replace exists but could not be read (damaged, from a
+ * newer FollowAlong, or not readable): a newer FollowAlong may still read it (spec #12, D5).
+ */
+export class UnreadableCourseDataError extends Error {
+  override readonly name = 'UnreadableCourseDataError';
+
+  constructor(readonly path: string) {
+    super(`${path} cannot be read, so FollowAlong does not write over it.`);
+  }
+}
+
+/** Where a write went, when it was not where it would usually go. */
+export interface CourseDataWritten<T> {
+  /**
+   * The copy in `.followalong` could not be read, so it was left as it was and the data went to the
+   * fallback storage instead (spec #12, D5 as amended); reads then use the fallback copy.
+   */
+  readonly keptElsewhere?: string;
+  /**
+   * What was written, when it is more than the value given: a copy whose earlier read had failed
+   * could be read now, and its data was merged in (`CourseDataFile.merge`) rather than replaced.
+   */
+  readonly merged?: T;
 }
 
 export interface CourseData {
   read<T>(file: CourseDataFile<T>): Promise<T | undefined>;
-  write<T>(file: CourseDataFile<T>, value: T): Promise<void>;
+  /**
+   * Never replaces a copy this store read and could not use. Such a copy in `.followalong` sends the
+   * data to the fallback storage; such a copy where the data must go rejects with
+   * {@link UnreadableCourseDataError}.
+   */
+  write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten<T>>;
 }
 
 type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
@@ -50,9 +87,28 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
   let target: string | undefined;
   /** Folders already created (and hidden) by this store, so later writes skip that step. */
   const prepared = new Set<string>();
+  /** Copies this store has read, and those it found unusable: writes never replace one (D5). */
+  const seen = new Set<string>();
+  const unreadable = new Set<string>();
+  /** Of those, the copies whose read failed outright, rather than finding unusable content. */
+  const failedToRead = new Set<string>();
 
-  async function readFrom(location: string, file: CourseDataFile<unknown>): Promise<unknown> {
+  /** The file's value in `location`; a file that exists but cannot be used is never written over. */
+  async function readFrom<T>(location: string, file: CourseDataFile<T>): Promise<T | undefined> {
     const path = join(location, file.name);
+    const wasUnreadable = unreadable.has(path);
+    seen.add(path);
+    // What this read finds replaces what an earlier read found: a file fixed or removed since is
+    // writable again.
+    unreadable.delete(path);
+    failedToRead.delete(path);
+    const ignore = (why: string): void => {
+      // Logged once while it stays unusable: a write reads a failing copy again every time.
+      if (!wasUnreadable) {
+        logger.log({ level: 'warn', message: `Ignoring ${path}: ${why}` });
+      }
+      unreadable.add(path);
+    };
     let text: string;
     try {
       text = await fileSystem.readText(path);
@@ -60,11 +116,10 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       if (FileSystemError.is(error, 'notFound')) {
         return undefined;
       }
-      throw error;
+      failedToRead.add(path);
+      ignore(`it cannot be read (${error instanceof Error ? error.message : String(error)}).`);
+      return undefined;
     }
-    const ignore = (why: string): void => {
-      logger.log({ level: 'warn', message: `Ignoring ${path}: ${why}` });
-    };
     let stored: unknown;
     try {
       stored = JSON.parse(text);
@@ -96,12 +151,43 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     return value;
   }
 
-  async function writeTo(location: string, name: string, content: string) {
+  /** Writes `value` to `location`, and returns what was written when it had to merge a copy in. */
+  async function writeTo<T>(
+    location: string,
+    file: CourseDataFile<T>,
+    value: T,
+  ): Promise<T | undefined> {
+    const path = join(location, file.name);
+    let merged: T | undefined;
+    if (!seen.has(path) || failedToRead.has(path)) {
+      // Never replace a file unseen: a read can stop at the other location's copy. A read that
+      // failed (an antivirus scan holding the file, say) is tried again first.
+      const hadFailed = failedToRead.has(path);
+      const onDisk = await readFrom(location, file);
+      if (hadFailed && onDisk !== undefined) {
+        // Its data never reached the caller, so `value` lacks it: merge it in, never replace it.
+        if (file.merge === undefined) {
+          throw new UnreadableCourseDataError(path);
+        }
+        merged = file.merge(onDisk, value);
+      }
+    }
+    if (unreadable.has(path)) {
+      throw new UnreadableCourseDataError(path);
+    }
     if (!prepared.has(location)) {
-      await fileSystem.makeDirectory(location, { hidden: location === inCourse });
+      // Only `.followalong` itself is made in the Course: were the Course folder gone (moved while
+      // open), making its parents would bring back an empty Course at the old path.
+      const inTheCourse = location === inCourse;
+      await fileSystem.makeDirectory(location, { hidden: inTheCourse, parents: !inTheCourse });
       prepared.add(location);
     }
-    await fileSystem.writeText(join(location, name), content);
+    const data = merged ?? value;
+    await fileSystem.writeText(
+      path,
+      `${JSON.stringify({ version: file.version, data }, null, 2)}\n`,
+    );
+    return merged;
   }
 
   function useFallback(): void {
@@ -114,32 +200,46 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
 
   return {
     async read<T>(file: CourseDataFile<T>): Promise<T | undefined> {
+      if (file.merge !== undefined) {
+        const inCourseCopy = await readFrom(inCourse, file);
+        const fallbackCopy = await readFrom(fallback, file);
+        return inCourseCopy === undefined || fallbackCopy === undefined
+          ? (inCourseCopy ?? fallbackCopy)
+          : file.merge(inCourseCopy, fallbackCopy);
+      }
       // After a fall back, the fallback copy is the newer one; .followalong may still hold the rest.
       const locations = target === fallback ? [fallback, inCourse] : [inCourse, fallback];
       for (const location of locations) {
         const value = await readFrom(location, file);
         if (value !== undefined) {
-          return value as T;
+          return value;
         }
       }
       return undefined;
     },
 
-    async write<T>(file: CourseDataFile<T>, value: T): Promise<void> {
-      const content = `${JSON.stringify({ version: file.version, data: value }, null, 2)}\n`;
+    async write<T>(file: CourseDataFile<T>, value: T): Promise<CourseDataWritten<T>> {
+      const result = (merged: T | undefined, keptElsewhere?: string): CourseDataWritten<T> => ({
+        ...(merged === undefined ? {} : { merged }),
+        ...(keptElsewhere === undefined ? {} : { keptElsewhere }),
+      });
       if (target !== fallback) {
         try {
-          await writeTo(inCourse, file.name, content);
+          const merged = await writeTo(inCourse, file, value);
           target = inCourse;
-          return undefined;
+          return result(merged);
         } catch (error) {
+          if (error instanceof UnreadableCourseDataError) {
+            // Left as it is, for whoever can read it; this data goes to the fallback for now.
+            return result(await writeTo(fallback, file, value), error.path);
+          }
           if (!FileSystemError.is(error, 'readOnly')) {
             throw error;
           }
           useFallback();
         }
       }
-      await writeTo(fallback, file.name, content);
+      return result(await writeTo(fallback, file, value));
     },
   };
 }

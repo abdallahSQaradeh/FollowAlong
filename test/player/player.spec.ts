@@ -1,9 +1,17 @@
 import type { Page } from '@playwright/test';
 
 import type { PlayerTuning } from '../../src/player/tuning.js';
-import type { PlayerCommand } from '../../src/protocol/player-messages.js';
+import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
-import { media, mp4Duration, openPlayer, webmDuration, type PlayerHarness } from './player-page.js';
+import {
+  longClusterOffset,
+  media,
+  mp4Duration,
+  noDurationClusterOffset,
+  openPlayer,
+  webmDuration,
+  type PlayerHarness,
+} from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
 
@@ -18,6 +26,24 @@ function load(overrides: Partial<Extract<PlayerCommand, { type: 'load' }>> = {})
     autoplay: true,
     ...overrides,
   };
+}
+
+/**
+ * Whether the player posted `seeked` for `lessonId`, after a `timeUpdate` at `position` (the core
+ * reads the new position from that `timeUpdate` when `seeked` arrives).
+ */
+function seekedAt(events: readonly PlayerEvent[], position: number): boolean {
+  const seeked = events.findIndex(
+    (event) => event.type === 'seeked' && event.lessonId === lessonId,
+  );
+  return events
+    .slice(0, seeked === -1 ? 0 : seeked)
+    .some(
+      (event) =>
+        event.type === 'timeUpdate' &&
+        event.lessonId === lessonId &&
+        Math.abs(event.position - position) < 0.1,
+    );
 }
 
 test.describe('the player', () => {
@@ -133,6 +159,30 @@ test.describe('the player', () => {
 
     await player.waitForEvent({ type: 'paused', lessonId, byUser: true });
   });
+
+  for (const [container, videoUri, duration] of [
+    ['webm', media.webm, webmDuration],
+    ['mp4', media.mp4, mp4Duration],
+  ] as const) {
+    test(`reports a seek the learner made, after the time it moved to (${container})`, async ({
+      page,
+    }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri, container, autoplay: false }));
+      await expect.poll(async () => (await player.video()).duration).toBeCloseTo(duration, 1);
+
+      // The native seek bar sets the playhead directly, as this does.
+      await page.locator('video').evaluate((video: HTMLVideoElement) => {
+        video.currentTime = 2;
+      });
+
+      await expect
+        .poll(async () => seekedAt(await player.events(), 2), {
+          message: 'the player sends a timeUpdate at 0:02, then seeked',
+        })
+        .toBe(true);
+    });
+  }
 
   test('reports the Lesson’s length as soon as it is known, before it plays', async ({ page }) => {
     const player = await openPlayer(page);
@@ -261,6 +311,57 @@ test.describe('the player', () => {
       .toBe(true);
   });
 
+  for (const [what, tuning] of [
+    ['', { appendBytes: 4096 }],
+    [', past a full buffer', { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 }],
+  ] as const) {
+    test(`reaches a start position in a WebM without a Duration${what}`, async ({ page }) => {
+      // Until the stream ends, MediaSource lets a WebM without a Duration seek only as far as it
+      // has streamed. Small appends keep the end of the stream after the start seek.
+      const player = await openPlayer(page, { tuning });
+
+      await player.post(load({ videoUri: media.noDuration, startAt: 6, autoplay: false }));
+
+      await expect
+        .poll(async () => seekedAt(await player.events(), 6), {
+          message: 'the player sends a timeUpdate at 0:06, then seeked',
+        })
+        .toBe(true);
+      expect((await player.video()).currentTime).toBeCloseTo(6, 1);
+      expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+  }
+
+  // With the default 1 MB appends, `loadedmetadata` (which applies `startAt`) can come before the
+  // end of the first append; held at a Cluster, only what is before it is buffered by then.
+  for (const [what, cluster] of [
+    ['before any of its media is buffered', 0],
+    ['with only its first two seconds buffered', 2],
+  ] as const) {
+    test(`reaches a start position in a WebM without a Duration whose metadata comes ${what}`, async ({
+      page,
+    }) => {
+      const player = await openPlayer(page, {
+        holdAt: noDurationClusterOffset(cluster),
+        metadataBeforeFirstAppendEnds: true,
+      });
+      await player.post(load({ videoUri: media.noDuration, startAt: 6, autoplay: false }));
+      await expect.poll(async () => (await player.video()).duration).toBe(Infinity);
+
+      await player.releaseStream();
+
+      await expect
+        .poll(async () => seekedAt(await player.events(), 6), {
+          message: 'the player sends a timeUpdate at 0:06, then seeked',
+        })
+        .toBe(true);
+      expect((await player.video()).currentTime).toBeCloseTo(6, 1);
+      const types = (await player.events()).map((event) => event.type);
+      expect(types.filter((type) => type === 'seeked')).toHaveLength(1);
+      expect(types).not.toContain('error');
+    });
+  }
+
   test('re-streams again after a second seek back into media evicted after a re-stream', async ({
     page,
   }) => {
@@ -333,6 +434,90 @@ test.describe('the player', () => {
     });
 
     await player.waitForEvent({ type: 'error', lessonId });
+  });
+
+  // MediaSource also drops the video frames after a removal's end, up to the next keyframe, so
+  // making room must not end a removal inside the group of pictures the playhead is in. The
+  // keyframes of the 8 s fixture are at 0:00.003, 0:01.003, 0:02.003, …
+  for (const [what, tuning, roomMade] of [
+    [
+      'keepBehindSeconds reaches into its group of pictures',
+      // Full with 0:01.3 or more ahead; keepBehindSeconds alone would keep only from 0:02.3.
+      { appendBytes: 2048, quotaSeconds: 3.8, keepBehindSeconds: 0.2 },
+      4.4,
+    ],
+    [
+      'less than a second is buffered ahead of it',
+      // Full with less than 0:01 ahead, when everything behind the playhead may go.
+      { appendBytes: 2048, quotaSeconds: 3.2 },
+      3.6,
+    ],
+  ] as const) {
+    test(`keeps the picture under a paused playhead when the buffer fills and ${what}`, async ({
+      page,
+    }) => {
+      // Held at 0:02.988, so the start seek to 0:02.5 has landed before the buffer fills.
+      const player = await openPlayer(page, { tuning, holdAt: longClusterOffset(3) });
+      await player.post(load({ videoUri: media.long, startAt: 2.5, autoplay: false }));
+      await expect
+        .poll(async () => seekedAt(await player.events(), 2.5), {
+          message: 'the player sends a timeUpdate at 0:02.5, then seeked',
+        })
+        .toBe(true);
+
+      await player.releaseStream();
+
+      // The buffer cannot reach this far without having made room once.
+      await expect
+        .poll(async () => (await player.video()).buffered.at(-1)?.[1] ?? 0)
+        .toBeGreaterThan(roomMade);
+      const video = await player.video();
+      expect(video.currentTime).toBeCloseTo(2.5, 2);
+      expect(
+        video.buffered.some(([from, to]) => from <= video.currentTime && to > 3),
+        `the picture at 0:02.5 is still buffered: ${JSON.stringify(video.buffered)}`,
+      ).toBe(true);
+
+      await player.post({ type: 'play' });
+      await expect
+        .poll(
+          async () =>
+            (await player.events()).some(
+              (event) => event.type === 'timeUpdate' && event.position > 3.5 && event.position < 6,
+            ),
+          { message: 'the playhead plays on from 0:02.5', timeout: 10_000 },
+        )
+        .toBe(true);
+    });
+  }
+
+  test('reaches a start position late in a group of pictures when the buffer fills before it', async ({
+    page,
+  }) => {
+    // Held halfway through the Cluster at 0:05.984 (about 0:06.5), between the keyframe at
+    // 0:06.003 and the 0:06.9 target; the buffer is full by then. Making room must keep that
+    // keyframe, or the target can never be shown.
+    const player = await openPlayer(page, {
+      tuning: { quotaSeconds: 2 },
+      holdAt: Math.round((longClusterOffset(6) + longClusterOffset(7)) / 2),
+    });
+    await player.post(load({ videoUri: media.long, startAt: 6.9, autoplay: false }));
+    await expect
+      .poll(async () => {
+        const video = await player.video();
+        return video.currentTime === 6.9 && (video.buffered.at(-1)?.[1] ?? 0) > 6.2;
+      })
+      .toBe(true);
+
+    await player.releaseStream();
+
+    await expect
+      .poll(async () => seekedAt(await player.events(), 6.9), {
+        message: 'the player sends a timeUpdate at 0:06.9, then seeked',
+      })
+      .toBe(true);
+    const video = await player.video();
+    expect(video.buffered.some(([from, to]) => from <= video.currentTime && to > 7.5)).toBe(true);
   });
 
   test.describe('seekBy', () => {
@@ -557,6 +742,29 @@ test.describe('the player', () => {
       await player.waitForEvent({ type: 'ended', lessonId });
       expect((await player.video()).currentTime).toBeCloseTo(8, 0);
       expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+
+    test('waits for the running stream, instead of re-streaming, when stepping ahead of it', async ({
+      page,
+    }) => {
+      // Held 100 bytes before the Cluster at 0:02.988: once released, the player reads the rest
+      // of the file, Clusters 0:02.988–0:06.982 with it, and appends it only after making room.
+      const player = await openPlayer(page, {
+        tuning: { quotaSeconds: 2.5 },
+        holdAt: longClusterOffset(3) - 100,
+      });
+      await player.post(load({ videoUri: media.long, autoplay: false }));
+      await expect
+        .poll(async () => (await player.video()).buffered.at(-1)?.[1] ?? 0)
+        .toBeGreaterThan(2.5);
+      await player.releaseStream();
+
+      // 0:06 is in what the running stream has read but not yet appended.
+      await player.post({ type: 'seekBy', seconds: 6 });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      expect((await player.video()).currentTime).toBeCloseTo(6, 1);
+      expect(player.rangeRequests()).toEqual([]);
     });
 
     test('steps back past media the buffer evicted, and plays on from there', async ({ page }) => {

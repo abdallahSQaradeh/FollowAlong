@@ -73,8 +73,15 @@ export interface FileSystem {
   readText(path: string): Promise<string>;
   /** Writes the whole file at once: readers see the old or the new content, never a mix. */
   writeText(path: string, content: string): Promise<void>;
-  /** Creates the folder and its parents. `hidden` also sets the Windows hidden attribute. */
-  makeDirectory(path: string, options: { readonly hidden: boolean }): Promise<void>;
+  /**
+   * Creates the folder, and its missing parents too when `parents` is set; without it, a missing
+   * parent fails with `notFound`. A folder that already exists is fine. `hidden` also sets the
+   * Windows hidden attribute.
+   */
+  makeDirectory(
+    path: string,
+    options: { readonly hidden: boolean; readonly parents: boolean },
+  ): Promise<void>;
 }
 
 // --- Storage ------------------------------------------------------------------------------------

@@ -3,7 +3,7 @@
  * Seam 1 tests. Failures become a FileSystemError whose `reason` is the read-only check.
  */
 import { execFile } from 'node:child_process';
-import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -114,14 +114,22 @@ export function createNodeFileSystem(): FileSystem {
     makeDirectory: (path, options) =>
       wrap(path, async () => {
         try {
-          await mkdir(path, { recursive: true });
+          await mkdir(path, { recursive: options.parents });
         } catch (error) {
           const code = error instanceof Error && 'code' in error ? error.code : undefined;
-          if (code === 'EEXIST' || code === 'ENOTDIR') {
-            // A file is in the way: no folder can be made at this path.
-            throw new FileSystemError('readOnly', path, `${path} exists and is not a folder.`);
+          const isFolder =
+            code === 'EEXIST' &&
+            (await stat(path).then(
+              (found) => found.isDirectory(),
+              () => false,
+            ));
+          if (!isFolder) {
+            if (code === 'EEXIST' || (options.parents && code === 'ENOTDIR')) {
+              // A file is in the way: no folder can be made at this path.
+              throw new FileSystemError('readOnly', path, `${path} exists and is not a folder.`);
+            }
+            throw error;
           }
-          throw error;
         }
         // Also for a folder that already existed: it may have been made without the attribute.
         if (options.hidden && process.platform === 'win32') {
