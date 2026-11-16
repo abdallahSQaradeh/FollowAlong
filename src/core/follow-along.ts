@@ -86,6 +86,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       case 'timeUpdate':
+      case 'seeked':
         break;
     }
   }
