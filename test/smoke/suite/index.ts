@@ -289,6 +289,13 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
       from = hooks.playerEvents.length;
       await vscode.commands.executeCommand('followalong.moveVideo', spot);
       say(await theLessonLoadsIn(hooks, spot, from, code));
+      // Leaving the bottom panel must not leave the panel to fall back to the Terminal view, which
+      // starts a shell and takes the focus (gate round 1, CI run 43906351106).
+      assert.deepEqual(
+        vscode.window.terminals.map((terminal) => terminal.name),
+        [],
+        `moving the video to ${spot} started a terminal`,
+      );
     }
 
     say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
