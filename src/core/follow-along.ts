@@ -4,7 +4,7 @@
  */
 import { basename } from 'node:path';
 
-import type { DocumentEdit } from './auto-pause.js';
+import { isTyping, type DocumentEdit } from './auto-pause.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
@@ -867,8 +867,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     statusBarClick(command) {
       loaded.statusBarClick(command);
     },
-    documentEdited() {
-      loaded.typed();
+    documentEdited(edit) {
+      if (isTyping(edit)) {
+        loaded.typed();
+      }
     },
     async close() {
       // An open under way leaves its Lesson and saves it first; then this window's Lesson.

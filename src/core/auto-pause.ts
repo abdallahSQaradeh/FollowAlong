@@ -58,3 +58,11 @@ export interface DocumentEdit {
   /** Whether the document is the one in the active editor. */
   readonly inActiveEditor: boolean;
 }
+
+/**
+ * Whether `edit` is the learner typing in the Practice area: a file or untitled document, in the
+ * active editor. Output panels, the Source Control box and the settings are other schemes.
+ */
+export function isTyping(edit: DocumentEdit): boolean {
+  return edit.inActiveEditor && (edit.scheme === 'file' || edit.scheme === 'untitled');
+}

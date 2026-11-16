@@ -36,4 +36,34 @@ describe('auto-pause while typing', () => {
 
     expect(edit(h)).toEqual([{ type: 'pause' }]);
   });
+
+  it('pauses for an edit in an untitled document in the active editor', async () => {
+    const h = await createHarness();
+    await openLesson(h, 'pause');
+    h.player.emit({ type: 'played', lessonId });
+
+    expect(edit(h, { scheme: 'untitled', inActiveEditor: true })).toEqual([{ type: 'pause' }]);
+  });
+
+  describe('edits that are not the learner typing in the active editor', () => {
+    const notTyping: readonly [string, DocumentEdit][] = [
+      [
+        'a file open in another editor',
+        { scheme: 'file', path: '/practice/other.js', inActiveEditor: false },
+      ],
+      ['the output panel', { scheme: 'output', inActiveEditor: false }],
+      ['the user settings', { scheme: 'vscode-userdata', inActiveEditor: true }],
+      ['the Source Control message box', { scheme: 'vscode-scm', inActiveEditor: false }],
+    ];
+
+    for (const [where, documentEdit] of notTyping) {
+      it(`does not pause for an edit in ${where}`, async () => {
+        const h = await createHarness();
+        await openLesson(h, 'pause');
+        h.player.emit({ type: 'played', lessonId });
+
+        expect(edit(h, documentEdit)).toEqual([]);
+      });
+    }
+  });
 });
