@@ -1,3 +1,4 @@
+import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -158,5 +159,70 @@ describe('remembering where the learner is in each Lesson', () => {
     await h.core.close();
 
     expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 95 });
+  });
+});
+
+describe('reopening the workspace', () => {
+  it('brings back the Course that was open, on the last Lesson played, paused', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.core.playLesson('03 Closures.webm');
+    playTo(h, '03 Closures.webm', 70);
+    pause(h, '03 Closures.webm');
+    await h.settle();
+
+    h.restart();
+    await h.core.restoreCourse();
+    h.player.ready();
+
+    expect(h.player.shown).toEqual([
+      { title: '03 Closures.webm', resourceRoots: [course, h.storage.folder] },
+    ]);
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: '03 Closures.webm', startAt: 65, autoplay: false },
+    ]);
+    expect(h.ui.lessonTree?.nodes).toHaveLength(3);
+  });
+
+  it('opens the first Lesson paused when the Course never played', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+
+    h.restart();
+    await h.core.restoreCourse();
+    h.player.ready();
+
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: '01 Intro.webm', startAt: 0, autoplay: false },
+    ]);
+  });
+
+  it('opens nothing when no Course was open in the workspace', async () => {
+    const h = await createHarness();
+
+    await h.core.restoreCourse();
+
+    expect(h.player.shown).toEqual([]);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('says once that the Course is missing when its folder moved while VS Code was closed', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    await rename(course, join(h.root, 'moved'));
+
+    h.restart();
+    await h.core.restoreCourse();
+    h.restart();
+    await h.core.restoreCourse();
+
+    expect(h.player.shown).toEqual([]);
+    expect(h.ui.messages).toEqual([
+      { severity: 'error', text: 'FollowAlong cannot open “course”: the folder is missing.' },
+    ]);
   });
 });

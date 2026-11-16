@@ -11,12 +11,17 @@ import { buildLessonTree } from './lesson-tree.js';
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 
+/** Workspace storage key: the folder of the Course open in this workspace (story 21). */
+const openCourseKey = 'openCourse';
+
 /** How often Progress is saved while a Lesson plays (spec #12, Progress store). */
 const saveIntervalMs = 5000;
 
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
   openCourse(folder: string): Promise<void>;
+  /** Opens the Course that was open in this workspace, if any, paused where the learner left it. */
+  restoreCourse(): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
   /** The window is closing: saves Progress, then stops. */
@@ -205,41 +210,65 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
-  return {
-    async openCourse(folder) {
-      await leaveCurrent();
-      let course: Course;
-      try {
-        course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
-      } catch (error) {
-        if (FileSystemError.is(error, 'notFound')) {
-          ui.showMessage({
-            severity: 'error',
-            text: `FollowAlong cannot open “${basename(folder)}”: the folder is missing.`,
-          });
-          return;
+  /**
+   * Opens a Course folder: its Lessons in the tree, and the last Lesson played (paused, 5 s before
+   * its position) or else the first Lesson, which plays unless the workspace is being restored.
+   */
+  async function open(folder: string, restoring: boolean): Promise<void> {
+    let course: Course;
+    try {
+      course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
+    } catch (error) {
+      if (FileSystemError.is(error, 'notFound')) {
+        ui.showMessage({
+          severity: 'error',
+          text: `FollowAlong cannot open “${basename(folder)}”: the folder is missing.`,
+        });
+        if (restoring) {
+          // Said once: the next start of this workspace does not say it again.
+          await storage.workspace.set(openCourseKey, undefined);
         }
-        throw error;
-      }
-      openedCourse = course;
-      const inOrder = lessonsInOrder(course);
-      const first = inOrder[0];
-      if (first === undefined) {
-        const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
-        ui.showLessonTree({ message: text, nodes: [] });
-        ui.showMessage({ severity: 'warning', text });
         return;
       }
-      progress = await openProgress(folder, ports);
-      ui.showLessonTree(buildLessonTree(course));
-      logger.log({ level: 'info', message: `Opened Course ${folder}` });
-      const saved = progress.current();
-      const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
-      if (last === undefined) {
-        play(course, first, 0, true);
-      } else {
-        // Back where the learner left off, paused: no autoplay, no prompt (spec #12, Resume).
-        play(course, last, resumePosition(saved, last.id), false);
+      throw error;
+    }
+    // The Lesson playing now is left only once the new Course can be opened.
+    await leaveCurrent();
+    openedCourse = course;
+    const inOrder = lessonsInOrder(course);
+    const first = inOrder[0];
+    if (first === undefined) {
+      const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
+      ui.showLessonTree({ message: text, nodes: [] });
+      ui.showMessage({ severity: 'warning', text });
+      // A video already playing keeps playing (ADR 0007), but it is no Lesson of the open Course.
+      current = undefined;
+      progress = undefined;
+      return;
+    }
+    progress = await openProgress(folder, ports);
+    await storage.workspace.set(openCourseKey, folder);
+    ui.showLessonTree(buildLessonTree(course));
+    logger.log({ level: 'info', message: `Opened Course ${folder}` });
+    const saved = progress.current();
+    const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
+    if (last === undefined) {
+      // A Lesson the learner did not ask for in this session does not start by itself.
+      play(course, first, 0, !restoring);
+    } else {
+      // Back where the learner left off, paused: no autoplay, no prompt (spec #12, Resume).
+      play(course, last, resumePosition(saved, last.id), false);
+    }
+  }
+
+  return {
+    openCourse(folder) {
+      return open(folder, false);
+    },
+    async restoreCourse() {
+      const folder = storage.workspace.get(openCourseKey);
+      if (typeof folder === 'string') {
+        await open(folder, true);
       }
     },
     playLesson(lessonId) {
