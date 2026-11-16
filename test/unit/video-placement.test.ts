@@ -525,8 +525,8 @@ describe('Toggle video', () => {
   });
 });
 
-describe('Toggle video does nothing', () => {
-  it('but say so while no Lesson is loaded', async () => {
+describe('Toggle video with no Lesson loaded', () => {
+  it('does nothing but say so', async () => {
     const h = await createHarness();
 
     await h.core.toggleVideo();

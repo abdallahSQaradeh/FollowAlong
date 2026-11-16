@@ -336,8 +336,8 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
   }
 }
 
-/** Whether the bottom panel is open, read from the workbench page over the DevTools protocol. */
-async function bottomPanelIsOpen(): Promise<boolean> {
+/** Runs `read` in the VS Code workbench page over the DevTools protocol, which the extension API cannot do. */
+async function inWorkbench<T>(read: () => T): Promise<T> {
   const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
   assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
@@ -347,13 +347,19 @@ async function bottomPanelIsOpen(): Promise<boolean> {
       .flatMap((context) => context.pages())
       .find((page) => page.url().includes('workbench'));
     assert.ok(workbench, 'the DevTools connection lists no VS Code workbench page');
-    return await workbench.evaluate((): boolean => {
-      const panel = document.querySelector('.part.panel');
-      return panel instanceof HTMLElement && panel.offsetHeight > 0 && panel.offsetWidth > 0;
-    });
+    return await workbench.evaluate(read);
   } finally {
+    // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
     await browser.close();
   }
+}
+
+/** Whether the bottom panel is open. */
+function bottomPanelIsOpen(): Promise<boolean> {
+  return inWorkbench((): boolean => {
+    const panel = document.querySelector('.part.panel');
+    return panel instanceof HTMLElement && panel.offsetHeight > 0 && panel.offsetWidth > 0;
+  });
 }
 
 /** Which part of the VS Code window has keyboard focus. */
@@ -366,34 +372,21 @@ type FocusedPart = 'editor' | 'terminal' | 'webview' | 'other';
  * `editorTextFocus` (gate review of #49, item 2; `getContextKeyValue` is not found).
  */
 async function focusedPart(): Promise<FocusedPart> {
-  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
-  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  try {
-    const workbench = browser
-      .contexts()
-      .flatMap((context) => context.pages())
-      .find((page) => page.url().includes('workbench'));
-    assert.ok(workbench, 'the DevTools connection lists no VS Code workbench page');
-    return await workbench.evaluate((): FocusedPart => {
-      const focused = document.activeElement;
-      if (focused === null) {
-        return 'other';
-      }
-      if (focused.closest('.terminal') !== null) {
-        return 'terminal';
-      }
-      if (focused.closest('.monaco-editor') !== null) {
-        return 'editor';
-      }
-      return focused.tagName === 'IFRAME' || focused.closest('.webview') !== null
-        ? 'webview'
-        : 'other';
-    });
-  } finally {
-    // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
-    await browser.close();
-  }
+  return inWorkbench((): FocusedPart => {
+    const focused = document.activeElement;
+    if (focused === null) {
+      return 'other';
+    }
+    if (focused.closest('.terminal') !== null) {
+      return 'terminal';
+    }
+    if (focused.closest('.monaco-editor') !== null) {
+      return 'editor';
+    }
+    return focused.tagName === 'IFRAME' || focused.closest('.webview') !== null
+      ? 'webview'
+      : 'other';
+  });
 }
 
 /**
