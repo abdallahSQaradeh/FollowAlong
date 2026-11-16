@@ -58,4 +58,51 @@ describe('the one-time terminal prompt', () => {
 
     expect(h.terminalSettings.value).toEqual(onePressCommands);
   });
+
+  it('keeps the entries the learner already has, and adds the commands after them', async () => {
+    const h = await createHarness();
+    h.terminalSettings.value = ['workbench.action.quickOpen', '-workbench.action.togglePanel'];
+    await openLesson(h);
+    await answer(h, 'accept');
+
+    expect(h.terminalSettings.value).toEqual([
+      'workbench.action.quickOpen',
+      '-workbench.action.togglePanel',
+      ...onePressCommands,
+    ]);
+  });
+
+  it('does not duplicate a command the learner already has', async () => {
+    const h = await createHarness();
+    h.terminalSettings.value = ['followalong.seekBackShort', 'workbench.action.quickOpen'];
+    await openLesson(h);
+    await answer(h, 'accept');
+
+    expect(h.terminalSettings.value).toEqual([
+      'followalong.seekBackShort',
+      'workbench.action.quickOpen',
+      'followalong.playPause',
+      'followalong.seekForwardShort',
+    ]);
+  });
+
+  it('writes nothing when the learner already has all three commands', async () => {
+    const h = await createHarness();
+    h.terminalSettings.value = [...onePressCommands];
+    await openLesson(h);
+    await answer(h, 'accept');
+
+    expect(h.terminalSettings.writes).toEqual([]);
+  });
+
+  it('leaves a value it cannot read as a list of commands as it is, and says so', async () => {
+    const h = await createHarness();
+    h.terminalSettings.value = 'workbench.action.quickOpen';
+    await openLesson(h);
+    await answer(h, 'accept');
+
+    expect(h.terminalSettings.writes).toEqual([]);
+    expect(h.terminalSettings.value).toBe('workbench.action.quickOpen');
+    expect(h.ui.messages.map((message) => message.severity)).toEqual(['warning']);
+  });
 });

@@ -21,7 +21,30 @@ export const terminalQuestion: Question = {
   decline: 'No thanks',
 };
 
-/** The setting's value with the one-press commands added after the entries it has. */
-export function withOnePressCommands(existing: readonly string[]): readonly string[] {
-  return [...existing, ...onePressCommands];
+/** What agreeing does to the learner's setting. */
+export type SkipShellChange =
+  | { readonly kind: 'write'; readonly commands: readonly string[] }
+  /** The learner has all three commands already. */
+  | { readonly kind: 'unchanged' }
+  /** The value is not a list of commands: writing would replace something unknown. */
+  | { readonly kind: 'unreadable' };
+
+/**
+ * The learner's entries (`stored`, as VS Code holds them: unset, or a list of commands) with the
+ * one-press commands they lack added after them. Nothing the learner has is removed or moved,
+ * including the `-command` entries that take a command out of VS Code's defaults.
+ */
+export function addOnePressCommands(stored: unknown): SkipShellChange {
+  if (stored !== undefined && !(Array.isArray(stored) && stored.every(isString))) {
+    return { kind: 'unreadable' };
+  }
+  const existing: readonly string[] = stored ?? [];
+  const missing = onePressCommands.filter((command) => !existing.includes(command));
+  return missing.length === 0
+    ? { kind: 'unchanged' }
+    : { kind: 'write', commands: [...existing, ...missing] };
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
 }

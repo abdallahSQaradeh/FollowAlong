@@ -27,7 +27,7 @@ import {
   type ResourcesData,
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
-import { terminalAnswerKey, terminalQuestion, withOnePressCommands } from './terminal-keys.js';
+import { addOnePressCommands, terminalAnswerKey, terminalQuestion } from './terminal-keys.js';
 
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
@@ -306,10 +306,23 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
     await storage.global.set(terminalAnswerKey, answer);
     if (answer === 'accept') {
-      const existing = terminalSettings.skipShellCommands();
-      await terminalSettings.setSkipShellCommands(
-        withOnePressCommands(Array.isArray(existing) ? (existing as string[]) : []),
-      );
+      const change = addOnePressCommands(terminalSettings.skipShellCommands());
+      if (change.kind === 'write') {
+        await terminalSettings.setSkipShellCommands(change.commands);
+        logger.log({
+          level: 'info',
+          message: 'Added the one-press commands to the terminal keys.',
+        });
+      } else if (change.kind === 'unreadable') {
+        logger.log({
+          level: 'warn',
+          message: 'Left terminal.integrated.commandsToSkipShell as it is: it is not a list.',
+        });
+        ui.showMessage({
+          severity: 'warning',
+          text: "FollowAlong can't read your terminal.integrated.commandsToSkipShell setting (it is not a list of commands), so it left it as it is.",
+        });
+      }
     }
   }
 
