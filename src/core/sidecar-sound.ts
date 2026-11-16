@@ -19,11 +19,13 @@ import { FileSystemError, type FileStat, type Ports } from './ports.js';
 const soundFolderName = 'sound';
 
 /**
- * The sound codecs the player page decodes in an MP4 itself: Chromium's own codecs, which VS Code
- * ships (it leaves out AAC). A Lesson with such sound plays its own track: a sidecar would play the
- * sound twice (ADR 0034).
+ * The sound codecs the player page decodes in an MP4 itself, by ffmpeg's names: the ones Chromium
+ * plays in MP4 without the proprietary codecs, as VS Code ships it (it leaves out AAC). A Lesson
+ * with such sound plays its own track: a sidecar would play the sound twice (ADR 0034). Vorbis is
+ * not one: Chromium plays it in WebM and Ogg only. Any other codec is converted, so a Lesson never
+ * stays silent because of this list.
  */
-const pageDecodable = new Set(['mp3', 'opus', 'vorbis', 'flac']);
+const pageDecodable = new Set(['mp3', 'opus', 'flac']);
 
 /** The ffmpeg used when `followalong.ffmpegPath` is not set: the one on PATH. */
 const defaultProgram = 'ffmpeg';

@@ -388,3 +388,20 @@ test('moves the sound back to the picture when it drifts more than 0.1 s away', 
 
   await expectSoundInStep(player);
 });
+
+test('plays the video as it is, with its controls, when it needs no sidecar', async ({ page }) => {
+  // A silent MP4, or one whose sound the page decodes itself (MP3, Opus): no sidecar is coming.
+  const player = await openPlayer(page, { aac: false });
+  await player.post(loadMp4());
+  await aMoment();
+  expect((await player.video()).controls).toBe(false);
+
+  await player.post({ type: 'noSidecar' });
+  await player.waitForEvent({ type: 'played', lessonId });
+
+  const video = await player.video();
+  expect(video.controls).toBe(true);
+  expect(video.muted).toBe(false);
+  expect((await player.sound()).source).toBe('');
+  expect((await player.sound()).paused).toBe(true);
+});

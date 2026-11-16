@@ -278,18 +278,22 @@ function alignSound(media: HTMLVideoElement): void {
 }
 
 /**
- * The wait for the Lesson's sound is over: it arrived (`audioUri`), and plays beside the video
- * from now on, or it could not be prepared, and the Lesson plays without sound (ticket #42
- * replaces that with an overlay and a "Play without sound" button). A play asked for meanwhile
- * goes ahead.
+ * The wait for the Lesson's sound is over. Its sidecar arrived (`audioUri`) and plays beside the
+ * video from now on; or none is coming (`without`): it could not be prepared (`none`: the Lesson
+ * plays without sound, which ticket #42 replaces with an overlay and a "Play without sound"
+ * button), or the video needs none (`own`). A play asked for meanwhile goes ahead.
  */
-function soundSettled(audioUri: string | undefined, media: HTMLVideoElement): void {
+function soundSettled(
+  audioUri: string | undefined,
+  media: HTMLVideoElement,
+  without: 'none' | 'own' = 'none',
+): void {
   const lesson = current;
   if (lesson?.sound !== 'awaited' || lesson.failed) {
     return;
   }
   if (audioUri === undefined) {
-    lesson.sound = 'none';
+    lesson.sound = without;
   } else {
     lesson.sound = 'sidecar';
     sidecar.src = audioUri;
@@ -436,6 +440,10 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       break;
     case 'soundFailed':
       soundSettled(undefined, media);
+      break;
+    case 'noSidecar':
+      // A silent MP4, or one whose sound the page decodes: the video plays as it is (ADR 0034).
+      soundSettled(undefined, media, 'own');
       break;
     case 'zoom':
       zoomControls.reset();
