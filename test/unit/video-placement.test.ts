@@ -380,3 +380,115 @@ describe('a Lesson that had ended, moved', () => {
     expect(h.player.sent[0]).toMatchObject({ type: 'load', startAt: 300, autoplay: false });
   });
 });
+
+/** The page answers the `takeSnapshot` of a move with this Lesson playhead, at 1.5× and zoomed. */
+function answerSnapshot(h: Harness, position: number, playing: boolean): void {
+  h.player.emit({
+    type: 'snapshot',
+    snapshot: {
+      rate: 1.5,
+      zoom: { level: 2, left: 0.25, top: 0.5 },
+      lesson: { lessonId, position, playing },
+    },
+  });
+}
+
+describe('two moves in a row', () => {
+  it('carry the speed and zoom of the first page when the second page was not ready yet', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const first = h.core.moveVideo('bottomPanel');
+    answerSnapshot(h, 42, true);
+    await first;
+
+    // The page in the bottom panel is still starting: no snapshot, and nothing of it is lost.
+    await h.core.moveVideo('secondarySidebar');
+    h.player.clearSent();
+    h.player.ready();
+
+    expect(lastSpot(h)).toBe('secondarySidebar');
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 42, autoplay: true }),
+      { type: 'setRate', rate: 1.5 },
+      { type: 'restore', zoom: { level: 2, left: 0.25, top: 0.5 } },
+    ]);
+  });
+
+  it('end in the spot asked for last, when the second is asked while the first waits for its snapshot', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const shows = h.player.shown.length;
+
+    const first = h.core.moveVideo('bottomPanel');
+    const second = h.core.moveVideo('secondarySidebar');
+    answerSnapshot(h, 42, true);
+    await Promise.all([first, second]);
+
+    expect(h.player.shown.slice(shows).map((shown) => shown.spot)).toEqual(['secondarySidebar']);
+  });
+});
+
+describe('a Lesson that had ended, moved, then resumed', () => {
+  it('starts again from the top, without a Rewind', async () => {
+    const h = await createHarness();
+    h.config.set('resumeRewind', 5);
+    await playingZoomed(h);
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 300, duration: 300 });
+    h.player.emit({ type: 'ended', lessonId });
+    const moving = h.core.moveVideo('bottomPanel');
+    answerSnapshot(h, 300, false);
+    await moving;
+    h.player.ready();
+    // The new page applies the start position (its own seek), and reports the Lesson's end.
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 300, duration: 300 });
+    h.player.emit({ type: 'seeked', lessonId, startSeek: true });
+    h.player.clearSent();
+
+    h.core.playPause();
+
+    expect(h.player.sent).toEqual([{ type: 'play' }]);
+  });
+});
+
+describe('a Lesson still waiting to autoplay, moved by a page that does not answer', () => {
+  it('still asks the new page to play it', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.ready();
+    // Loaded with autoplay; the page has not said it plays yet (an MP4's sound may be preparing).
+
+    const moving = h.core.moveVideo('bottomPanel');
+    h.clock.advance(1000);
+    await moving;
+    h.player.clearSent();
+    h.player.ready();
+
+    expect(h.player.sent[0]).toMatchObject({ type: 'load', lessonId, autoplay: true });
+  });
+});
+
+describe('the page a move left', () => {
+  it('changes neither Progress nor the status bar with a late event', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.ready();
+    h.player.emit({ type: 'played', lessonId });
+    for (let position = 0; position <= 20; position += 2) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position, duration: 300 });
+    }
+    const moving = h.core.moveVideo('bottomPanel');
+    answerSnapshot(h, 20, true);
+    await moving;
+    await h.settle();
+    const tree = descriptionOf(h, lessonId);
+    const statusBar = h.ui.statusBar;
+
+    // The old page's last words, with its loadId, before the new page is ready.
+    h.player.emit({ type: 'timeUpdate', lessonId, loadId: 1, position: 0, duration: 300 });
+    h.player.emit({ type: 'paused', lessonId, loadId: 1, byUser: true });
+    await h.settle();
+
+    expect(descriptionOf(h, lessonId)).toBe(tree);
+    expect(h.ui.statusBar).toEqual(statusBar);
+  });
+});
