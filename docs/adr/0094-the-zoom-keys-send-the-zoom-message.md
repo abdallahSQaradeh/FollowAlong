@@ -12,7 +12,7 @@ Source: #48, the routed note on it from #47, ADRs 0037, 0087 and 0088.
   (`zoomActions` and `isZoomAction` in the protocol), and the parser accepts exactly those. The
   core only forwards the action (`core.zoom(action)`); the player knows what it shows and reports
   `zoomChanged`. The status bar item's reset uses the same path.
-- **The keys change the view through `ZoomControls`** (`zoomIn`, `zoomOut`, `toggleAreaMode`, `reset`),
+- **The keys change the view through `ZoomControls`** (`run(action)`),
   which call `show()` with `zoomBy` from `src/player/zoom.ts`. They are the toolbar's own steps:
   1.25× a press, from 1× up to 8×, around the middle of the picture, so a key and the ＋ / −
   buttons agree. The press kind of a drag is not touched: area mode already forces a box.
