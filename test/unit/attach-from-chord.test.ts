@@ -42,7 +42,6 @@ describe('attaching a Resource from the chord', () => {
     const attached = h.core.attachToLoadedLesson();
     await h.ui.fileDialogShown();
     expect(h.ui.fileDialogOpen).toBe(true);
-    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(notes);
     await attached;
 

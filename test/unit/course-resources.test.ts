@@ -141,7 +141,6 @@ describe('attaching to the Course from the tree’s “+” without a file yet',
     const attached = h.core.attachCourseResource();
     await h.ui.fileDialogShown();
     expect(h.ui.fileDialogOpen).toBe(true);
-    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(join(course, 'cheat.md'));
     await attached;
 

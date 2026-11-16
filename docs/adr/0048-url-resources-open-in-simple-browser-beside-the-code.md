@@ -23,4 +23,4 @@ editor group (ADR 0012, #53, #54). Simple Browser can be aimed at a group, so th
 ## Consequences
 
 - Whether `preserveFocus` and `viewColumn` are honoured by the VS Code version in use is not
-  reachable from Seam 1 or from a headless smoke test: a Windows manual QA item covers it.
+  reachable from Seam 1 or from a headless smoke test: the PR for #55 lists a Windows manual QA item for it.

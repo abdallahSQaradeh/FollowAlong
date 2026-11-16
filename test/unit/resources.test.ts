@@ -313,7 +313,6 @@ describe('attaching from the tree’s “+” without a file yet', () => {
     const attached = h.core.attachResource('01 One.webm');
     await h.ui.fileDialogShown();
     expect(h.ui.fileDialogOpen).toBe(true);
-    await h.ui.fileDialogShown();
     h.ui.answerFileDialog(join(course, 'notes.md'));
     await attached;
 

@@ -338,10 +338,13 @@ export function urlLabel(url: string): string {
   return url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/$/, '');
 }
 
-/** The opener per file type, by extension without regard to case; every other type is a file. */
 /** The kinds of {@link ResourceTarget} that open a file on disk. */
 type FileTargetKind = Exclude<ResourceTarget['kind'], 'url'>;
 
+/** The target of a file: what {@link resourceTarget} makes. */
+export type FileResourceTarget = ResourceTarget & { readonly kind: FileTargetKind };
+
+/** The opener per file type, by extension without regard to case; every other type is a file. */
 const targetKinds: Readonly<Record<string, FileTargetKind>> = {
   '.md': 'markdown',
   '.markdown': 'markdown',
@@ -359,7 +362,7 @@ const targetKinds: Readonly<Record<string, FileTargetKind>> = {
 };
 
 /** How the file a Resource points to opens: text and code in the editor, the rest by type. */
-export function resourceTarget(path: string): ResourceTarget & { readonly kind: FileTargetKind } {
+export function resourceTarget(path: string): FileResourceTarget {
   const kind = targetKinds[extname(path).toLowerCase()] ?? 'file';
   return { kind, path };
 }
