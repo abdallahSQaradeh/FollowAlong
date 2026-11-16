@@ -6,13 +6,14 @@
  * FOLLOWALONG_VSCODE_VERSION overrides the VS Code version (default: the engines.vscode floor).
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runTests } from '@vscode/test-electron';
 
+import { build } from './build.mjs';
 import { readJson } from './lib/json.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,8 +48,20 @@ const compile = spawnSync(
 if (compile.status !== 0) {
   process.exit(compile.status ?? 1);
 }
+// VS Code loads the extension from package.json "main", the bundle in out/.
+await build();
 
 const workspace = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
+// A fresh user-data folder per run, so no setting or state leaks between runs. Proxy support is
+// off: with it on, VS Code's proxy agent wraps fetch() in the extension host and calls the
+// deprecated url.parse() (DEP0169) as soon as a built-in extension fetches at startup (traced in
+// CI to TypeScriptTeam.jsts-chat-features). The smoke test makes no network requests.
+const userData = mkdtempSync(join(tmpdir(), 'followalong-smoke-user-'));
+mkdirSync(join(userData, 'User'), { recursive: true });
+writeFileSync(
+  join(userData, 'User', 'settings.json'),
+  `${JSON.stringify({ 'http.proxySupport': 'off' }, null, 2)}\n`,
+);
 try {
   await runTests({
     version,
@@ -57,6 +70,7 @@ try {
     extensionTestsPath: join(root, 'out', 'smoke', 'suite', 'index.js'),
     launchArgs: [
       workspace,
+      `--user-data-dir=${userData}`,
       '--disable-extensions',
       '--disable-gpu',
       '--disable-workspace-trust',
@@ -72,4 +86,5 @@ try {
   process.exitCode = 1;
 } finally {
   rmSync(workspace, { recursive: true, force: true });
+  rmSync(userData, { recursive: true, force: true });
 }

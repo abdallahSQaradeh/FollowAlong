@@ -5,6 +5,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'test/player',
   testMatch: '**/*.spec.ts',
+  // Builds out/player, the bundle the specs load, so they test what the extension ships.
+  globalSetup: './test/player/global-setup.ts',
   forbidOnly: true,
   fullyParallel: true,
   reporter: [['list']],

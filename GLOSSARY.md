@@ -28,6 +28,10 @@ _Avoid_: History, completion
 A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along.
 _Avoid_: Material, attachment
 
+**Course data**:
+What FollowAlong keeps about a Course for itself (its Progress, its Resources, prepared sound), stored with the Course and never mixed into the Course's own files.
+_Avoid_: Metadata, cache, settings
+
 **Practice area**:
 Where the learner types and runs code while following a Lesson.
 _Avoid_: Sandbox, playground, workspace
