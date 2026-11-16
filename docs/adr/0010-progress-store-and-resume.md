@@ -70,13 +70,17 @@ it with what this window recorded.
   plays another Lesson, opens another Course (only once the new folder could be read, so a missing
   folder leaves the playing Lesson alone), and when the window closes: `deactivate` returns the
   core's `close()`, which VS Code waits for briefly.
-- **A Lesson left is left for good:** its late events (a `timeUpdate` still in flight) are ignored
-  from the moment the learner leaves it, so none is recorded into the Course opened next.
+- **Late events of a Lesson left are ignored** from the moment the learner leaves it, so none is
+  recorded into the Course opened next. One gap remains: once the next Lesson loads, an event in
+  flight from a Lesson with the same id (the same path in another Course) cannot be told apart, since
+  the protocol has no load number. It needs a `load` that was answered in under a frame.
 - **One open at a time:** Course opens, including the restore at startup, run in the order they
   were asked for, so a Course the learner opens while the remembered one is being restored is the
   one left open (and remembered).
 - **One save at a time:** saves are chained, so an older one never lands after a newer one, and
-  `close()` and opening another Course wait for every save before them.
+  `close()` and opening another Course wait for every save before them. `close()` also waits for
+  an open under way, so the window can close at any step of opening a Course without losing the
+  Lesson it left.
 - **A failed save** is logged and shown to the learner once per open Course. A Course moved away
   while open fails with `notFound` ("the Course folder is missing"): `.followalong` is now made
   without its parents (`makeDirectory(path, { parents: false })`), so a save never makes an empty

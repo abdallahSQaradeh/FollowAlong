@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { mkdir, readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -176,6 +177,33 @@ describe('remembering where the learner is in each Lesson', () => {
     await h.core.close();
 
     expect(await reopen(h, second)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 0 });
+  });
+
+  it('saves the Lesson left behind when the window closes while another Course opens', async () => {
+    // The window can close at any step of the opening; try each one.
+    for (let steps = 0; steps < 12; steps += 1) {
+      const h = await createHarness();
+      const first = await h.folder('first', lessons);
+      const second = await h.folder('second', lessons);
+      await h.core.openCourse(first);
+      h.player.ready();
+      h.core.playLesson('02 Setup.webm');
+      playTo(h, '02 Setup.webm', 80);
+      const opened = h.core.openCourse(second);
+      for (let step = 0; step < steps; step += 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      await h.core.close();
+      // VS Code ends the extension host once close() settles: what is on disk now is what stays.
+      const onDisk: unknown = JSON.parse(
+        readFileSync(join(first, '.followalong', 'progress.json'), 'utf8'),
+      );
+      await opened;
+
+      expect(onDisk, `closed after ${String(steps)} steps`).toMatchObject({
+        data: { lessons: { '02 Setup.webm': { position: 80 } } },
+      });
+    }
   });
 
   it('saves when the VS Code window closes', async () => {

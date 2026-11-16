@@ -259,10 +259,6 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** The learner leaves the current Lesson (another Lesson, another Course, the window closes). */
   function leaveCurrent(): Promise<void> {
-    const left = current;
-    if (left === undefined) {
-      return Promise.resolve();
-    }
     stopSaving();
     // From now on its late events are ignored, so none is recorded into the next Course.
     current = undefined;
@@ -416,6 +412,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       player.send({ type: playback.playing ? 'pause' : 'play' });
     },
     async close() {
+      // An open under way leaves its Lesson and saves it first; then this window's Lesson.
+      await opening;
       await leaveCurrent();
       dispose();
     },
