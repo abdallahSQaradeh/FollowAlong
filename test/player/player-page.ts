@@ -23,6 +23,8 @@ export const media = {
   mp4: `${origin}/media/sample.mp4`,
   /** 8 s, VP8 + Vorbis, a Cluster every second. */
   long: `${origin}/media/long.webm`,
+  /** The same 8 s without a Duration element, as an unfinalised recording has. */
+  noDuration: `${origin}/media/no-duration.webm`,
   /** A text file with a .webm name, as a broken download would be. */
   notAVideo: `${origin}/media/not-a-video.webm`,
   /** A download that stopped before its first byte. */
@@ -85,6 +87,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
     } else if (
       path === '/media/lesson.webm' ||
       path === '/media/long.webm' ||
+      path === '/media/no-duration.webm' ||
       path === '/media/sample.mp4'
     ) {
       const contentType = path.endsWith('.mp4') ? 'video/mp4' : 'video/webm';
