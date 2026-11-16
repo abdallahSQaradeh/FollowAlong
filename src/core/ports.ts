@@ -147,8 +147,25 @@ export interface ResourceTarget {
   readonly path: string;
 }
 
+/** The two answers to a {@link Question}: the button that agrees, and the one that declines. */
+export type Answer = 'accept' | 'decline';
+
+/** A question with two answers, put to the learner without blocking what they are doing. */
+export interface Question {
+  readonly text: string;
+  /** The label of the button that agrees. */
+  readonly accept: string;
+  /** The label of the button that declines. */
+  readonly decline: string;
+}
+
 export interface UiSink {
   showMessage(message: UserMessage): void;
+  /**
+   * Asks the learner a question and resolves with the button they pressed, or `undefined` when
+   * they closed it, or let it go, without answering.
+   */
+  ask(question: Question): Promise<Answer | undefined>;
   /**
    * Shows a quick pick and resolves with the intent of the item the learner picked, or
    * `undefined` when the learner closed it without picking.
@@ -169,6 +186,21 @@ export interface UiSink {
   returnFocus(): void;
 }
 
+// --- Terminal settings ----------------------------------------------------------------------------
+
+/**
+ * The learner's own VS Code setting `terminal.integrated.commandsToSkipShell`: the commands whose
+ * keys VS Code keeps for itself instead of sending them to the shell (spec #12, story 45). Only
+ * the user-level value is read and written, never a workspace's: the Practice area is never
+ * changed.
+ */
+export interface TerminalSettings {
+  /** The user-level value as stored: `undefined` when the learner never set it. */
+  skipShellCommands(): unknown;
+  /** Replaces the user-level value. */
+  setSkipShellCommands(commands: readonly string[]): Promise<void>;
+}
+
 // --- All of them --------------------------------------------------------------------------------
 
 export interface Ports {
@@ -180,4 +212,5 @@ export interface Ports {
   readonly config: Config;
   readonly ui: UiSink;
   readonly logger: Logger;
+  readonly terminalSettings: TerminalSettings;
 }

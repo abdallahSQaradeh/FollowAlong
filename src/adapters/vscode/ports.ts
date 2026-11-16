@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 
 import type { Logger } from '../../core/logger.js';
-import type { Config, KeyValueStore, Storage, UiSink } from '../../core/ports.js';
+import type { Config, KeyValueStore, Storage, TerminalSettings, UiSink } from '../../core/ports.js';
 import type { LessonTreeView } from './lesson-tree-view.js';
 import type { ResourcePlacement } from './resource-placement.js';
 import { openInEditor, type ResourceViewers } from './resource-viewers.js';
@@ -56,6 +56,12 @@ export function createUiSink(
       }[severity];
       void show(text);
     },
+    async ask({ text, accept, decline }) {
+      // A notification, not a modal: it never takes focus from the code. Closing it or letting it
+      // go answers nothing.
+      const pressed = await vscode.window.showInformationMessage(text, accept, decline);
+      return pressed === accept ? 'accept' : pressed === decline ? 'decline' : undefined;
+    },
     pick: showQuickPick,
     showLessonTree(model) {
       tree.show(model);
@@ -91,6 +97,21 @@ export function createUiSink(
         logger.log({ level: 'warn', message: `Could not return focus: ${String(error)}` });
       });
     },
+  };
+}
+
+const terminalSettingsSection = 'terminal.integrated';
+const skipShellSetting = 'commandsToSkipShell';
+
+/** The learner's own `terminal.integrated.commandsToSkipShell`: user settings, never the workspace's. */
+export function createTerminalSettings(): TerminalSettings {
+  const settings = () => vscode.workspace.getConfiguration(terminalSettingsSection);
+  return {
+    skipShellCommands: () => settings().inspect<unknown>(skipShellSetting)?.globalValue,
+    setSkipShellCommands: (commands) =>
+      Promise.resolve(
+        settings().update(skipShellSetting, [...commands], vscode.ConfigurationTarget.Global),
+      ),
   };
 }
 
