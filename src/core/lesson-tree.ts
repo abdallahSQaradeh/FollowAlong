@@ -5,7 +5,7 @@
 import { basename } from 'node:path';
 
 import type { Course, Outline, Section } from './course-model.js';
-import { resourcePath, type ResourcesData } from './resources.js';
+import { resourcePath, type ResourceRecord, type ResourcesData } from './resources.js';
 
 export interface ResourceNode {
   readonly kind: 'resource';
@@ -38,9 +38,28 @@ export type LessonTreeNode =
       readonly children: readonly LessonTreeNode[];
     };
 
+/**
+ * The Course itself, shown above the Sections and Lessons: it carries the Resources of the whole
+ * Course, and the "+" that attaches one.
+ */
+export interface CourseNode {
+  readonly kind: 'course';
+  /** Never the id of a Lesson (a file name) or of a Section (it ends in `/`). */
+  readonly id: typeof courseNodeId;
+  /** The Course's name: its folder's name. */
+  readonly label: string;
+  /** The Course's Resources, in the order they were attached. */
+  readonly resources: readonly ResourceNode[];
+}
+
+/** The id of the Course node: what the "+" on it passes to the attach command. */
+export const courseNodeId = '<course>';
+
 export interface LessonTreeModel {
   /** Shown instead of the tree, when there is nothing to list. */
   readonly message?: string;
+  /** The Course node, the first node of the tree; absent when the Course has no Lessons. */
+  readonly course?: CourseNode;
   readonly nodes: readonly LessonTreeNode[];
 }
 
@@ -50,6 +69,17 @@ interface TreeSource {
   readonly resources: ResourcesData;
   /** The ids of the Resources whose file is not where they point. */
   readonly missing: ReadonlySet<string>;
+}
+
+function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode {
+  const path = resourcePath(source.folder, record);
+  return {
+    id: record.id,
+    kind: 'resource',
+    label: basename(path),
+    path,
+    missing: source.missing.has(record.id),
+  };
 }
 
 function nodeOf(section: Section, source: TreeSource): LessonTreeNode {
@@ -67,16 +97,9 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
       id: lesson.id,
       kind: 'lesson',
       label: lesson.title,
-      resources: (source.resources.lessons[lesson.id] ?? []).map((record): ResourceNode => {
-        const path = resourcePath(source.folder, record);
-        return {
-          id: record.id,
-          kind: 'resource',
-          label: basename(path),
-          path,
-          missing: source.missing.has(record.id),
-        };
-      }),
+      resources: (source.resources.lessons[lesson.id] ?? []).map((record) =>
+        resourceNode(source, record),
+      ),
     })),
     ...outline.sections.map((section) => nodeOf(section, source)),
   ];
@@ -87,5 +110,14 @@ export function buildLessonTree(
   resources: ResourcesData,
   missing: ReadonlySet<string>,
 ): LessonTreeModel {
-  return { nodes: nodesOf(course, { folder: course.folder, resources, missing }) };
+  const source: TreeSource = { folder: course.folder, resources, missing };
+  return {
+    course: {
+      kind: 'course',
+      id: courseNodeId,
+      label: basename(course.folder),
+      resources: resources.course.map((record) => resourceNode(source, record)),
+    },
+    nodes: nodesOf(course, source),
+  };
 }

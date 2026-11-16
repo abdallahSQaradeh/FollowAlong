@@ -25,10 +25,7 @@ export interface ResourceRecord {
 }
 
 export interface ResourcesData {
-  /**
-   * The Resources of the whole Course. Reserved: nothing attaches to the Course yet (a later
-   * ticket), but it is written and kept so that file needs no migration when that arrives.
-   */
+  /** The Resources of the whole Course, in the order they were attached. */
   readonly course: readonly ResourceRecord[];
   /** The Resources of each Lesson, by the Lesson's id, in the order they were attached. */
   readonly lessons: Readonly<Record<string, readonly ResourceRecord[]>>;
@@ -217,6 +214,11 @@ export function withResource(
     course: data.course,
     lessons: { ...data.lessons, [lessonId]: [...(data.lessons[lessonId] ?? []), record] },
   };
+}
+
+/** `data` with `record` attached to the whole Course, after the ones already there. */
+export function withCourseResource(data: ResourcesData, record: ResourceRecord): ResourcesData {
+  return { ...data, course: [...data.course, record] };
 }
 
 /**

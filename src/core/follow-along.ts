@@ -30,6 +30,10 @@ import { createTerminalKeysOffer } from './terminal-keys.js';
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
 const openCourseKey = 'openCourse';
 
+/** What a Resource is attached to: the whole Course, or one of its Lessons. */
+type AttachTarget =
+  { readonly kind: 'course' } | { readonly kind: 'lesson'; readonly lessonId: string };
+
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
   openCourse(folder: string): Promise<void>;
@@ -43,6 +47,12 @@ export interface FollowAlong {
    * fixed when the command runs, so a Course opened while the dialog is up never receives it.
    */
   attachResource(lessonId: string, absolutePath?: string): Promise<void>;
+  /**
+   * Attaches a file, from anywhere on disk, as a Resource of the whole open Course: the "+" on the
+   * Course node. Without `absolutePath` it first asks for the file; the Course is fixed when the
+   * command runs, so a Course opened while the dialog is up never receives it.
+   */
+  attachCourseResource(absolutePath?: string): Promise<void>;
   /**
    * The attach command from the chord or the Command Palette: asks for a file and attaches it to
    * the Loaded Lesson when the command runs. The Lesson keeps playing meanwhile.
@@ -214,26 +224,43 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /**
-   * Both attach routes, once they have fixed the Lesson and its Course: asks for the file when
-   * none is given yet, then attaches it. A closed dialog attaches nothing.
+   * Every attach route (a Lesson from its "+" or the chord, the whole Course from its "+"), once
+   * it has fixed what the file goes to and that Course: asks for the file when none is given yet,
+   * then attaches it. A closed dialog attaches nothing. A Resource of another kind than a file
+   * (a URL, #55) joins here, so the Course "+" and the Lesson "+" stay one path.
    */
   async function attachTo(
     course: Course,
     store: ResourceStore,
-    lessonId: string,
+    target: AttachTarget,
     absolutePath?: string,
   ): Promise<void> {
     const path =
       absolutePath ??
-      (await ui.pickFile({ title: 'Attach a file to this Lesson', openLabel: 'Attach' }));
-    if (path !== undefined) {
-      const made = await store.attach(lessonId, path);
-      const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+      (await ui.pickFile({
+        title:
+          target.kind === 'course'
+            ? 'Attach a file to this Course'
+            : 'Attach a file to this Lesson',
+        openLabel: 'Attach',
+      }));
+    if (path === undefined) {
+      return;
+    }
+    if (target.kind === 'course') {
+      const made = await store.attachToCourse(path);
       showResourceChange(course, store, {
         made,
-        said: `attached “${basename(path)}” to “${lesson?.title ?? lessonId}”`,
+        said: `attached “${basename(path)}” to the Course`,
       });
+      return;
     }
+    const made = await store.attach(target.lessonId, path);
+    const lesson = lessonsInOrder(course).find((candidate) => candidate.id === target.lessonId);
+    showResourceChange(course, store, {
+      made,
+      said: `attached “${basename(path)}” to “${lesson?.title ?? target.lessonId}”`,
+    });
   }
 
   /**
@@ -494,7 +521,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      await attachTo(course, store, lessonId, absolutePath);
+      await attachTo(course, store, { kind: 'lesson', lessonId }, absolutePath);
+    },
+    async attachCourseResource(absolutePath) {
+      // The Course and its store are fixed now, before the dialog opens (ADR 0024).
+      const course = openedCourse;
+      const store = resourceStore;
+      if (course === undefined || store === undefined) {
+        logger.log({ level: 'warn', message: 'Cannot attach to the Course: no Course is open.' });
+        return;
+      }
+      if (lessonsInOrder(course).length === 0) {
+        // Such a Course shows only its message, not a tree with a Course node to attach to.
+        logger.log({ level: 'warn', message: 'Cannot attach to the Course: it has no Lessons.' });
+        return;
+      }
+      await attachTo(course, store, { kind: 'course' }, absolutePath);
     },
     async attachToLoadedLesson() {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
@@ -512,7 +554,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       try {
-        await attachTo(course, store, lesson.id);
+        await attachTo(course, store, { kind: 'lesson', lessonId: lesson.id });
       } finally {
         // The dialog took keyboard focus: hand it back, also when the attach failed (ADR 0023).
         ui.returnFocus();
