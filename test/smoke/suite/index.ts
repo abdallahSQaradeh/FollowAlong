@@ -244,6 +244,7 @@ export async function run(): Promise<void> {
   await aClickOnThePicture(hooks.playerEvents, code);
   say(await playFromTheEditorAfterAClick(hooks.playerEvents));
   say(await typingPausesTheLesson(hooks, code));
+  say(await theAutoPauseSettingsReadBack());
 
   say(await theStatusBarRunsTheCommands(hooks));
 
@@ -555,6 +556,12 @@ async function typingPausesTheLesson(hooks: TestHooks, code: vscode.TextDocument
 
     from = await playFromTheStart(events);
     const practice = await vscode.window.showTextDocument(practiceFile, vscode.ViewColumn.One);
+    // The 3 s Lesson must still play when the edit comes: else the step proves nothing.
+    assert.equal(
+      events.slice(from).find((event) => event.lessonId === lessonId && event.type === 'ended'),
+      undefined,
+      'too slow: the 3 s Lesson ended before the edit, so the edit could not pause it',
+    );
     await practice.edit((edit) => {
       edit.insert(new vscode.Position(0, 0), 'const a = 1;');
     });
@@ -588,6 +595,36 @@ async function typingPausesTheLesson(hooks: TestHooks, code: vscode.TextDocument
     rmSync(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   }
   return 'with auto-pause on, typing in the active editor pauses the playing Lesson ("Paused (typing)"); an edit elsewhere or a cursor move does not';
+}
+
+/** The quiet period setting of `pauseAndResume`, under `followalong.`. */
+const quietPeriodSetting = 'autoPauseResumeAfter';
+
+/**
+ * The two auto-pause settings live side by side in VS Code's configuration (routed note on #60):
+ * each registers with its default, and each reads back what the learner set, the other one set
+ * too. VS Code builds its settings into a tree of objects and drops a setting whose name continues
+ * another one's (`autoPause.resumeAfter` under the string `autoPause`) with only a log line, so the
+ * quiet period has a flat name (ADR 0089).
+ */
+async function theAutoPauseSettingsReadBack(): Promise<string> {
+  const settings = () => vscode.workspace.getConfiguration('followalong');
+  assert.equal(settings().inspect('autoPause')?.defaultValue, 'off', 'autoPause registers');
+  assert.equal(
+    settings().inspect(quietPeriodSetting)?.defaultValue,
+    2,
+    `${quietPeriodSetting} registers with its default beside autoPause`,
+  );
+  await settings().update('autoPause', 'pauseAndResume', vscode.ConfigurationTarget.Global);
+  await settings().update(quietPeriodSetting, 5, vscode.ConfigurationTarget.Global);
+  try {
+    assert.equal(settings().get('autoPause'), 'pauseAndResume', 'autoPause reads back');
+    assert.equal(settings().get(quietPeriodSetting), 5, `${quietPeriodSetting} reads back`);
+  } finally {
+    await settings().update(quietPeriodSetting, undefined, vscode.ConfigurationTarget.Global);
+    await settings().update('autoPause', undefined, vscode.ConfigurationTarget.Global);
+  }
+  return `followalong.autoPause and followalong.${quietPeriodSetting} both register and read back`;
 }
 
 /** The text of the play/pause status bar item, with its icons as `$(name)`. */

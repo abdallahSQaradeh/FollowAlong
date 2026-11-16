@@ -67,3 +67,6 @@ open. #60 (resume after a quiet period, `overridden`) and #61 (the toggle) build
 
 - A refused `play` (#12 D3) is #60's to handle when it auto-resumes. A core-sent `pause` is never
   refused, so #59 has no refusal path.
+- #60 settles the interim parts (ADR 0090): `played` has its source, a learner's play of a Lesson
+  auto-pause paused plays through (`overridden`), and `pauseAndResume` resumes after the quiet
+  period, named `followalong.autoPauseResumeAfter` (ADR 0089).

@@ -323,11 +323,14 @@ export class FakeConfig implements Config {
     return Promise.resolve();
   }
 
-  /** The learner changed a `followalong.*` setting. */
+  /**
+   * The learner changed a `followalong.*` setting. Like VS Code's `affectsConfiguration`, a change
+   * also affects every setting whose name it continues: `a.b` affects `a`.
+   */
   set(name: string, value: unknown): void {
     this.values.set(name, value);
     for (const listener of this.listeners) {
-      listener((changed) => changed === name);
+      listener((section) => name === section || name.startsWith(`${section}.`));
     }
   }
 }
