@@ -122,11 +122,19 @@ _Avoid_: Metadata, cache, settings
 
 **Audio sidecar**:
 An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
-_Avoid_: Soundtrack, audio copy, audio cache
+_Avoid_: Soundtrack, audio copy
 
 **Sound ahead**:
 The Audio sidecars FollowAlong prepares in the background for the next 3 Lessons in Course order once the opened Lesson's own is ready, one at a time and at low process priority, so moving on is instant. Opening another Lesson puts it first and stops what is no longer needed. A sound that fails ahead shows the learner nothing: the Lesson tries again when it is opened.
 _Avoid_: Prefetch, preload, pre-conversion
+
+**Audio cache**:
+All the Audio sidecars on this machine, of every Course, wherever Course data keeps them. It is kept under the **Audio cache limit** by deleting the sound of the Lessons opened longest ago first, and _Clear audio cache_ empties it, except for the sound of the Lesson that is loaded.
+_Avoid_: Sound cache, converted audio
+
+**Audio cache limit**:
+How much disk space the Audio cache may take: 5 GB until the learner changes the `followalong.audioCacheLimit` setting. The sound of the loaded Lesson and of the Lessons being prepared ahead never counts as deletable, so the cache can stay above a very small limit.
+_Avoid_: Quota, disk limit
 
 **Bundled ffmpeg**:
 The minimal LGPL ffmpeg that comes inside the Windows x64 `.vsix`, and makes the Audio sidecar of an MP4 Lesson with nothing for the learner to install. It is used unless the learner's own `followalong.ffmpegPath` names another; where there is none (Linux and macOS), ffmpeg on PATH is.

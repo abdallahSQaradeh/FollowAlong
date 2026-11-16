@@ -3,7 +3,7 @@
  * files are capped (5 GB by default), and the Lessons opened longest ago are deleted first. The fake
  * converter writes 13-byte MP3s, so a limit of a few dozen bytes stands for a small disk.
  */
-import { readdir } from 'node:fs/promises';
+import { readdir, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -151,6 +151,148 @@ describe('the audio cache limit', () => {
         join(course, '.followalong', 'sound', await soundOf(course, '06')),
       ),
     });
+  });
+});
+
+describe('the audio cache limit setting', () => {
+  it('is 5 GB until it is changed, and a value that is no number of GB means 5 GB', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h, 'course', 8);
+    await finishAll(h);
+    for (const bad of [-1, Number.NaN, 'a lot', null]) {
+      h.config.set('audioCacheLimit', bad);
+    }
+    h.core.playLesson('06 Lesson.mp4');
+    await finishAll(h);
+
+    expect(await kept(course)).toEqual(['01', '02', '03', '04', '06', '07', '08']);
+  });
+
+  it('takes effect at once when it is lowered, without a new conversion', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h, 'course', 8);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    h.core.playLesson('06 Lesson.mp4');
+    await finishAll(h);
+    expect(await kept(course)).toEqual(['01', '02', '03', '04', '06', '07', '08']);
+    const conversions = h.converter.requests.length;
+
+    h.config.set('audioCacheLimit', limitOf(5 * mp3Bytes));
+    await h.settle();
+
+    expect(await kept(course)).toEqual(['03', '04', '06', '07', '08']);
+    expect(h.converter.requests).toHaveLength(conversions);
+  });
+});
+
+describe('sound the audio cache has not seen made', () => {
+  it('counts the sound files it finds in the open Course and in its storage, by when they were made', async () => {
+    const h = await createHarness();
+    // Sound made by an earlier FollowAlong, or in a copy of the Course: it is not in the record.
+    const course = await h.folder('course', {
+      ...lessons(2),
+      '.followalong/sound/old-0123456789abcdef.mp3': fakeSound,
+      '.followalong/sound/older-0123456789abcdef.mp3': fakeSound,
+    });
+    const day = 24 * 3600;
+    await utimes(
+      join(course, '.followalong', 'sound', 'old-0123456789abcdef.mp3'),
+      100 * day,
+      100 * day,
+    );
+    await utimes(
+      join(course, '.followalong', 'sound', 'older-0123456789abcdef.mp3'),
+      50 * day,
+      50 * day,
+    );
+    h.config.set('audioCacheLimit', limitOf(3 * mp3Bytes));
+
+    await h.core.openCourse(course);
+    h.player.ready(false);
+    await finishAll(h);
+
+    // 2 Lessons and 2 old files make 4; the one made longest ago goes.
+    const names = await readdir(join(course, '.followalong', 'sound'));
+    expect(
+      names
+        .filter((name) => name.endsWith('.mp3'))
+        .map((name) => name.split('-')[0])
+        .sort(),
+    ).toEqual(['01 Lesson', '02 Lesson', 'old']);
+  });
+
+  it('remembers when each Lesson was opened across restarts of the window', async () => {
+    const h = await createHarness();
+    h.config.set('audioCacheLimit', limitOf(2 * mp3Bytes));
+    const first = await openCourse(h, 'first', 1);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    const second = await openCourse(h, 'second', 1);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    // The first Course is opened again: its sound was made earlier, but opened last.
+    await h.core.openCourse(first);
+    h.player.ready(false);
+    await h.settle();
+    h.clock.advance(60_000);
+
+    h.restart();
+    const third = await h.folder('third', lessons(1));
+    await h.core.openCourse(third);
+    h.player.ready(false);
+    await finishAll(h);
+
+    expect(await kept(first)).toEqual(['01']);
+    expect(await kept(second)).toEqual([]);
+    expect(await kept(third)).toEqual(['01']);
+  });
+});
+
+describe('keeping the audio cache under its limit in the background', () => {
+  it('never makes the sound of the opened Lesson wait for the deleting', async () => {
+    const h = await createHarness();
+    h.config.set('audioCacheLimit', limitOf(4 * mp3Bytes));
+    const course = await openCourse(h, 'course', 8);
+    await finishAll(h);
+    expect(await kept(course)).toEqual(['01', '02', '03', '04']);
+    h.clock.advance(60_000);
+    const held = h.holdRemovals();
+
+    h.core.playLesson('06 Lesson.mp4');
+    await h.settle();
+    await h.converter.requests[4]?.succeed();
+    await held.reached;
+    await h.settle();
+
+    // The deleting waits on the slow disk; the Lesson's sound is on its way to the player.
+    expect(h.player.sent.filter((command) => command.type === 'soundReady')).toHaveLength(2);
+    expect(await kept(course)).toEqual(['01', '02', '03', '04', '06']);
+    held.release();
+    await h.settle();
+    expect(await kept(course)).toEqual(['02', '03', '04', '06']);
+  });
+
+  it('logs one line, and shows nothing, when sound cannot be deleted', async () => {
+    const h = await createHarness();
+    h.config.set('audioCacheLimit', 0);
+    const course = await openCourse(h, 'course', 6);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    h.failRemovals('EBUSY: resource busy or locked');
+
+    h.core.playLesson('06 Lesson.mp4');
+    await finishAll(h);
+
+    // Four old files could not go; the learner is not bothered, and the Lesson plays.
+    expect(await kept(course)).toEqual(['01', '02', '03', '04', '06']);
+    expect(h.player.sent.filter((command) => command.type === 'soundReady')).toHaveLength(2);
+    expect(h.ui.messages).toEqual([]);
+    const lines = h.logger.entries.filter((entry) => entry.message.includes('audio cache'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 'warn' });
+    expect(lines[0]?.message).toContain('EBUSY');
+    expect(lines[0]?.message).toContain('3 more');
   });
 });
 
