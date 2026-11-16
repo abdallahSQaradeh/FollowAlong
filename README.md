@@ -31,6 +31,9 @@ group beside your code. The folder you have open in VS Code stays your Practice 
 Press `Ctrl+'` then `L` (or run **FollowAlong: Go to Lesson…**) to jump to any Lesson of the open Course.
 The list is grouped by Section, and typing a Section name narrows it to that Section.
 
+Press `Ctrl+'` then `V` (or run **FollowAlong: Toggle video**) to collapse the video and get space for
+code. Press it again to bring the video back in the same spot, at the same place.
+
 ## Develop
 
 Read `AGENTS.md` and `CODING_STANDARDS.md` first. `npm run build` bundles the extension into
