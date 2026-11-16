@@ -237,69 +237,66 @@ async function aClickOnThePicture(
   const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
   assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
   const wasPlaying = lastPlayState(events, lessonId) === 'played';
-  const activeEditors: (vscode.TextDocument | undefined)[] = [];
-  const watch = vscode.window.onDidChangeActiveTextEditor((editor) => {
-    activeEditors.push(editor?.document);
-  });
+  // Keyboard focus in the player, where a learner's click leaves it. The click below comes from
+  // the DevTools protocol, not from the OS, so it cannot be relied on to move VS Code's focus.
+  await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+  await waitFor('the player to have the focus', () =>
+    vscode.window.activeTextEditor === undefined ? true : undefined,
+  );
   const from = events.length;
-  try {
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-    const pages = () => browser.contexts().flatMap((context) => context.pages());
-    // The player page lives in an out-of-process frame that the DevTools connection does not
-    // list, so the click goes to the workbench page at the middle of the player's <iframe>: the
-    // middle of the picture. Chromium routes it into the player as real input.
-    const player = await waitForAsync('the player <iframe> in the VS Code window', async () => {
-      for (const page of pages()) {
-        const frames = page.locator('iframe[src^="vscode-webview:"]');
-        if ((await frames.count().catch(() => 0)) === 1) {
-          const box = await frames.boundingBox();
-          if (box !== null && box.width > 0 && box.height > 0) {
-            return { page, box };
-          }
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  const pages = () => browser.contexts().flatMap((context) => context.pages());
+  // The player page lives in an out-of-process frame that the DevTools connection does not
+  // list, so the click goes to the workbench page at the middle of the player's <iframe>: the
+  // middle of the picture. Chromium routes it into the player as real input.
+  const player = await waitForAsync('the player <iframe> in the VS Code window', async () => {
+    for (const page of pages()) {
+      const frames = page.locator('iframe[src^="vscode-webview:"]');
+      if ((await frames.count().catch(() => 0)) === 1) {
+        const box = await frames.boundingBox();
+        if (box !== null && box.width > 0 && box.height > 0) {
+          return { page, box };
         }
       }
-      return undefined;
-    }).catch((error: unknown) => {
-      // Say which pages there were, so a failure in CI can be read without a rerun.
-      const seen = pages().map((page) => page.url() || '(no URL)');
-      throw new Error(`${String(error)}; pages seen: ${seen.join(', ') || 'none'}`);
-    });
-    await player.page.mouse.click(
-      player.box.x + player.box.width / 2,
-      player.box.y + player.box.height / 2,
-    );
-
-    const expected = wasPlaying ? 'paused' : 'played';
-    await waitFor(`the player to report ${expected} after the click`, () =>
-      events
-        .slice(from)
-        .find(
-          (event) =>
-            event.lessonId === lessonId &&
-            event.type === expected &&
-            (expected === 'played' || event.byUser === true),
-        ),
-    );
-    say(
-      wasPlaying
-        ? 'a click on the picture pauses the Lesson, as the learner’s pause'
-        : 'a click on the picture starts the Lesson VS Code would not start by itself: it is a user gesture (D3)',
-    );
-    await waitFor('the player to post userInteracted', () =>
-      events.slice(from).find((event) => event.type === 'userInteracted'),
-    );
-    await waitFor('focus to come back to the code', () =>
-      activeEditors.at(-1) === code ? true : undefined,
-    );
-  } finally {
-    watch.dispose();
-  }
-  assert.ok(
-    activeEditors.includes(undefined),
-    'the click never made the player the active editor, so focus return was not exercised',
+    }
+    return undefined;
+  }).catch((error: unknown) => {
+    // Say which pages there were, so a failure in CI can be read without a rerun.
+    const seen = pages().map((page) => page.url() || '(no URL)');
+    throw new Error(`${String(error)}; pages seen: ${seen.join(', ') || 'none'}`);
+  });
+  await player.page.mouse.click(
+    player.box.x + player.box.width / 2,
+    player.box.y + player.box.height / 2,
   );
-  assert.equal(vscode.window.activeTextEditor?.document, code, 'focus did not come back');
-  say('the click moved focus to the player, and focus came back to the code editor');
+
+  const expected = wasPlaying ? 'paused' : 'played';
+  await waitFor(`the player to report ${expected} after the click`, () =>
+    events
+      .slice(from)
+      .find(
+        (event) =>
+          event.lessonId === lessonId &&
+          event.type === expected &&
+          (expected === 'played' || event.byUser === true),
+      ),
+  );
+  say(
+    wasPlaying
+      ? 'a click on the picture pauses the Lesson, as the learner’s pause'
+      : 'a click on the picture starts the Lesson VS Code would not start by itself: it is a user gesture (D3)',
+  );
+  await waitFor('the player to post userInteracted', () =>
+    events.slice(from).find((event) => event.type === 'userInteracted'),
+  );
+  await waitFor('focus to come back to the code', () =>
+    vscode.window.activeTextEditor?.document === code ? true : undefined,
+  ).catch((error: unknown) => {
+    const active = vscode.window.activeTextEditor?.document.uri.toString() ?? 'none';
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab?.label ?? 'none';
+    throw new Error(`${String(error)}; active text editor: ${active}; active tab: ${tab}`);
+  });
+  say('with focus in the player, the click handed it back to the code editor');
 }
 
 /**
