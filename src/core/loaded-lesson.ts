@@ -17,7 +17,6 @@ import {
   autoPauseOff,
   autoPauseView,
   readAutoPauseMode,
-  readResumeAfterMs,
   stepAutoPause,
   type AutoPauseEffect,
   type AutoPauseInput,
@@ -236,6 +235,8 @@ function cycledRate(rate: number): number {
 
 /** The settings' defaults, in seconds (spec #12, Settings). */
 const defaultStepSeconds = { short: 5, long: 30 } as const;
+/** The Quiet period of auto-pause's `pauseAndResume`, by default (spec #12, story 99). */
+const defaultQuietPeriodSeconds = 2;
 const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
 
 /** What the player reported about the current Lesson since its last `load`. */
@@ -286,12 +287,18 @@ function playSource(playback: Playback): PlaySource {
 function afterPause(
   playback: Playback,
   byUser: boolean,
-): { readonly playback: Playback; readonly tellToPressPlay: boolean } {
+): {
+  readonly playback: Playback;
+  readonly tellToPressPlay: boolean;
+  /** Whether the pause answers a `play` asked for (autoplay, the command, auto-pause): refused. */
+  readonly playRefused: boolean;
+} {
   const refused = !byUser;
   const autoplayRefused = playback.awaitingAutoplay && refused;
   const commandRefused = playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
   return {
     tellToPressPlay: autoplayRefused || commandRefused,
+    playRefused: refused && (playback.awaitingAutoplay || playback.awaitingPlayAnswer),
     playback: {
       ...freshPlayback(false),
       toldToPressPlay: playback.toldToPressPlay || commandRefused,
@@ -397,12 +404,12 @@ export function createLoadedLesson(
     startQuiet: () => {
       quietTimer?.dispose();
       // Read when it starts, so a changed setting counts from the next edit.
-      quietTimer = clock.schedule(readResumeAfterMs(config), () => {
+      quietTimer = clock.schedule(quietPeriodMs(), () => {
         quietTimer = undefined;
         feedAutoPause({
           type: 'quiet',
-          canResume:
-            current !== undefined && playerReady && currentLoad !== undefined && !playback.playing,
+          canResume: canResumeWithoutRewind(),
+          playAsked: playback.awaitingPlayAnswer,
         });
       });
     },
@@ -410,9 +417,7 @@ export function createLoadedLesson(
       quietTimer?.dispose();
       quietTimer = undefined;
     },
-    resume: () => {
-      resume(0, 'autoResume');
-    },
+    resume: resumeWithoutRewind,
   };
 
   /** Feeds auto-pause one input, and does what it answers. */
@@ -730,9 +735,7 @@ export function createLoadedLesson(
         // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         const after = afterPause(playback, event.byUser);
         feedAutoPause(
-          event.byUser
-            ? { type: 'learnerPaused' }
-            : { type: 'paused', refused: playback.awaitingPlayAnswer || playback.awaitingAutoplay },
+          event.byUser ? { type: 'learnerPaused' } : { type: 'paused', refused: after.playRefused },
         );
         playback = after.playback;
         if (after.tellToPressPlay) {
@@ -1167,6 +1170,24 @@ export function createLoadedLesson(
     return positiveSetting(config.get('resumeRewind'), 0);
   }
 
+  /** Whether an automatic resume can play the Lesson now: a ready page holds it, paused. */
+  function canResumeWithoutRewind(): boolean {
+    return current !== undefined && playerReady && currentLoad !== undefined && !playback.playing;
+  }
+
+  /** An automatic resume, such as auto-pause's: no rewind (story 103), and silent. */
+  function resumeWithoutRewind(): void {
+    // Silent: an automatic resume must not tell the learner anything they did not ask for.
+    if (canResumeWithoutRewind()) {
+      resume(0, 'autoResume');
+    }
+  }
+
+  /** The Quiet period of auto-pause in ms, read when it starts; 2 s when unset or invalid. */
+  function quietPeriodMs(): number {
+    return positiveSetting(config.get('autoPauseResumeAfter'), defaultQuietPeriodSeconds) * 1000;
+  }
+
   /** Sends `play` for `by`, after a `seekBy` back of `rewind` seconds when that is above 0. */
   function resume(rewind: number, by: Playback['playAskedBy']): void {
     const wasAwaiting = playback.awaitingPlayAnswer;
@@ -1225,13 +1246,7 @@ export function createLoadedLesson(
     leave,
     unload,
     playPause,
-    resumeWithoutRewind() {
-      // Silent: an automatic resume must not tell the learner anything they did not ask for.
-      if (current === undefined || !playerReady || playback.playing) {
-        return;
-      }
-      resume(0, 'autoResume');
-    },
+    resumeWithoutRewind,
     seekStep,
     speedStep(direction) {
       if (hasPlayableLesson('Speed step')) {

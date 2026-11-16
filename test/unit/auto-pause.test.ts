@@ -288,6 +288,19 @@ describe('auto-pause while typing', () => {
       expect(edit(h)).toEqual([{ type: 'pause' }]);
     });
 
+    it('keeps the play-through when the player page reloads and the Lesson plays on', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.player.emit({ type: 'played', lessonId });
+      h.player.ready();
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([]);
+    });
+
     it('acts from the moment the learner turns it on, mid-Lesson', async () => {
       const h = await createHarness();
       await openLesson(h, 'off');
@@ -695,6 +708,17 @@ describe('pause and resume after a quiet period', () => {
 
     expect(edit(h)).toEqual([]);
     expect(after(h, 10_000)).toEqual([]);
+  });
+
+  it('leaves the learner’s play to play through when it is on its way as the quiet period ends', async () => {
+    const h = await createHarness();
+    await pausedByTyping(h);
+    h.clock.advance(1500);
+    h.core.playPause();
+
+    expect(after(h, 1000)).toEqual([]);
+    h.player.emit({ type: 'played', lessonId });
+    expect(edit(h)).toEqual([]);
   });
 
   it('leaves a plain pause when the player has not reported the pause by the end of the quiet period', async () => {

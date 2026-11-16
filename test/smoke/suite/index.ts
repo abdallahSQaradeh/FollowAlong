@@ -577,7 +577,7 @@ async function typingPausesTheLesson(hooks: TestHooks, code: vscode.TextDocument
 }
 
 /** The quiet period setting of `pauseAndResume`, under `followalong.`. */
-const resumeAfterSetting = 'autoPauseResumeAfter';
+const quietPeriodSetting = 'autoPauseResumeAfter';
 
 /**
  * The two auto-pause settings live side by side in VS Code's configuration (routed note on #60):
@@ -590,20 +590,20 @@ async function theAutoPauseSettingsReadBack(): Promise<string> {
   const settings = () => vscode.workspace.getConfiguration('followalong');
   assert.equal(settings().inspect('autoPause')?.defaultValue, 'off', 'autoPause registers');
   assert.equal(
-    settings().inspect(resumeAfterSetting)?.defaultValue,
+    settings().inspect(quietPeriodSetting)?.defaultValue,
     2,
-    `${resumeAfterSetting} registers with its default beside autoPause`,
+    `${quietPeriodSetting} registers with its default beside autoPause`,
   );
   await settings().update('autoPause', 'pauseAndResume', vscode.ConfigurationTarget.Global);
-  await settings().update(resumeAfterSetting, 5, vscode.ConfigurationTarget.Global);
+  await settings().update(quietPeriodSetting, 5, vscode.ConfigurationTarget.Global);
   try {
     assert.equal(settings().get('autoPause'), 'pauseAndResume', 'autoPause reads back');
-    assert.equal(settings().get(resumeAfterSetting), 5, `${resumeAfterSetting} reads back`);
+    assert.equal(settings().get(quietPeriodSetting), 5, `${quietPeriodSetting} reads back`);
   } finally {
-    await settings().update(resumeAfterSetting, undefined, vscode.ConfigurationTarget.Global);
+    await settings().update(quietPeriodSetting, undefined, vscode.ConfigurationTarget.Global);
     await settings().update('autoPause', undefined, vscode.ConfigurationTarget.Global);
   }
-  return `followalong.autoPause and followalong.${resumeAfterSetting} both register and read back`;
+  return `followalong.autoPause and followalong.${quietPeriodSetting} both register and read back`;
 }
 
 /** The text of the play/pause status bar item, with its icons as `$(name)`. */

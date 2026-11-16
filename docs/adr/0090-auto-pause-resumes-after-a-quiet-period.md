@@ -25,13 +25,17 @@ The setting's name is ADR 0089.
   their own pause, on a fresh Lesson, or after a reopen stays `armed`; auto-pause's own resume and
   an autoplay end its pause as `armed` too, so the next edit pauses.
 - **`overridden` lasts until the next pause of any kind**: the learner's, one the player reports
-  (a refused play, for one), the Lesson's end, or the learner leaving it. Then it is `armed`.
+  (a refused play, for one), the Lesson's end, or the learner leaving it. Then it is `armed`. A
+  move or reload that lets the Lesson play on in the new page is no pause, so it keeps the
+  Play-through (review of #60).
 - **It resumes only from the page that holds the pause.** A move (ADR 0049), a reload, or a
   collapse (ADR 0092, which leaves no page at all) replaces that page. A new page has had no click,
   so VS Code would refuse a `play` there (#12 D3). So the auto-pause is dropped rather than
   deferred: the Lesson stays paused as a plain pause, without "Paused (typing)", and a restored or
   moved page loads it paused. A quiet period that ends while no ready page holds the Lesson, or
-  before the player has reported the pause, is dropped the same way.
+  before the player has reported the pause, is dropped the same way. One that ends while the
+  learner's `play` is on its way does nothing: that play's answer makes the Play-through, or, if
+  VS Code refuses it, a plain pause (review of #60).
 - **A refused auto-resume ends the auto-pause.** The pause that answers it is a plain pause, and
   the learner is told once to press play in the player, as for any refused play (ADR 0052,
   Consequences).
