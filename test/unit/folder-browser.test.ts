@@ -290,8 +290,8 @@ describe('Browse… and the Course that is open', () => {
   it('plays a video of the open Course without opening it again, keeping its Progress', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
-      'React/01 Intro.mp4': 'v',
-      'React/02 State.mp4': 'v',
+      'React/01 Intro.webm': 'v',
+      'React/02 State.webm': 'v',
     });
     h.config.set('coursesRoots', [learning]);
     await h.core.openCourse(join(learning, 'React'));
@@ -300,26 +300,26 @@ describe('Browse… and the Course that is open', () => {
     const draws = h.ui.lessonTreeDraws;
     const { picking } = await walkFromPicker(h, 'Learning', 'React');
 
-    h.ui.choose('02 State.mp4');
+    h.ui.choose('02 State.webm');
     await picking;
 
     expect(h.player.sent).toMatchObject([
-      { type: 'load', lessonId: '02 State.mp4', autoplay: true },
+      { type: 'load', lessonId: '02 State.webm', autoplay: true },
     ]);
     expect(h.ui.lessonTreeDraws).toBeLessThanOrEqual(draws + 1);
-    expect(h.ui.selectedLesson).toBe('02 State.mp4');
+    expect(h.ui.selectedLesson).toBe('02 State.webm');
   });
 
   it('keeps what plays when the learner opens the open Course again as a Course', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
-      'React/01 Intro.mp4': 'v',
-      'React/02 State.mp4': 'v',
+      'React/01 Intro.webm': 'v',
+      'React/02 State.webm': 'v',
     });
     h.config.set('coursesRoots', [learning]);
     await h.core.openCourse(join(learning, 'React'));
     h.player.ready();
-    h.core.playLesson('02 State.mp4');
+    h.core.playLesson('02 State.webm');
     h.player.clearSent();
     const { picking } = await walkFromPicker(h, 'Learning', 'React');
 
@@ -327,7 +327,7 @@ describe('Browse… and the Course that is open', () => {
     await picking;
 
     expect(h.player.sent).toEqual([]);
-    expect(h.ui.selectedLesson).toBe('02 State.mp4');
+    expect(h.ui.selectedLesson).toBe('02 State.webm');
   });
 });
 
