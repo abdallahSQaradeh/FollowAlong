@@ -4,7 +4,7 @@
 a Course. `createFollowAlong` (`src/core/follow-along.ts`) decides when to save and where a Lesson
 starts. Spec #12 fixes the broad rules (a progress file in `.followalong\`, keyed by Lesson path,
 saved every 5 s and on pause, seek, switch, close and window close, resumed paused at
-`max(0, position − 5 s)`, merged per Lesson with the newest winning). This ADR records the details
+`max(0, position − 5 s)` (0:00 for a done Lesson saved in its last 5 %, ADR 0030), merged per Lesson with the newest winning). This ADR records the details
 it leaves open. #26 (done and in-progress rules), #27 (two windows) and #28 (the tree) build on
 them.
 

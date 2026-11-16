@@ -90,15 +90,65 @@ describe('a Lesson is done in its last 5 % or at its end', () => {
     expect(savedStatus(course)).toBe('done');
   });
 
-  it('marks a Lesson done when it plays to its end', async () => {
+  it('marks a Lesson done when the player reports its end, wherever the playhead was', async () => {
     const h = await createHarness();
     const course = await openCourse(h);
-    playFor(h, 12, 575);
-    h.player.emit({ type: 'timeUpdate', lessonId, position: 575, duration });
+    playFor(h, 12, 200);
     h.player.emit({ type: 'ended', lessonId });
     await h.settle();
 
     expect(savedStatus(course)).toBe('done');
+  });
+
+  it('marks a Lesson done at exactly 95 % and not a moment before', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    seekTo(h, 569.9);
+    await h.settle();
+    expect(savedStatus(course)).toBe('notStarted');
+    seekTo(h, 570);
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('done');
+  });
+
+  it('keeps a Lesson that ended done when the learner steps back into it', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    playFor(h, 12, 588);
+    h.player.emit({ type: 'ended', lessonId });
+    seekTo(h, 300);
+    playFor(h, 3, 300);
+    pause(h);
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('done');
+  });
+
+  it('counts play at 2× and in a throttled page, where the playhead moves 2 s between reports', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    h.player.emit({ type: 'played', lessonId });
+    for (let tick = 0; tick <= 5; tick += 1) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position: tick * 2, duration });
+    }
+    pause(h);
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('inProgress');
+  });
+
+  it('does not count a step forward as play', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    h.player.emit({ type: 'played', lessonId });
+    for (let tick = 0; tick <= 4; tick += 1) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position: tick * 5, duration });
+    }
+    pause(h);
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('notStarted');
   });
 
   it('marks a Lesson done when the learner seeks into its last 5 % before it ever played', async () => {
@@ -127,6 +177,18 @@ describe('a Lesson is done in its last 5 % or at its end', () => {
     const course = await openCourse(h);
     playFor(h, 12, 590);
     pause(h);
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 0 });
+  });
+
+  it('starts a Lesson that ended at 0:00 even when the player never knew its length', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    h.player.emit({ type: 'played', lessonId });
+    for (let tick = 0; tick <= 12; tick += 1) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position: 300 + tick, duration: 0 });
+    }
+    h.player.emit({ type: 'ended', lessonId });
 
     expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 0 });
   });

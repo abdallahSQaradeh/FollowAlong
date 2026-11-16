@@ -15,17 +15,19 @@ Progress store (`progress.ts`) applies them when something is recorded; the Load
 - **Done is sticky.** Seeking back, playing on or replaying never clears it; only the learner
   un-marks it (#29/#30). `statusAfter` never returns a lower state than the one before.
 - **A done Lesson saved in its last 5 % starts at 0:00.** Any other starts 5 s before its saved
-  position (ADR 0010). At `ended` the saved position is the Lesson's length.
+  position (ADR 0010). At `ended` the saved position is the Lesson's length. A done Lesson whose
+  length was never known (0: only `ended` could make it done) starts at 0:00 too.
 
 ## What counts as 10 s of play
 
 Seconds of picture played, not wall-clock time, summed from the player's `timeUpdate`s while it
-plays: the playhead's move since the last one counts when it is forward and at most 2 s. The
-player reports about every 250 ms (a little more at 2× or in the background), so a bigger move is a
-seek, which plays nothing. Pausing, seeking and loading start the count again from the next
-`timeUpdate`. The seconds counted belong to one load of the Lesson and are not saved: 6 s today and
+plays: the playhead's move since the last one counts when it is forward and at most 3 s. The
+player reports about every 250 ms (a little more at 2× or in a background page, up to about 2 s of
+picture), so a bigger move is a seek, which plays nothing; a 5 s step forward is not play. Pausing, seeking and loading start the count again from the next
+`timeUpdate`. The seconds counted belong to the Lesson while the learner has it open (a player page that
+reloads keeps them) and are not saved: 6 s today and
 6 s tomorrow do not make a Lesson in progress. Source: the ticket (10 s of play) and the #26
-acceptance criteria (scripted `timeUpdate` events); the 2 s limit is ours.
+acceptance criteria (scripted `timeUpdate` events); the 3 s limit is ours.
 
 ## The file
 
@@ -47,18 +49,26 @@ could write over it.
 ## A seek while the start seek is pending
 
 After a `load` with `startAt` > 0, the next `seeked` is FollowAlong's own start seek only when it
-lands within 0.5 s of `startAt`. Elsewhere it is the learner's, and it is recorded (and saved) like
+lands within 0.5 s of `startAt`; `seeked` carries no position, so the position is the `timeUpdate` the
+player posts just before it (HTML's seek steps fire `timeupdate`, then `seeked`; ADR 0010). Elsewhere it is the learner's, and it is recorded (and saved) like
 any seek, so a seek into the last 5 % marks the Lesson done. Before, any first `seeked` was
 swallowed: when the learner sought while a slow start seek was pending, Chromium dropped the start
 seek and fired one `seeked` at the learner's position, which was lost (review of #25). This
 replaces gate review H1's rule ("wherever it lands"), whose cause was a player that did not land
 the start seek on its target. ADR 0006 fixed that, so the rule is no longer needed.
 
+A start seek that landed more than 0.5 s off would be taken for the learner's and saved there,
+drifting the Lesson 5 s back at each reopen. The player lands it on its target (ADR 0006), so this
+is a player bug to fix there, not to hide here.
+
 ## Considered options
 
 - **Tag the start seek in the player** (a field on `seeked`). Rejected for now: it changes the
   protocol and Seam 2, and `webm-source` sets `currentTime` itself when it re-streams, so the player
   cannot tell its own seeks apart cheaply.
+- **Keep a done mark across two windows in `mergeProgress` (the higher status wins).** Rejected
+  here: the learner's un-mark (#29/#30) would then be undone by an older copy. #27 settles it with
+  the re-read before each write.
 - **Raise the file version to 2.** Rejected: see _The file_.
 - **Count 10 s of wall-clock play.** Rejected: at 2× it is 20 s of picture, and the rules are
   tested with scripted `timeUpdate`s.

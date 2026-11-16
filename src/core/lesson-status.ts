@@ -16,10 +16,10 @@ export type StoredStatus = 'inProgress' | 'done';
 export type LessonStatus = 'notStarted' | StoredStatus;
 
 /** How long a Lesson plays before it counts as in progress, in seconds of picture played. */
-export const inProgressAfterSeconds = 10;
+const inProgressAfterSeconds = 10;
 
 /** The fraction of a Lesson's length at which the Lesson is done. */
-export const doneAtFraction = 0.95;
+const doneAtFraction = 0.95;
 
 /** What the player reported since the Lesson was last recorded. */
 export interface PlayheadSeen {
@@ -49,7 +49,15 @@ export function statusAfter(before: LessonStatus, seen: PlayheadSeen): LessonSta
 }
 
 /** How far before a saved position a Lesson starts again (spec #12, Resume), in seconds. */
-export const secondsBeforeSavedPosition = 5;
+const secondsBeforeSavedPosition = 5;
+
+/**
+ * Whether a done Lesson was saved at its end: in its last 5 %, or, when its length was never
+ * known (0), at all, since only the player's `ended` could make such a Lesson done (ADR 0030).
+ */
+function endedOrNearEnd(saved: { readonly position: number; readonly duration: number }): boolean {
+  return saved.duration === 0 || inLastFivePercent(saved.position, saved.duration);
+}
 
 /**
  * Where a Lesson starts when the learner comes back to it. A done Lesson saved in its last 5 %
@@ -59,10 +67,7 @@ export function startPosition(
   saved: { readonly position: number; readonly duration: number } | undefined,
   status: LessonStatus,
 ): number {
-  if (
-    saved === undefined ||
-    (status === 'done' && inLastFivePercent(saved.position, saved.duration))
-  ) {
+  if (saved === undefined || (status === 'done' && endedOrNearEnd(saved))) {
     return 0;
   }
   return Math.max(0, saved.position - secondsBeforeSavedPosition);
