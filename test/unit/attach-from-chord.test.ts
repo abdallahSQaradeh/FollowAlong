@@ -82,6 +82,11 @@ describe('attaching a Resource from the chord', () => {
     await attached;
 
     expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+    // The tree shows the other Course, so the learner is told where the Resource went.
+    expect(h.ui.messages).toContainEqual({
+      severity: 'info',
+      text: 'FollowAlong attached “notes.md” to “One” in “course”, which is no longer open.',
+    });
     await h.core.openCourse(join(notes, '..'));
     expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
   });

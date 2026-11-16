@@ -175,9 +175,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         level: 'warn',
         message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
       });
+      // The Course is named: after a switch, "this Course" would read as the one open now.
       ui.showMessage({
         severity: 'warning',
-        text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+        text: `FollowAlong can't update the Resources file of “${basename(course.folder)}” (it is damaged or from a newer version). Nothing was changed.`,
       });
     };
     const attach = async (): Promise<void> => {
@@ -206,6 +207,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       if (openedCourse?.folder === course.folder) {
         resources = next;
         ui.showLessonTree(buildLessonTree(openedCourse, resources));
+      } else {
+        // The tree shows another Course: without a word the learner might attach the file again.
+        const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+        ui.showMessage({
+          severity: 'info',
+          text: `FollowAlong attached “${basename(absolutePath)}” to “${lesson?.title ?? lessonId}” in “${basename(course.folder)}”, which is no longer open.`,
+        });
       }
     };
     const done = attaching.then(attach, attach);
@@ -507,6 +515,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
       // learner means the Lesson they were watching, even if the next one starts meanwhile. Its
       // Course is fixed too, because another Course can hold a Lesson with the same id.
+      // The Loaded Lesson is always one of the open Course's: `open` leaves it before switching.
       const lesson = loaded.lesson();
       const course = openedCourse;
       const data = courseData;

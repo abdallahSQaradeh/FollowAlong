@@ -292,7 +292,7 @@ describe('attaching a file Resource to a Lesson', () => {
 
   const cannotUpdate: UserMessage = {
     severity: 'warning',
-    text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+    text: "FollowAlong can't update the Resources file of “Course” (it is damaged or from a newer version). Nothing was changed.",
   };
 
   it('opens the Course without Resources when the Resources file is damaged', async () => {
@@ -369,8 +369,36 @@ describe('attaching from the tree’s “+” without a file yet', () => {
     await attached;
 
     expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+    expect(h.ui.messages).toContainEqual({
+      severity: 'info',
+      text: 'FollowAlong attached “notes.md” to “One” in “First”, which is no longer open.',
+    });
     await h.core.openCourse(first);
     expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+  });
+
+  it('writes nothing when the learner closes the dialog without a file', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { '01 One.webm': 'v', 'notes.md': '# notes' });
+    await h.core.openCourse(course);
+
+    const attached = h.core.attachResource('01 One.webm');
+    h.ui.answerFileDialog(undefined);
+    await attached;
+
+    expect(await h.listFiles(course)).toEqual(['01 One.webm', 'notes.md']);
+    expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+  });
+
+  it('opens no dialog with no Course open, or for a Lesson the open Course does not have', async () => {
+    const h = await createHarness();
+    await h.core.attachResource('01 One.webm');
+    const course = await h.folder('Course', { '01 One.webm': 'v' });
+    await h.core.openCourse(course);
+    await h.core.attachResource('missing.webm');
+
+    expect(h.ui.fileDialogs).toBe(0);
+    expect(await h.listFiles(course)).toEqual(['01 One.webm']);
   });
 });
 
@@ -398,7 +426,7 @@ describe('attaching to a read-only Course whose fallback Resources file cannot b
     expect(h.ui.messages).toEqual([
       {
         severity: 'warning',
-        text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+        text: "FollowAlong can't update the Resources file of “Read-only course” (it is damaged or from a newer version). Nothing was changed.",
       },
     ]);
   });

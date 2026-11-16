@@ -18,9 +18,11 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   bar. It needs three things from the Course side, passed in as an `OpenCourseView`: the open Course's
   Progress, the Lesson after a given Lesson in Course order, and what to do when the Next overlay is
   clicked.
-- **The seam is internal.** `createFollowAlong(ports)` and its `FollowAlong` interface do not
-  change. Seam 1 tests still reach both modules only through it, and no test imports
-  `loaded-lesson.ts` (CODING_STANDARDS.md, _Tests_). The split itself moved no test. The 294 Seam 1
+- **The seam is internal.** The split leaves `createFollowAlong(ports)` and its `FollowAlong`
+  interface as they were; the one change to that interface at CP1 is the optional `absolutePath`
+  of `attachResource` (below), which every existing caller satisfies. `ports.ts` and the player
+  protocol do not change. Seam 1 tests still reach both modules only through `createFollowAlong`,
+  and no test imports `loaded-lesson.ts` (CODING_STANDARDS.md, _Tests_). The split itself moved no test. The 294 Seam 1
   tests that passed before it passed after it, with unchanged bodies.
 - **A Lesson is compared by identity, not by its id, inside the open Course.** Another Course can
   hold a Lesson with the same id (`01.mp4`).
@@ -36,6 +38,9 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
       (this revises ADR 0012's "the file dialog stays in the adapter" for this route). A caller
       that passes a path behaves as before. With no Course open, or an id the open Course does not
       have, no dialog opens now (before, it opened and the attach was then dropped).
+  - An attach that lands in a Course that is no longer open says so, naming the Lesson and the
+    Course, because the tree shows another Course and the learner might attach the file again.
+    The warning for an unusable Resources file names its Course for the same reason.
   - Each fix has a red-then-green Seam 1 test. With the narrower player root of ADR 0025, they are
     CP1's only behaviour changes.
 
