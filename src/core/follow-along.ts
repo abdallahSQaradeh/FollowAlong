@@ -14,8 +14,8 @@ import {
 } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
-import { buildCoursePicker } from './course-picker.js';
-import { scanCourses } from './course-scanner.js';
+import { createCourseScans } from './course-list-cache.js';
+import { showCoursePicker } from './live-course-picker.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { locateCourse } from './locate-course.js';
 import { buildLessonPicker } from './lesson-picker.js';
@@ -41,7 +41,7 @@ import {
 import { readFolderListing } from './folder-listing.js';
 import { openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
-import { readRecent, recentCourses, recordOpened, removeRecent } from './recent-courses.js';
+import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
@@ -579,6 +579,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** The Courses roots setting entries, and the roots, the learner was told about in this window. */
   const warnedRoots = new Set<string>();
   const warnedUnreadable = new Set<string>();
+  const courseScans = createCourseScans(ports);
   /**
    * Opens run one after another, so the one asked for last is the Course left open. An open that
    * a later one superseded while it waited, or while it read its folder, is dropped when it gets
@@ -693,25 +694,23 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   async function pickCourse(): Promise<void> {
     const { roots, notAbsolute } = readCoursesRoots(config);
     warnNotAbsolute(notAbsolute);
-    const recent = readRecent(storage.global);
-    // A Recent Course is a known Course: listed as itself, not as its Sections (ADR 0032).
-    const scan = await scanCourses(ports, roots, recent);
-    // Once per window: a drive that stays unplugged would otherwise be named at every open.
-    for (const root of scan.unreadableRoots.filter((unread) => !warnedUnreadable.has(unread))) {
-      warnedUnreadable.add(root);
-      ui.showMessage({
-        severity: 'warning',
-        text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
-      });
-    }
-    const intent = await ui.pick(
-      buildCoursePicker({
-        hasRoots: roots.length > 0,
-        courses: scan.courses,
-        recent: await recentCourses(ports, recent, scan.courses),
-        openFolder: openedCourse?.folder,
-      }),
-    );
+    const intent = await showCoursePicker({
+      ports,
+      scans: courseScans,
+      roots,
+      recent: readRecent(storage.global),
+      openFolder: () => openedCourse?.folder,
+      warnUnreadableRoot(root) {
+        // Once per window: a drive that stays unplugged would otherwise be named at every open.
+        if (!warnedUnreadable.has(root)) {
+          warnedUnreadable.add(root);
+          ui.showMessage({
+            severity: 'warning',
+            text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
+          });
+        }
+      },
+    });
     switch (intent?.type) {
       case 'openCourse':
         await openInTurn(intent.folder, false);
