@@ -60,3 +60,6 @@ open. These are the choices.
   Seam 1 reaches it (CODING_STANDARDS: adapters stay thin).
 - **Show the items for a Course as soon as it is open, with no Lesson.** Rejected: the spec says
   they are shown only while a Lesson is loaded, and with no Lesson every item would do nothing.
+
+Ticket #46 added a fifth item after back: the zoom level, shown only while the player is zoomed; a
+click runs the core command `zoomReset` (ADR 0037).

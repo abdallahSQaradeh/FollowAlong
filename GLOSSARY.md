@@ -36,6 +36,10 @@ _Avoid_: Playlist order, queue
 The "Next: <title>" button the player shows over the last frame when a Lesson ends and another follows. Clicking it loads that Lesson; nothing moves on without the click. The last Lesson of a Course has none.
 _Avoid_: Autoplay next, up next, end card
 
+**Lesson tree**:
+The FollowAlong view in the activity bar: the open Course's Sections and Lessons in Course order, each Lesson with its state (✓ done, ◐ in progress, ○ not started) and, when in progress, its position and length (`12:30 / 40:05`); each Section with its done/total (`3/12`); and the Course's done/total and percent (`27/140 · 19%`) beside the Course's name at the top. The Lesson the learner is on is highlighted and revealed.
+_Avoid_: Course library view, outline, playlist
+
 **Wrapper folder**:
 A folder that holds no Lessons of its own and only one other folder with Lessons. Inside a Course it is not shown as a Section: its content is shown in its place. Around a Course it gives the Course its name, the outermost wrapper winning.
 _Avoid_: Container folder, parent folder
@@ -115,6 +119,10 @@ _Avoid_: Hotkey, shortcut, single key
 **Loaded Lesson**:
 The Lesson the player holds: it is set when the learner picks a Lesson or opens a Course, and gone when the learner closes the player. Controls that only make sense with a Lesson, such as the status bar items, show only while one is loaded.
 _Avoid_: Active Lesson, current video
+
+**Zoom**:
+Showing an area of the Lesson's picture enlarged to fill the player, so the learner can read the instructor's code. It belongs to the player, not to a Lesson: it stays while the Lesson plays and when the next one loads, until the learner resets it.
+_Avoid_: Magnify, crop, close-up
 
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.

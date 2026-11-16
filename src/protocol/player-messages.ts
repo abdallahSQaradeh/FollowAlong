@@ -43,7 +43,18 @@ export type PlayerCommand =
    * Shows the "Next: <title>" overlay over the picture of the Lesson that has ended (ADR 0019). The
    * player hides it again when a Lesson loads, plays or seeks.
    */
-  | { readonly type: 'showNext'; readonly title: string };
+  | { readonly type: 'showNext'; readonly title: string }
+  /**
+   * Changes the picture's zoom (ADR 0037). The player reports `zoomChanged` when the level changes:
+   * a reset at 1× reports nothing.
+   */
+  | { readonly type: 'zoom'; readonly action: ZoomAction };
+
+/**
+ * What a `zoom` command does. `reset` shows the whole picture (the status bar item); #48 adds
+ * `in`, `out` and `areaMode` for the keys.
+ */
+export type ZoomAction = 'reset';
 
 /**
  * What every event about a Lesson carries, so late events are recognisable: the Lesson's id, and
@@ -82,7 +93,28 @@ export type PlayerEvent =
    * the release of a seek-bar drag), so the extension hands keyboard focus back to the Practice
    * area (Focus return, ADR 0009). Not about a Lesson: it carries no `lessonId`.
    */
-  | { readonly type: 'userInteracted' };
+  | { readonly type: 'userInteracted' }
+  /**
+   * The picture's zoom level changed (1 is the whole picture), whoever changed it. Zoom belongs to
+   * the player page, not to a Lesson (ADR 0037): it carries no `lessonId`.
+   */
+  | { readonly type: 'zoomChanged'; readonly level: number };
+
+/**
+ * How a zoom level reads wherever it is shown (the player's toolbar, the status bar item): to one
+ * decimal, without a trailing `.0`: `1×`, `1.3×`, `2.4×` (ADR 0037).
+ */
+export function zoomLabel(level: number): string {
+  return `${String(shownZoomLevel(level))}×`;
+}
+
+/** A zoom level as it is shown: to one decimal. A level that shows as 1 is the whole picture. */
+export function shownZoomLevel(level: number): number {
+  return Number(level.toFixed(1));
+}
+
+/** The closest the player zooms in (from the prototype: further is only blur), ADR 0037. */
+export const maxZoomLevel = 8;
 
 type Fields = Readonly<Record<string, unknown>>;
 
@@ -106,6 +138,11 @@ function isLoadId(value: unknown): value is number {
 /** A playback rate a media element accepts in practice: finite and above 0. */
 function isRate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+/** A zoom level the player can show: from 1 (the whole picture) to {@link maxZoomLevel}. */
+function isZoomLevel(value: unknown): value is number {
+  return typeof value === 'number' && value >= 1 && value <= maxZoomLevel;
 }
 
 /** Returns the command, or `undefined` when `raw` is not a well-formed player command. */
@@ -149,6 +186,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return isRate(raw.rate) ? { type: 'setRate', rate: raw.rate } : undefined;
     case 'showNext':
       return isText(raw.title) ? { type: 'showNext', title: raw.title } : undefined;
+    case 'zoom':
+      return raw.action === 'reset' ? { type: 'zoom', action: raw.action } : undefined;
     default:
       return undefined;
   }
@@ -167,6 +206,9 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
   }
   if (type === 'userInteracted') {
     return { type };
+  }
+  if (type === 'zoomChanged') {
+    return isZoomLevel(raw.level) ? { type, level: raw.level } : undefined;
   }
   const { loadId } = raw;
   if (!isText(lessonId) || !(loadId === undefined || isLoadId(loadId))) {

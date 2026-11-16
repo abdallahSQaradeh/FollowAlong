@@ -15,7 +15,7 @@ export const focusGraceMs = 250;
 const heldPollMs = 50;
 
 export class Interactions {
-  /** The pointers whose gesture is under way: today native sliders; later zoom drags and pans. */
+  /** The pointers whose gesture is under way: native sliders and zoom-area drags; later pans. */
   private readonly gestures = new Set<number>();
   /** Set from a report being due until it is posted. */
   private reportDue = false;
@@ -41,7 +41,7 @@ export class Interactions {
 
   /**
    * A gesture began that must not lose focus before it ends: a drag of a native slider (seek bar
-   * or volume); later a zoom-area drag or a pan (#46, #47). Nothing is reported until every
+   * or volume), a zoom-area drag (ADR 0037); later a pan (#47). Nothing is reported until every
    * gesture under way has ended.
    */
   beginGesture(pointerId: number): void {
