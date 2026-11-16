@@ -193,3 +193,77 @@ describe('Open as Course in the Folder browser', () => {
     expect(h.player.sent).toMatchObject([{ type: 'load' }]);
   });
 });
+
+describe('picking a video in the Folder browser', () => {
+  /** Browses to `Learning/<folders>` from the Course picker; resolves the picker's answer. */
+  async function walkTo(
+    h: Harness,
+    root: string,
+    ...folders: string[]
+  ): Promise<{ readonly picking: Promise<void> }> {
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+    for (const label of [root, ...folders]) {
+      h.ui.choose(label);
+      await h.ui.pickerShown();
+    }
+    return { picking };
+  }
+
+  it('opens its folder as the Course and plays that video, not the first Lesson', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'React/01 Intro.mp4': 'v',
+      'React/02 State.mp4': 'v',
+      'React/03 Hooks.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    const { picking } = await walkTo(h, 'Learning', 'React');
+
+    h.ui.choose('02 State.mp4');
+    await picking;
+
+    h.player.ready();
+    expect(h.player.sent).toMatchObject([
+      {
+        type: 'load',
+        videoUri: h.player.resourceUri(join(learning, 'React', '02 State.mp4')),
+        autoplay: true,
+      },
+    ]);
+    expect(h.ui.selectedLesson).toBe('02 State.mp4');
+    expect(h.ui.lessonTree?.nodes.map((node) => node.kind)).toEqual(['lesson', 'lesson', 'lesson']);
+    expect(h.ui.picker).toBeUndefined();
+  });
+
+  it('plays it from 5 s before where the learner left it, as any picked Lesson does', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'React/01 Intro.mp4': 'v',
+      'React/02 State.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    await h.core.openCourse(join(learning, 'React'));
+    h.player.ready();
+    h.core.playLesson('02 State.mp4');
+    h.player.emit({ type: 'played', lessonId: '02 State.mp4' });
+    h.player.emit({ type: 'timeUpdate', lessonId: '02 State.mp4', position: 120, duration: 600 });
+    h.player.emit({ type: 'paused', lessonId: '02 State.mp4', byUser: true });
+    h.core.playLesson('01 Intro.mp4');
+    await h.settle();
+    h.restart();
+    h.player.clearSent();
+    const { picking } = await walkTo(h, 'Learning', 'React');
+    h.player.clearSent();
+
+    h.ui.choose('02 State.mp4');
+    await picking;
+
+    h.player.ready();
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: '02 State.mp4', startAt: 115, autoplay: true },
+    ]);
+  });
+});
