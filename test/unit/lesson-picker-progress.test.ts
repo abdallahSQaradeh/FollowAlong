@@ -84,6 +84,24 @@ describe('Progress in the Lesson picker', () => {
     expect(h.player.sent.at(-1)).toMatchObject({ type: 'load', autoplay: true });
   });
 
+  it('never starts before 0:00: a Lesson saved within its first 5 s plays from 0:00', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'A/01 Early.mp4': 'v',
+      'B/02 Other.mp4': 'v',
+      '.followalong/progress.json': progressFile({ 'A/01 Early.mp4': saved(3, 'inProgress') }),
+    });
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.player.clearSent();
+
+    const going = h.core.goToLesson();
+    h.ui.choose('◐ Early');
+    await going;
+
+    expect(lastStart(h)).toBe(0);
+  });
+
   it('plays a done Lesson saved in its last 5% from 0:00', async () => {
     const h = await createHarness();
     await openCourseWithProgress(h);

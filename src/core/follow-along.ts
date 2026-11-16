@@ -599,7 +599,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return true;
   }
 
-  /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
+  /**
+   * Plays a Lesson of the open Course, by its id, from where the start rule says (5 s before where
+   * the learner left it; 0:00 for a done Lesson saved at its end), or from 0:00 with `fromStart`.
+   */
   function playLesson(lessonId: string, fromStart = false): void {
     if (refusedWhileOpening()) {
       logger.log({
