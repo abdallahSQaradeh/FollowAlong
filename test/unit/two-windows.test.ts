@@ -76,4 +76,34 @@ describe('two windows on the same Course', () => {
       [setup]: 195,
     });
   });
+
+  it('keeps the newer save of the same Lesson, also when the older one is written after it', async () => {
+    // The other window's clock is 10 s ahead (a Course on a share, written from two machines).
+    const { h, other, course } = await openInTwoWindows(10_000);
+
+    other.core.playLesson(intro);
+    playTo(other.player, intro, 300);
+    pause(other.player, intro);
+    await h.settle();
+    h.core.playLesson(intro);
+    playTo(h.player, intro, 100);
+    pause(h.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 295 });
+  });
+
+  it('keeps the save written later when it is also the newer one', async () => {
+    const { h, other, course } = await openInTwoWindows();
+
+    h.core.playLesson(intro);
+    playTo(h.player, intro, 100);
+    pause(h.player, intro);
+    await h.settle();
+    other.clock.advance(1_000);
+    other.core.playLesson(intro);
+    playTo(other.player, intro, 300);
+    pause(other.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 295 });
+  });
 });
