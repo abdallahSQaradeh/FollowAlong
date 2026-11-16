@@ -19,6 +19,8 @@ export interface QuickPickItemModel<Intent> {
   readonly label: string;
   /** Shown beside the label, and matched when the learner types if the model says so. */
   readonly description?: string;
+  /** A second line under the label (a Course's Progress line); never matched when typing. */
+  readonly detail?: string;
   /** What picking this item asks the core to do. */
   readonly intent: Intent;
   /** Buttons beside the item, each with an intent of its own. */
