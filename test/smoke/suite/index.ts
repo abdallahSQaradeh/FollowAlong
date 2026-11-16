@@ -50,6 +50,8 @@ interface TestHooks {
   selectedLesson(): string | undefined;
   /** How many quick picks were shown so far. */
   quickPicksShown(): number;
+  /** The label of the highlighted item of the quick pick shown last. */
+  activeQuickPickItem(): string | undefined;
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -382,12 +384,20 @@ async function aPickedCourseKeepsThePlayer(
 
     const picksBefore = hooks.quickPicksShown();
     const picking = vscode.commands.executeCommand('followalong.openCourse');
-    // The picker shows once the scan is done; keys sent before it is drawn do nothing.
+    // The picker shows once the scan is done, with its first item highlighted.
     await waitFor('the Course picker to show', () =>
-      hooks.quickPicksShown() > picksBefore ? true : undefined,
+      hooks.quickPicksShown() > picksBefore && hooks.activeQuickPickItem() !== undefined
+        ? true
+        : undefined,
     );
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
+    // Highlight “Picked Course” by moving down until it is the highlighted item, then accept it.
+    await waitForAsync('“Picked Course” to be the highlighted item', async () => {
+      if (hooks.activeQuickPickItem() === 'Picked Course') {
+        return true;
+      }
+      await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
+      return undefined;
+    });
     await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
     await waitFor('the picked Course to open', () =>
       hooks.lessonTree().nodes.some((node) => node.id === lessons.picked) ? true : undefined,

@@ -7,8 +7,14 @@ import * as vscode from 'vscode';
 
 import type { QuickPickButtonModel, QuickPickModel } from '../../core/quick-pick.js';
 
-/** How many quick picks were shown: the smoke test waits on it instead of racing the scan. */
-export const quickPicksShown = { count: 0 };
+/**
+ * What the smoke test can see of the quick picks, so it never guesses how long the scan takes or
+ * where the focus is: how many were shown, and the label of the active item of the latest.
+ */
+export const quickPickStats: { shown: number; active: string | undefined } = {
+  shown: 0,
+  active: undefined,
+};
 
 type IntentItem<Intent> = vscode.QuickPickItem & { readonly intent?: Intent };
 
@@ -60,7 +66,11 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
     quickPick.onDidHide(() => {
       answer(undefined);
     });
-    quickPicksShown.count += 1;
+    quickPick.onDidChangeActive((active) => {
+      quickPickStats.active = active[0]?.label;
+    });
+    quickPickStats.shown += 1;
+    quickPickStats.active = undefined;
     quickPick.show();
   });
 }

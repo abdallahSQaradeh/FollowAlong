@@ -15,7 +15,7 @@ import { courseNodeId, type LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
-import { quickPicksShown } from './quick-pick.js';
+import { quickPickStats } from './quick-pick.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
 import { ResourceViewers } from './resource-viewers.js';
@@ -90,6 +90,8 @@ export interface TestHooks {
   selectedLesson(): string | undefined;
   /** How many quick picks (the Course picker, the Lesson picker) were shown so far. */
   quickPicksShown(): number;
+  /** The label of the active (highlighted) item of the quick pick shown last, once it has one. */
+  activeQuickPickItem(): string | undefined;
 }
 
 /** Saves Progress when the window closes; set while the extension is active. */
@@ -155,7 +157,8 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       lessonTree: () => lessonTree.current,
       statusBar: () => statusBar.drawn(),
       selectedLesson: () => lessonTree.selectedLesson(),
-      quickPicksShown: () => quickPicksShown.count,
+      quickPicksShown: () => quickPickStats.shown,
+      activeQuickPickItem: () => quickPickStats.active,
     };
   }
 
