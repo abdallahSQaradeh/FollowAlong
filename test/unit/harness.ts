@@ -275,6 +275,8 @@ export async function createHarness(): Promise<Harness> {
     for (const core of cores) {
       core.dispose();
     }
+    // A save still under way would write into the temp dir while it is being removed.
+    await harness.settle();
     await rm(root, { recursive: true, force: true });
   });
   const start = (windowPlayer: FakePlayer): FollowAlong => {
