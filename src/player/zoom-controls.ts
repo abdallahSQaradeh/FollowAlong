@@ -10,6 +10,7 @@ import {
   isZoomView,
   panBy,
   wholePicture,
+  zoomAt,
   zoomBy,
   zoomStep,
   zoomToBox,
@@ -19,6 +20,10 @@ import {
 
 /** How far the pointer moves, in px, before a press on the picture is a drag and not a click. */
 const dragThreshold = 6;
+/** How far the wheel turns, in px of `deltaY`, for one step of {@link zoomStep}: a notch of a mouse. */
+const wheelNotch = 100;
+/** A turn of the wheel this long after the one before starts a new gesture, and drops its rest. */
+const wheelIdleMs = 250;
 /** A box smaller than this, in px either way, zooms to nothing. */
 const smallestBox = 12;
 
@@ -79,6 +84,9 @@ export class ZoomControls {
   /** Set by the toolbar's area button: the next drag draws a box, whatever the zoom. */
   private areaMode = false;
   private press: Press | undefined;
+  /** The turn of the wheel, in px of `deltaY`, not yet enough for a step, and when it came. */
+  private wheelRest = 0;
+  private wheelAt = 0;
   /** Set when a drag ended: the `click` the browser fires after it is not a click. */
   private dragEnded = false;
   private readonly levelOutput: HTMLElement;
@@ -88,6 +96,7 @@ export class ZoomControls {
     this.levelOutput = part(options.toolbar, '.zoom-level');
     this.areaButton = part(options.toolbar, '[data-zoom="area"]');
     this.listenToDrags();
+    this.listenToWheel();
     this.listenToToolbar();
   }
 
@@ -250,6 +259,45 @@ export class ZoomControls {
     };
     overlay.addEventListener('pointercancel', cancel);
     overlay.addEventListener('lostpointercapture', cancel);
+  }
+
+  /**
+   * The wheel zooms toward the cursor, a step of {@link zoomStep} for each {@link wheelNotch} it
+   * turns. A trackpad's many small turns add up to steps, so each one that counts is a zoom the
+   * learner sees (a level that reads 1× is the whole picture). A turn is not a click, and it does
+   * not take focus from the editor, so there is nothing to hand back.
+   */
+  private listenToWheel(): void {
+    this.options.overlay.addEventListener(
+      'wheel',
+      (event) => {
+        // The page must not scroll, nor the browser zoom on a Ctrl+wheel or a pinch.
+        event.preventDefault();
+        // A drag under way owns the view: it would be drawn over, or moved from, a view that moved.
+        if (this.press !== undefined) {
+          return;
+        }
+        const turned = event.deltaY;
+        const reversed = Math.sign(turned) !== Math.sign(this.wheelRest);
+        const pause = event.timeStamp - this.wheelAt > wheelIdleMs;
+        this.wheelAt = event.timeStamp;
+        const total = (reversed || pause ? 0 : this.wheelRest) + turned;
+        const steps = Math.trunc(total / wheelNotch);
+        this.wheelRest = total - steps * wheelNotch;
+        if (steps === 0) {
+          return;
+        }
+        const stage = this.stage();
+        // Turning away from the learner (a negative `deltaY`) zooms in.
+        this.show(
+          zoomAt(this.view, zoomStep ** -steps, {
+            x: (event.clientX - stage.x) / stage.width,
+            y: (event.clientY - stage.y) / stage.height,
+          }),
+        );
+      },
+      { passive: false },
+    );
   }
 
   /**
