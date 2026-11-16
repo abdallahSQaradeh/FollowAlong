@@ -78,18 +78,31 @@ jobs:
         with:
           node-version: 22
 
-      # The key holds everything the binary depends on: the build script and the pinned versions,
-      # checksums and configure flags. Change one, and it is built again (ADR 0070).
+      - name: Find the mingw-w64 version the build would use
+        id: mingw
+        run: |
+          sudo apt-get update
+          version="$(apt-cache policy gcc-mingw-w64-x86-64-posix | sed -n 's/^ *Candidate: //p')"
+          echo "mingw-w64 compiler: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # The key holds everything the binary depends on: the build script, the pinned versions,
+      # checksums and configure flags, and the cross-compiler's version. Change one, and it is
+      # built again (ADR 0070).
       - name: Restore the built ffmpeg
         id: cache
         uses: actions/cache@v5
         with:
           path: bin
-          key: ffmpeg-win32-x64-${{ hashFiles('scripts/build-ffmpeg.mjs', 'scripts/bundled-ffmpeg.json') }}
+          key: ffmpeg-win32-x64-${{ steps.mingw.outputs.version }}-${{ hashFiles('scripts/build-ffmpeg.mjs', 'scripts/bundled-ffmpeg.json') }}
 
-      - name: Install mingw-w64 and nasm
+      - name: Install the cross-compiler and nasm (to build)
         if: steps.cache.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 make nasm xz-utils
+        run: sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 make nasm xz-utils
+
+      - name: Install objdump (to check what is cached)
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: sudo apt-get install -y --no-install-recommends binutils-mingw-w64-x86-64
 
       - name: Build ffmpeg.exe from the pinned sources
         if: steps.cache.outputs.cache-hit != 'true'
@@ -97,10 +110,11 @@ jobs:
           BUILD_JOBS: '4'
         run: node scripts/build-ffmpeg.mjs
 
-      - name: Show what was built
+      - name: Show what was built, and that it needs no DLL outside Windows
         run: |
           ls -l bin
           cat bin/FFMPEG-BUILD.txt
+          node scripts/build-ffmpeg.mjs --check-imports bin/ffmpeg.exe
 
       - name: Upload ffmpeg-win32-x64
         uses: actions/upload-artifact@v6
@@ -129,9 +143,6 @@ jobs:
         with:
           name: ffmpeg-win32-x64
           path: bin
-
-      - name: Check the bundled ffmpeg runs, is LGPL, and converts AAC sound to MP3
-        run: node scripts/check-bundled-ffmpeg.mjs
 
       - name: Cache VS Code for the smoke test
         uses: actions/cache@v5
@@ -162,6 +173,15 @@ jobs:
             extension/THIRD_PARTY_NOTICES.txt; do
             grep -qxF "$file" vsix-files.txt || { echo "::error::$file is not in the .vsix"; exit 1; }
           done
+
+      # The file that ships, run from the unpacked .vsix: the LGPL gate (ffmpeg -L and -buildconf),
+      # then the extension's own converter adapter turns the AAC sound of an MP4 into an MP3.
+      - name: Run the ffmpeg.exe from the .vsix (LGPL gate, AAC to MP3 through the converter adapter)
+        shell: bash
+        run: |
+          mkdir vsix-unpacked
+          tar -xf ./*.vsix -C vsix-unpacked
+          node scripts/check-bundled-ffmpeg.mjs vsix-unpacked/extension/bin/ffmpeg.exe
 
       - name: Upload .vsix
         uses: actions/upload-artifact@v6

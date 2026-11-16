@@ -9,6 +9,8 @@
  * Usage: node scripts/build-ffmpeg.mjs [--out <folder>] [--work <folder>]
  *   --out   where ffmpeg.exe and its notices go (default: bin/ in the repository, git-ignored)
  *   --work  where sources are downloaded and built (default: a folder in the system temp dir)
+ *        node scripts/build-ffmpeg.mjs --check-imports [<ffmpeg.exe>]
+ *   builds nothing: lists the DLLs an ffmpeg.exe imports and fails on any outside Windows.
  * Needs on PATH: x86_64-w64-mingw32-gcc, make, nasm, tar. Runs commands with argument arrays and
  * never through a shell.
  */
@@ -148,6 +150,31 @@ function importedLibraries(exe) {
 }
 
 /**
+ * Lists the DLLs `exe` imports and its size, and throws when it needs one that does not ship with
+ * Windows (libgcc, winpthread and LAME are linked in statically, so a standalone file runs
+ * anywhere).
+ * @param {string} exe
+ * @returns {string[]} the DLLs it imports
+ */
+function assertStandalone(exe) {
+  const libraries = importedLibraries(exe);
+  const size = statSync(exe).size;
+  console.log(`${exe}: ${String(size)} bytes (${(size / 1024 / 1024).toFixed(2)} MiB)`);
+  for (const name of libraries) {
+    console.log(
+      `  DLL Name: ${name}${systemLibraries.has(name) ? '' : '   <-- not part of Windows'}`,
+    );
+  }
+  const unexpected = libraries.filter((name) => !systemLibraries.has(name));
+  if (unexpected.length > 0) {
+    throw new Error(
+      `ffmpeg.exe imports libraries that do not ship with Windows: ${unexpected.join(', ')}`,
+    );
+  }
+  return libraries;
+}
+
+/**
  * @param {string} config the config.h of the built ffmpeg
  * @param {string} name
  */
@@ -169,6 +196,13 @@ function option(argv, name, fallback) {
 async function main() {
   if (process.platform !== 'linux') {
     throw new Error('The ffmpeg is cross-compiled on Linux (CI builds it on ubuntu-latest).');
+  }
+  const checkAt = process.argv.indexOf('--check-imports');
+  if (checkAt >= 0) {
+    // CI runs this on the cached or fresh build alike, before the artifact goes anywhere.
+    requireTool(`${pinned.target}-objdump`);
+    assertStandalone(resolve(process.argv[checkAt + 1] ?? join(root, 'bin', 'ffmpeg.exe')));
+    return;
   }
   const out = option(process.argv, '--out', join(root, 'bin'));
   const work = option(process.argv, '--work', join(tmpdir(), 'followalong-ffmpeg-build'));
@@ -222,13 +256,7 @@ async function main() {
   ) {
     throw new Error(`The build is not LGPL: ${license} / ${configuration}`);
   }
-  const libraries = importedLibraries(built);
-  const unexpected = libraries.filter((name) => !systemLibraries.has(name));
-  if (unexpected.length > 0) {
-    throw new Error(
-      `ffmpeg.exe imports libraries that do not ship with Windows: ${unexpected.join(', ')}`,
-    );
-  }
+  const libraries = assertStandalone(built);
 
   copyFileSync(built, join(out, 'ffmpeg.exe'));
   copyFileSync(
