@@ -157,6 +157,9 @@ function reportMediaEvents(media: HTMLVideoElement): void {
     post({ type: 'paused', lessonId: lesson.lessonId, byUser: !pauseRequested && !media.ended });
     pauseRequested = false;
   });
+  on('seeked', ({ lessonId }) => {
+    post({ type: 'seeked', lessonId });
+  });
   on('ended', (lesson) => {
     lesson.playing = false;
     post({ type: 'ended', lessonId: lesson.lessonId });
