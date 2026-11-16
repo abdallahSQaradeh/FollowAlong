@@ -140,6 +140,8 @@ async function zoomedPaused(page: Page, options: { userGestures?: boolean } = {}
   await loadPaused(player);
   await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
   await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+  // The drag's own report comes a task after its zoom: count from after it.
+  await expect.poll(() => interactions(player)).toBe(1);
   return player;
 }
 
@@ -285,5 +287,61 @@ test.describe('the zoom toolbar', () => {
     await page.waitForTimeout(600);
     expect(await interactions(player)).toBe(4);
     expect((await player.video()).paused).toBe(true);
+  });
+});
+
+test.describe('the zoom', () => {
+  test('stays while the Lesson plays, and when another Lesson loads', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    await player.post({ type: 'play' });
+    await expect.poll(async () => (await player.video()).currentTime).toBeGreaterThan(1);
+    expectArea(await shownArea(page), { left: 0.25, top: 0.25, width: 0.25, height: 0.25 });
+
+    await player.post({
+      type: 'load',
+      lessonId: 'Section 1/02 Setup.mp4',
+      videoUri: media.mp4,
+      container: 'mp4',
+      startAt: 0,
+      autoplay: true,
+    });
+    await player.waitForEvent({ type: 'played', lessonId: 'Section 1/02 Setup.mp4' });
+
+    expectArea(await shownArea(page), { left: 0.25, top: 0.25, width: 0.25, height: 0.25 });
+    expect((await player.video()).controls).toBe(false);
+    expect((await player.events()).filter((event) => event.type === 'zoomChanged')).toEqual([
+      { type: 'zoomChanged', level: 4 },
+    ]);
+  });
+
+  test('survives a reload of the page, and the new page reports it after ready', async ({
+    page,
+  }) => {
+    await zoomedPaused(page);
+
+    // VS Code reloads the page when the player's folders change (ADR 0022).
+    await page.reload();
+
+    await expect
+      .poll(() => page.evaluate(() => window.followalongSent))
+      .toEqual([
+        { type: 'ready', aacSupported: true },
+        { type: 'zoomChanged', level: 4 },
+      ]);
+    expectArea(await shownArea(page), { left: 0.25, top: 0.25, width: 0.25, height: 0.25 });
+    await expect(page.getByLabel('Zoom level')).toHaveText('4×');
+  });
+
+  test('a page that starts at 1× reports no zoom', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await page.reload();
+    await page.waitForTimeout(300);
+
+    expect(await page.evaluate(() => window.followalongSent)).toEqual([
+      { type: 'ready', aacSupported: true },
+    ]);
   });
 });

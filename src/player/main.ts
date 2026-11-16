@@ -11,11 +11,24 @@ import {
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
-import { wholePicture, zoomBy, zoomStep, zoomToBox, zoomTransform, type ZoomView } from './zoom.js';
+import {
+  isZoomView,
+  wholePicture,
+  zoomBy,
+  zoomStep,
+  zoomToBox,
+  zoomTransform,
+  type ZoomView,
+} from './zoom.js';
 
 declare global {
   /** Provided by VS Code inside a webview (and by the Seam 2 harness in Playwright). */
-  function acquireVsCodeApi(): { postMessage(message: unknown): void };
+  function acquireVsCodeApi(): {
+    postMessage(message: unknown): void;
+    /** The page's view state, kept by VS Code across reloads of the page; `undefined` at first. */
+    getState(): unknown;
+    setState(state: unknown): unknown;
+  };
 }
 
 const host = acquireVsCodeApi();
@@ -429,6 +442,19 @@ const dragThreshold = 6;
 /** A box smaller than this, in px either way, zooms to nothing. */
 const smallestBox = 12;
 
+/** What the page keeps in VS Code's webview state. */
+interface PageState {
+  readonly zoom: ZoomView;
+}
+
+/** The zoom a page before this one left in the webview state, if any. */
+function storedZoom(): ZoomView | undefined {
+  const state = host.getState();
+  const stored: unknown =
+    typeof state === 'object' && state !== null && 'zoom' in state ? state.zoom : undefined;
+  return isZoomView(stored) ? stored : undefined;
+}
+
 /** What part of the picture the player shows now (ADR 0037). */
 let zoom: ZoomView = wholePicture;
 /** Set by the toolbar's area button: the next drag draws a box, whatever the zoom (ADR 0037). */
@@ -447,6 +473,8 @@ let dragEnded = false;
 function showZoom(view: ZoomView, media: HTMLVideoElement): void {
   const before = zoom.level;
   zoom = view;
+  // View state, not the Lesson's: it stays for the next Lesson and a reloaded page (ADR 0037).
+  host.setState({ zoom: view } satisfies PageState);
   media.style.transform = zoomTransform(view);
   // The native control bar would be magnified with the picture: it is off while zoomed, and the
   // overlay then covers the whole player, so the strip along the bottom is picture too.
@@ -593,3 +621,8 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
   }
 });
 post({ type: 'ready', aacSupported: aac !== '' });
+// A reloaded page shows the zoom the page before it had, and so reports it after `ready`.
+const restored = storedZoom();
+if (restored !== undefined) {
+  showZoom(restored, video);
+}
