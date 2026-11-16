@@ -224,9 +224,13 @@ describe('status bar items', () => {
   it('go away, and the commands find no Lesson, when a Course with no Lessons is opened', async () => {
     const h = await createHarness();
     await openLesson(h);
+    h.player.emit({ type: 'played', lessonId });
     h.player.clearSent();
 
     await h.core.openCourse(await h.folder('empty', { 'notes.pdf': 'pdf' }));
+    // The player stays open, so it is told to stop: with the controls gone, nothing else could.
+    expect(h.player.sent).toEqual([{ type: 'pause' }]);
+    h.player.clearSent();
     h.core.playPause();
     h.core.statusBarClick('seekBackShort');
     h.core.speedStep('up');
@@ -236,5 +240,16 @@ describe('status bar items', () => {
     expect(
       h.ui.messages.filter((message) => message.text.includes('no Lesson is open')),
     ).toHaveLength(3);
+  });
+
+  it('show 1× straight away on a new player page, before it reports ready', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    h.core.statusBarClick('speedCycle');
+    expect(item(h, 'speed').text).toBe('1.25×');
+
+    await h.core.openCourse(await h.folder('other', { '01 Other.webm': 'video' }));
+
+    expect(item(h, 'speed').text).toBe('1×');
   });
 });

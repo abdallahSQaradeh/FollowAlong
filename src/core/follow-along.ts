@@ -306,7 +306,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       resourceRoots: [course.folder, storage.folder],
     });
     if (shown === 'created') {
+      // A new page is not ready and plays at normal speed.
       playerReady = false;
+      rate = normalRate;
+      askedRates = [];
     } else if (playerReady) {
       loadCurrent();
     }
@@ -448,6 +451,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         ui.showMessage({ severity: 'warning', text });
         // The player still shows the Lesson it had, but this Course has none to offer: the
         // commands and the status bar items follow the Course the learner opened.
+        // The video would play on with every control gone, so it is stopped first.
+        if (current !== undefined && playerReady) {
+          player.send({ type: 'pause' });
+        }
         unloadLesson();
         return;
       }

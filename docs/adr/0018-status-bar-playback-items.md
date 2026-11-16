@@ -1,4 +1,4 @@
-# Status bar playback items: the core builds the model, a click is one core command, the player reports its closing
+# Status bar playback items: the core builds the model, a click is one core command
 
 Spec #12 (story 47) asks for status bar items for play/pause, current time / length, speed (click to
 cycle) and back 5 s (short step), shown only while a Lesson is loaded. The spec leaves the mechanics
@@ -14,10 +14,10 @@ open. These are the choices.
 - **What the items show.**
   - Play/pause: a pause symbol while the Lesson plays, a play symbol otherwise (paused, refused
     autoplay, ended).
-  - Time: `mm:ss / mm:ss`, as the spec writes it (`12:30 / 40:05`, story 86). Minutes keep counting past 59
-    (`65:30 / 90:05`), because Lessons run past an hour. The length reads `--:--` until the player
-    knows it (a WebM streamed through MediaSource reports 0 at first, ADR 0003). The time starts
-    at `00:00` for every loaded Lesson.
+  - Time: `mm:ss / mm:ss`, as spec #12 writes it for the tree (`12:30 / 40:05`, story 86). Minutes
+    keep counting past 59 (`65:30 / 90:05`), because Lessons run past an hour. The length reads
+    `--:--` until the player knows it (a WebM streamed through MediaSource reports 0 at first, ADR
+    0003). The time starts at `00:00` for every loaded Lesson.
   - Speed: the rate as the core tracks it (`1.25×`), so a rate picked in the video's own menu shows
     too.
   - Back: the short step (`5s`), read from the setting and refreshed when the setting changes.
@@ -36,9 +36,11 @@ open. These are the choices.
   `onDidClose(listener)`, which the panel adapter fires from `onDidDispose` only for the panel that
   is current (not for one that `show` replaced for another Course). On close the core forgets the
   loaded Lesson, the page's readiness and the rate (a new page plays at 1×), and the commands say
-  "no Lesson is open" again. Opening a Course that has no Lessons forgets the loaded Lesson the
-  same way (found by #20: the commands kept acting on the previous Lesson, and the items would
-  have stayed), because the items follow the Course the learner opened. Progress (#25) uses the same event to save when the tab closes.
+  "no Lesson is open" again. Progress (#25) uses the same event to save when the tab closes.
+  Opening a Course that has no Lessons forgets the loaded Lesson the
+  same way (assigned by the orchestrator after #20 found the commands kept acting on the previous
+  Lesson), because the items follow the Course the learner opened. That player stays open, so the
+  core first sends it `pause`: otherwise the video would play on with every control gone.
 - **Focus.** A status bar entry takes keyboard focus on a mouse click (VS Code makes its label
   focusable), which would be a Focus change for a control meant to avoid one. After the click
   command the adapter runs `workbench.action.focusActiveEditorGroup`. A status bar click does not

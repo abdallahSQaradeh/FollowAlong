@@ -9,15 +9,16 @@ export type StatusBarCommand = 'playPause' | 'speedCycle' | 'seekBackShort';
 
 export type StatusBarIcon = 'play' | 'pause' | 'back';
 
-const statusBarCommands: readonly string[] = [
-  'playPause',
-  'speedCycle',
-  'seekBackShort',
-] satisfies readonly StatusBarCommand[];
+/** Every command a status bar item can name; the type makes a new one a compile error here. */
+const statusBarCommands: Readonly<Record<StatusBarCommand, true>> = {
+  playPause: true,
+  speedCycle: true,
+  seekBackShort: true,
+};
 
 /** Whether `value` names a command a status bar item can run; a click comes in as plain data. */
 export function isStatusBarCommand(value: unknown): value is StatusBarCommand {
-  return typeof value === 'string' && statusBarCommands.includes(value);
+  return typeof value === 'string' && Object.hasOwn(statusBarCommands, value);
 }
 
 export type StatusBarItemId = 'playPause' | 'time' | 'speed' | 'back';
@@ -56,7 +57,7 @@ export interface StatusBarState {
 const secondsPerMinute = 60;
 const unknownTime = '--:--';
 
-/** `mm:ss`, with minutes past 59 kept as minutes (`65:30`), as the Lesson tree shows them. */
+/** `mm:ss`, with minutes past 59 kept as minutes (`65:30`). */
 function clock(seconds: number): string {
   const whole = Math.floor(seconds);
   const minutes = Math.floor(whole / secondsPerMinute);
