@@ -549,6 +549,25 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const path = resourcePath(course.folder, record);
+      // Looked at now, not when the Course opened: the file may have gone, or come back, since.
+      const there = await ports.fileSystem.exists(path);
+      if (openedCourse === course && missing.has(record.id) === there) {
+        const next = new Set(missing);
+        if (there) {
+          next.delete(record.id);
+        } else {
+          next.add(record.id);
+        }
+        missing = next;
+        ui.showLessonTree(buildLessonTree(course, resources, missing));
+      }
+      if (!there) {
+        ui.showMessage({
+          severity: 'warning',
+          text: `FollowAlong can’t find “${basename(path)}”: it was moved, renamed or deleted. Use Relink… on it in the Lesson tree to point it at the file’s new place.`,
+        });
+        return;
+      }
       try {
         await ui.openResource(resourceTarget(path));
       } catch (error) {
