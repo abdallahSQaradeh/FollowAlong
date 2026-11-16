@@ -40,7 +40,9 @@ export type AutoPauseInput =
   /** The learner edited the active editor's document; `playing`: the Lesson is playing. */
   | { readonly type: 'typed'; readonly playing: boolean }
   /** The player reports the Loaded Lesson playing. */
-  | { readonly type: 'played' };
+  | { readonly type: 'played' }
+  /** The Loaded Lesson ended, or the learner left it (another Lesson or Course, a closed player). */
+  | { readonly type: 'lessonLeft' };
 
 /** What the Loaded Lesson does for a step: `pause` sends the player `pause`. */
 export type AutoPauseEffect = 'pause';
@@ -70,7 +72,9 @@ export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): Aut
         ? { state: { ...state, kind: 'autoPaused' }, effects: ['pause'] }
         : { state, effects: [] };
     case 'played':
-      // Playing again, whoever started it: the next edit pauses it again.
+    case 'lessonLeft':
+      // Playing again, whoever started it, or no longer the Lesson it paused: what it paused is
+      // over, and the next edit while a Lesson plays pauses it.
       return {
         state: state.kind === 'autoPaused' ? { ...state, kind: 'armed' } : state,
         effects: [],

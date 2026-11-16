@@ -278,4 +278,57 @@ describe('auto-pause while typing', () => {
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
   });
+
+  describe('a Lesson end or change cancels it', () => {
+    const secondId = '02 Setup.webm';
+
+    /** A Course with two Lessons; auto-pause has paused the first one. */
+    async function firstPausedByTyping(h: Harness): Promise<void> {
+      h.config.set('autoPause', 'pause');
+      const course = await h.folder('course', { [lessonId]: 'video', [secondId]: 'video' });
+      await h.core.openCourse(course);
+      h.player.ready();
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      expect(playPauseItem(h)).toMatchObject({ text: 'Paused (typing)' });
+    }
+
+    it('does not carry “Paused (typing)” to the next Lesson', async () => {
+      const h = await createHarness();
+      await firstPausedByTyping(h);
+
+      h.core.nextLesson();
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', marker: 'autoPause', text: '' });
+    });
+
+    it('stays armed for the next Lesson: an edit while it plays pauses it', async () => {
+      const h = await createHarness();
+      await firstPausedByTyping(h);
+      h.core.nextLesson();
+      h.player.emit({ type: 'played', lessonId: secondId });
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
+    it('drops “Paused (typing)” when the learner steps to the Lesson’s end', async () => {
+      const h = await createHarness();
+      await firstPausedByTyping(h);
+
+      h.player.emit({ type: 'ended', lessonId });
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+
+    it('drops “Paused (typing)” when the learner opens another Course', async () => {
+      const h = await createHarness();
+      await firstPausedByTyping(h);
+      const other = await h.folder('other', { 'other.webm': 'video' });
+
+      await h.core.openCourse(other);
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+  });
 });

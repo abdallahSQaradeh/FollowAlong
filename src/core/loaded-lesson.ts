@@ -575,6 +575,7 @@ export function createLoadedLesson(
         if (shown !== undefined) {
           // Ended: a resume then restarts the Lesson, so it is not rewound (ADR 0016).
           playback = { ...freshPlayback(false), ended: true };
+          feedAutoPause({ type: 'lessonLeft' });
           stopSaving();
           shown.engaged = true;
           stopCountingPlay(shown);
@@ -671,6 +672,7 @@ export function createLoadedLesson(
 
   function leave(): Promise<void> {
     stopSaving();
+    feedAutoPause({ type: 'lessonLeft' });
     // The sound under way is kept: the next `load` may be this Lesson again (picked once more), and
     // a `load` of another Lesson, or `unload`, stops it.
     // From now on its late events are ignored, so none is recorded into the next Course.
@@ -684,6 +686,7 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
+    feedAutoPause({ type: 'lessonLeft' });
     stopSound();
     resetPlayhead(false);
     refreshStatusBar();
