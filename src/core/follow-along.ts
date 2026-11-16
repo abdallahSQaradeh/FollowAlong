@@ -8,6 +8,7 @@ import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js'
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
+import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
   findResource,
@@ -31,6 +32,8 @@ export interface FollowAlong {
   openResource(resourceId: string): Promise<void>;
   /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
   playPause(): void;
+  /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
+  goToLesson(): Promise<void>;
   dispose(): void;
 }
 
@@ -190,6 +193,20 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /** Plays a Lesson of the open Course, by its id. */
+  function playLesson(lessonId: string): void {
+    const course = openedCourse;
+    const lesson = course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+    if (course === undefined || lesson === undefined) {
+      logger.log({
+        level: 'warn',
+        message: `Cannot play ${lessonId}: it is not a Lesson of the open Course.`,
+      });
+      return;
+    }
+    play(course, lesson);
+  }
+
   return {
     async openCourse(folder) {
       let course: Course;
@@ -222,18 +239,27 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       play(course, first);
     },
-    playLesson(lessonId) {
-      const course = openedCourse;
-      const lesson =
-        course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
-      if (course === undefined || lesson === undefined) {
-        logger.log({
-          level: 'warn',
-          message: `Cannot play ${lessonId}: it is not a Lesson of the open Course.`,
+    playLesson,
+    async goToLesson() {
+      if (openedCourse === undefined) {
+        ui.showMessage({
+          severity: 'info',
+          text: 'FollowAlong has no Course open. Run “FollowAlong: Open Course…” to pick one.',
         });
         return;
       }
-      play(course, lesson);
+      const course = openedCourse;
+      const intent = await ui.pick(buildLessonPicker(course));
+      if (intent?.type === 'playLesson') {
+        if (course === openedCourse) {
+          playLesson(intent.lessonId);
+        } else {
+          logger.log({
+            level: 'info',
+            message: `Ignored ${intent.lessonId}: another Course was opened while the picker was open.`,
+          });
+        }
+      }
     },
     attachResource(lessonId, absolutePath) {
       const course = openedCourse;

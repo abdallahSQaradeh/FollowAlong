@@ -13,6 +13,7 @@ import { createNodeFileSystem } from '../../src/adapters/node/file-system.js';
 import { createFollowAlong, type FollowAlong } from '../../src/core/follow-along.js';
 import type { LessonTreeModel } from '../../src/core/lesson-tree.js';
 import type { LogEntry, Logger } from '../../src/core/logger.js';
+import type { QuickPickModel } from '../../src/core/quick-pick.js';
 import {
   FileSystemError,
   type Clock,
@@ -60,6 +61,11 @@ export class FakePlayer implements PlayerPort {
   onEvent(listener: (event: PlayerEvent) => void): Disposable {
     this.listeners.add(listener);
     return { dispose: () => this.listeners.delete(listener) };
+  }
+
+  /** Forgets the commands sent so far, so a test can look at what comes next. */
+  clearSent(): void {
+    this.sent.length = 0;
   }
 
   /** The learner closed the player tab. */
@@ -171,9 +177,46 @@ export class RecordingUi implements UiSink {
   readonly opened: ResourceTarget[] = [];
   /** Set to make opening a file fail, as VS Code does for a file that is gone. */
   openFailure: string | undefined;
+  /** Every quick pick the core opened, in order. */
+  readonly pickers: QuickPickModel<unknown>[] = [];
+  private answer: ((intent: unknown) => void) | undefined;
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
+  }
+
+  pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
+    this.pickers.push(model);
+    return new Promise((resolve) => {
+      this.answer = (intent) => {
+        resolve(intent as Intent | undefined);
+      };
+    });
+  }
+
+  /** The quick pick the learner sees now, if one is open. */
+  get picker(): QuickPickModel<unknown> | undefined {
+    return this.answer === undefined ? undefined : this.pickers.at(-1);
+  }
+
+  /** The learner picks the open quick pick's item with this label. */
+  choose(label: string): void {
+    const item = this.picker?.entries.find(
+      (entry) => entry.kind === 'item' && entry.label === label,
+    );
+    if (this.answer === undefined || item?.kind !== 'item') {
+      throw new Error(`No item “${label}” in the open quick pick`);
+    }
+    const answer = this.answer;
+    this.answer = undefined;
+    answer(item.intent);
+  }
+
+  /** The learner closes the quick pick without picking. */
+  dismissPicker(): void {
+    const answer = this.answer;
+    this.answer = undefined;
+    answer?.(undefined);
   }
 
   showLessonTree(model: LessonTreeModel): void {

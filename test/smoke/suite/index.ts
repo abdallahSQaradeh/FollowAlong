@@ -61,6 +61,7 @@ export async function run(): Promise<void> {
     'followalong.attachResource',
     'followalong.openResource',
     'followalong.playPause',
+    'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
@@ -74,6 +75,8 @@ export async function run(): Promise<void> {
 
   playPauseIsBoundToItsKeys(extension.packageJSON);
   say('FollowAlong: Play/Pause is in the Command Palette and bound to its default keys');
+  goToLessonIsBoundToItsChord(extension.packageJSON);
+  say("FollowAlong: Go to Lesson… is in the Command Palette and bound to Ctrl+' L");
 
   await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
@@ -186,6 +189,26 @@ function playPauseIsBoundToItsKeys(packageJson: unknown): void {
       },
       { key: "ctrl+' space", mac: "cmd+' space", when: 'editorTextFocus || terminalFocus' },
     ],
+  );
+}
+
+/** The Lesson picker: VS Code reads the manifest for the Command Palette entry and the chord. */
+function goToLessonIsBoundToItsChord(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  const command = contributes?.commands?.find(
+    (entry) => entry.command === 'followalong.goToLesson',
+  );
+  assert.deepEqual(
+    { title: command?.title, category: command?.category },
+    { title: 'Go to Lesson…', category: 'FollowAlong' },
+    'the Command Palette entry is "FollowAlong: Go to Lesson…"',
+  );
+  const bindings = (contributes?.keybindings ?? []).filter(
+    (entry) => entry.command === 'followalong.goToLesson',
+  );
+  assert.deepEqual(
+    bindings.map(({ key, mac, when }) => ({ key, mac, when })),
+    [{ key: "ctrl+' l", mac: "cmd+' l", when: 'editorTextFocus || terminalFocus' }],
   );
 }
 

@@ -25,6 +25,8 @@ export const commands = {
   openResource: openResourceCommand,
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
   playPause: 'followalong.playPause',
+  /** `Ctrl+'` `L`: the Lesson picker. */
+  goToLesson: 'followalong.goToLesson',
 } as const;
 
 /**
@@ -137,6 +139,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.playPause, () => {
       core.playPause();
     }),
+    register(commands.goToLesson, () => core.goToLesson()),
   );
   return testHooks;
 }

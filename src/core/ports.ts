@@ -6,6 +6,7 @@
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import type { LessonTreeModel } from './lesson-tree.js';
 import type { Logger } from './logger.js';
+import type { QuickPickModel } from './quick-pick.js';
 
 export interface Disposable {
   dispose(): void;
@@ -138,6 +139,11 @@ export type ResourceTarget = FileResourceTarget;
 
 export interface UiSink {
   showMessage(message: UserMessage): void;
+  /**
+   * Shows a quick pick and resolves with the intent of the item the learner picked, or
+   * `undefined` when the learner closed it without picking.
+   */
+  pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined>;
   /** Replaces the Lesson tree in the activity bar. */
   showLessonTree(model: LessonTreeModel): void;
   /** Opens a Resource in a tab beside the code, without touching the player or taking focus. */
