@@ -20,6 +20,10 @@ _Avoid_: Episode, clip, lecture
 A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
 
+**Lesson picker**:
+The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing.
+_Avoid_: Lesson search, jump list
+
 **Wrapper folder**:
 A folder inside a Course that holds no Lessons of its own and only one other folder with Lessons. It is not shown as a Section: its content is shown in its place.
 _Avoid_: Container folder, parent folder

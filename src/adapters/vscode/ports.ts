@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import type { Logger } from '../../core/logger.js';
 import type { Config, KeyValueStore, Storage, UiSink } from '../../core/ports.js';
 import type { LessonTreeView } from './lesson-tree-view.js';
+import { showQuickPick } from './quick-pick.js';
 import type { FocusReturn } from './focus-return.js';
 
 function store(memento: vscode.Memento): KeyValueStore {
@@ -45,6 +46,7 @@ export function createUiSink(tree: LessonTreeView, focus: FocusReturn, logger: L
       }[severity];
       void show(text);
     },
+    pick: showQuickPick,
     showLessonTree(model) {
       tree.show(model);
     },
