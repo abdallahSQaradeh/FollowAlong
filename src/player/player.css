@@ -7,6 +7,7 @@ body {
 }
 
 .stage {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -19,4 +20,13 @@ video {
   height: 100%;
   object-fit: contain;
   background: #000;
+}
+
+/*
+ * Catches clicks on the picture, which the native video would otherwise take (and toggle only
+ * after waiting for a double-click). It stops above the native control bar, which stays usable.
+ */
+.overlay {
+  position: absolute;
+  inset: 0 0 72px;
 }
