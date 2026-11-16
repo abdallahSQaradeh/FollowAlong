@@ -596,6 +596,77 @@ test.describe('the player', () => {
     });
   });
 
+  test.describe('setRate', () => {
+    test('sets the playback rate and reports rateChanged', async ({ page }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: media.webm, autoplay: false }));
+
+      await player.post({ type: 'setRate', rate: 1.5 });
+
+      await player.waitForEvent({ type: 'rateChanged', lessonId, rate: 1.5 });
+      expect((await player.video()).playbackRate).toBe(1.5);
+    });
+
+    test('works for an MP4 Lesson, and while it plays', async ({ page }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: media.mp4, container: 'mp4', autoplay: true }));
+      await player.waitForEvent({ type: 'played', lessonId });
+
+      await player.post({ type: 'setRate', rate: 0.75 });
+
+      await player.waitForEvent({ type: 'rateChanged', lessonId, rate: 0.75 });
+      expect((await player.video()).playbackRate).toBe(0.75);
+      expect((await player.video()).paused).toBe(false);
+    });
+
+    test('keeps the rate for the next Lesson', async ({ page }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: media.webm, autoplay: false }));
+      await player.post({ type: 'setRate', rate: 2 });
+      await player.waitForEvent({ type: 'rateChanged', lessonId, rate: 2 });
+
+      await player.post(
+        load({ lessonId: 'second.mp4', videoUri: media.mp4, container: 'mp4', autoplay: false }),
+      );
+      await player.waitForEvent({ type: 'timeUpdate', lessonId: 'second.mp4' });
+
+      expect((await player.video()).playbackRate).toBe(2);
+      await player.post(load({ videoUri: media.webm, autoplay: false }));
+      await expect.poll(async () => (await player.video()).currentSrc).not.toBe('');
+      expect((await player.video()).playbackRate).toBe(2);
+    });
+
+    test('reports a rate the learner picked in the video’s own menu', async ({ page }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: media.webm, autoplay: false }));
+
+      await page.locator('video').evaluate((element: HTMLVideoElement) => {
+        element.playbackRate = 1.25;
+      });
+
+      await player.waitForEvent({ type: 'rateChanged', lessonId, rate: 1.25 });
+    });
+
+    test('ignores a setRate whose rate is not a positive number', async ({ page }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: media.webm, autoplay: false }));
+      await page.evaluate(() => {
+        window.postMessage({ type: 'setRate', rate: '2' }, '*');
+        window.postMessage({ type: 'setRate', rate: 0 }, '*');
+        window.postMessage({ type: 'setRate', rate: -1 }, '*');
+        window.postMessage({ type: 'setRate', rate: Number.NaN }, '*');
+        window.postMessage({ type: 'setRate' }, '*');
+      });
+      await player.post({ type: 'setRate', rate: 1.25 });
+      await player.waitForEvent({ type: 'rateChanged', lessonId, rate: 1.25 });
+
+      expect((await player.video()).playbackRate).toBe(1.25);
+      expect((await player.events()).filter((event) => event.type === 'rateChanged')).toHaveLength(
+        1,
+      );
+    });
+  });
+
   test('ignores messages that are not protocol commands', async ({ page }) => {
     const player = await openPlayer(page);
 

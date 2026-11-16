@@ -68,6 +68,16 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.speedUp",
+        "title": "Speed up",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.speedDown",
+        "title": "Speed down",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.goToLesson",
         "title": "Go to Lesson…",
         "category": "FollowAlong"
@@ -131,6 +141,18 @@
         "command": "followalong.seekForwardLong",
         "key": "ctrl+' right",
         "mac": "cmd+' right",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.speedUp",
+        "key": "ctrl+' up",
+        "mac": "cmd+' up",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.speedDown",
+        "key": "ctrl+' down",
+        "mac": "cmd+' down",
         "when": "editorTextFocus || terminalFocus"
       },
       {
