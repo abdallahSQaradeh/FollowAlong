@@ -174,10 +174,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     nextClicked: (next) => {
       playLesson(next.id);
     },
-    prepareSound: (lesson, signal) =>
+    prepareSound: (lesson, request) =>
       sidecarSound === undefined
         ? Promise.reject(new Error('No Course is open.'))
-        : sidecarSound.prepare(lesson, signal),
+        : sidecarSound.prepare(lesson, request),
     progressChanged: refreshTree,
   });
 

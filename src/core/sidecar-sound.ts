@@ -95,13 +95,24 @@ export type PreparedSound =
   | { readonly kind: 'sidecar'; readonly path: string }
   | { readonly kind: 'none'; readonly why: 'silent' | 'ownSound' };
 
+/** What preparing a Lesson's sound is told, and tells back. */
+export interface SoundRequest {
+  /** Aborting it stops the preparation, and rejects it. */
+  readonly signal: AbortSignal;
+  /**
+   * How far a conversion is, in whole percent: 0 when it starts, then as ffmpeg reports. Never
+   * called for a sound that was prepared before, or that needs no sidecar.
+   */
+  readonly onProgress: (percent: number) => void;
+}
+
 /** The audio sidecars of one Course, kept in its Course data. */
 export interface SidecarSound {
   /**
    * Resolves with what `lesson`'s sound needs: the MP3 prepared before, if any, else a new
-   * conversion, unless it needs none. Rejects when the conversion fails or `signal` aborts it.
+   * conversion, unless it needs none. Rejects when the conversion fails or the request is aborted.
    */
-  prepare(lesson: Lesson, signal: AbortSignal): Promise<PreparedSound>;
+  prepare(lesson: Lesson, request: SoundRequest): Promise<PreparedSound>;
 }
 
 /**
@@ -116,7 +127,7 @@ export function openSidecarSound(
 ): SidecarSound {
   const data = openCourseData(folder, ports);
   return {
-    prepare: (lesson, signal) => prepareSound(ports, data, lesson, signal, warnedPaths),
+    prepare: (lesson, request) => prepareSound(ports, data, lesson, request, warnedPaths),
   };
 }
 
@@ -124,7 +135,7 @@ async function prepareSound(
   ports: SidecarSoundPorts,
   data: CourseData,
   lesson: Lesson,
-  signal: AbortSignal,
+  { signal, onProgress }: SoundRequest,
   warnedPaths: Set<string>,
 ): Promise<PreparedSound> {
   const { fileSystem, converter, logger } = ports;
@@ -154,12 +165,13 @@ async function prepareSound(
       program,
       input: lesson.path,
       output,
-      // The "Preparing sound… N%" overlay is ticket #42's.
-      onProgress: () => undefined,
+      onProgress,
       signal,
     });
     return output;
   };
+  // The learner is told from here: a sound needing no conversion never shows "Preparing sound…".
+  onProgress(0);
   const folder = await data.prepareFolder(soundFolderName);
   let output: string;
   try {

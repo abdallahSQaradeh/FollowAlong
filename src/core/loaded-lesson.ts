@@ -7,7 +7,7 @@
  */
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import type { Lesson } from './course-model.js';
-import type { PreparedSound } from './sidecar-sound.js';
+import type { PreparedSound, SoundRequest } from './sidecar-sound.js';
 import type { Disposable, Ports } from './ports.js';
 import type { PlayheadSeen } from './lesson-status.js';
 import { lessonStatus, type ProgressRecorder } from './progress.js';
@@ -45,9 +45,9 @@ export interface OpenCourseView {
   nextClicked(next: Lesson): void;
   /**
    * What `lesson`'s sound needs: its MP3, prepared now or before (the audio sidecar, ADR 0034), or
-   * no sidecar. Rejects when it cannot be prepared, or once `signal` aborts.
+   * no sidecar. Rejects when it cannot be prepared, or once the request's `signal` aborts.
    */
-  prepareSound(lesson: Lesson, signal: AbortSignal): Promise<PreparedSound>;
+  prepareSound(lesson: Lesson, request: SoundRequest): Promise<PreparedSound>;
   /**
    * What the Lesson tree shows of the Progress may have changed: a Lesson's state changed, or
    * Progress was saved (every 5 s while playing, on pause and seek). Never called for every
@@ -130,8 +130,16 @@ interface SoundPreparation {
   readonly lesson: Lesson;
   readonly stop: AbortController;
   readonly prepared: Promise<PreparedSound>;
-  /** Set once the learner was told it failed: a page that reloads is told again, they are not. */
-  toldFailure: boolean;
+  /** How far the conversion is, once it has started; `undefined` before, and for a sound that needs none. */
+  percent: number | undefined;
+  /** The percent the player page last shown was told, so each step is sent once per page. */
+  sentPercent: number | undefined;
+  /** Set once the preparation ended, however it ended: the percent is then nothing to show. */
+  settled: boolean;
+  /** Set once the failure was logged: a page that reloads is told again, the log is not. */
+  loggedFailure: boolean;
+  /** Set when the learner chose *Play without sound* after a failure (ADR 0055). */
+  withoutSound: boolean;
 }
 
 /** The fixed speed ladder (spec #12, story 41), slowest first. */
@@ -272,6 +280,7 @@ export function createLoadedLesson(
             rate,
             shortStep: stepSeconds('short'),
             zoom,
+            soundPercent: sound?.settled === false ? sound.percent : undefined,
           });
     if (JSON.stringify(next) === JSON.stringify(statusBar)) {
       return;
@@ -323,19 +332,34 @@ export function createLoadedLesson(
     // A `load` of another Lesson has stopped the sound of the one before (`load`).
     if (sound?.lesson !== lesson) {
       const stop = new AbortController();
-      sound = {
+      const started: SoundPreparation = {
         lesson,
         stop,
-        prepared: course.prepareSound(lesson, stop.signal),
-        toldFailure: false,
+        prepared: course.prepareSound(lesson, {
+          signal: stop.signal,
+          onProgress: (percent) => {
+            soundProgressed(started, percent);
+          },
+        }),
+        percent: undefined,
+        sentPercent: undefined,
+        settled: false,
+        loggedFailure: false,
+        withoutSound: false,
       };
+      sound = started;
     }
     const preparation = sound;
+    // A page that reloaded mid-conversion starts from nothing: it is told where the conversion is.
+    preparation.sentPercent = undefined;
+    sendSoundProgress(preparation);
     preparation.prepared.then(
       (prepared) => {
+        preparation.settled = true;
         if (currentLoad !== loadId || current?.lesson !== lesson) {
           return;
         }
+        refreshStatusBar();
         player.send(
           prepared.kind === 'sidecar'
             ? { type: 'soundReady', audioUri: player.resourceUri(prepared.path) }
@@ -343,6 +367,7 @@ export function createLoadedLesson(
         );
       },
       (error: unknown) => {
+        preparation.settled = true;
         // A Lesson left, or a page reloaded since: the current load reports it, or nobody needs to.
         if (
           preparation.stop.signal.aborted ||
@@ -351,21 +376,47 @@ export function createLoadedLesson(
         ) {
           return;
         }
+        refreshStatusBar();
+        if (preparation.withoutSound) {
+          // The learner chose to play this Lesson without its sound: a reloaded page does too.
+          player.send({ type: 'noSidecar' });
+          return;
+        }
         const reason = error instanceof Error ? error.message : String(error);
-        if (!preparation.toldFailure) {
-          preparation.toldFailure = true;
+        if (!preparation.loggedFailure) {
+          preparation.loggedFailure = true;
           logger.log({
             level: 'error',
             message: `Could not prepare the sound of ${lesson.id}: ${reason}`,
-          });
-          ui.showMessage({
-            severity: 'error',
-            text: `FollowAlong could not prepare the sound of “${lesson.title}”: ${reason}`,
           });
         }
         player.send({ type: 'soundFailed', message: reason });
       },
     );
+  }
+
+  /** ffmpeg reported `percent` of `preparation`: the player and the status bar show it. */
+  function soundProgressed(preparation: SoundPreparation, percent: number): void {
+    preparation.percent = percent;
+    if (sound === preparation) {
+      sendSoundProgress(preparation);
+      refreshStatusBar();
+    }
+  }
+
+  /** Tells the player page the conversion's percent, unless it was told that one already. */
+  function sendSoundProgress(preparation: SoundPreparation): void {
+    const { percent } = preparation;
+    if (
+      percent === undefined ||
+      preparation.settled ||
+      percent === preparation.sentPercent ||
+      current?.lesson !== preparation.lesson
+    ) {
+      return;
+    }
+    preparation.sentPercent = percent;
+    player.send({ type: 'soundProgress', percent });
   }
 
   /** Stops preparing sound for a Lesson the learner has left. */
@@ -595,6 +646,20 @@ export function createLoadedLesson(
         if (next !== undefined) {
           // A Lesson switch like any other: the Lesson left is saved, the next resumes 5 s back.
           course.nextClicked(next);
+        }
+        break;
+      }
+      case 'playWithoutSound': {
+        // The learner chose the muted picture after the sound failed (ADR 0055). Remembered while
+        // the Lesson stays loaded, so a page that reloads does not show the error again.
+        if (shownLesson(event) !== undefined && sound?.lesson === current?.lesson) {
+          if (sound !== undefined) {
+            sound.withoutSound = true;
+          }
+          logger.log({
+            level: 'info',
+            message: `Playing ${event.lessonId} without its sound, as the learner chose`,
+          });
         }
         break;
       }

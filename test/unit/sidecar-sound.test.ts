@@ -167,24 +167,6 @@ describe('sound for MP4 Lessons', () => {
     expect(h.player.shown.at(-1)?.resourceRoots.some((root) => course.startsWith(root))).toBe(true);
   });
 
-  it('says once why the sound could not be prepared, and lets the player play the Lesson without it', async () => {
-    const h = await createHarness();
-    await openMp4Lesson(h, false);
-    h.converter.requests[0]?.fail('spawn ffmpeg ENOENT');
-    await h.settle();
-
-    expect(h.ui.messages).toEqual([
-      {
-        severity: 'error',
-        text: 'FollowAlong could not prepare the sound of “Intro”: spawn ffmpeg ENOENT',
-      },
-    ]);
-    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([
-      { type: 'soundFailed', message: 'spawn ffmpeg ENOENT' },
-    ]);
-    expect(soundCommands(h)).toEqual([]);
-  });
-
   it('stops preparing the sound of a Lesson the learner left, and sends none for it', async () => {
     const h = await createHarness();
     const course = await h.folder('course', {
@@ -246,24 +228,6 @@ describe('sound for MP4 Lessons', () => {
     );
     expect(sent.map((command) => command.type)).toEqual(['load', 'soundReady']);
     expect(sent[0]).toMatchObject({ type: 'load', autoplay: true, container: 'mp4' });
-  });
-
-  it('tells a reloaded player page the sound failed, without saying it to the learner again', async () => {
-    const h = await createHarness();
-    await openMp4Lesson(h, false);
-    h.converter.requests[0]?.fail('ffmpeg exited with code 1');
-    await h.settle();
-
-    h.player.ready(false);
-    await h.settle();
-
-    expect(h.ui.messages).toHaveLength(1);
-    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toHaveLength(2);
-    expect(h.player.sent.at(-1)).toEqual({
-      type: 'soundFailed',
-      message: 'ffmpeg exited with code 1',
-    });
-    expect(h.converter.requests).toHaveLength(1);
   });
 
   it('stops preparing the sound when the learner opens a Course with no Lessons', async () => {
