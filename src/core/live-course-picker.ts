@@ -5,6 +5,8 @@
  * itself is built by {@link buildCoursePicker}; this module decides when it is shown again.
  */
 import { buildCoursePicker, type CoursePickerIntent } from './course-picker.js';
+import { readProgressLines } from './course-progress-lines.js';
+import { keyOf, sameFolder } from './courses-roots.js';
 import type { CourseScans } from './course-list-cache.js';
 import {
   buildFolderBrowser,
@@ -14,7 +16,6 @@ import {
 } from './folder-browser.js';
 import { folderLabel } from './course-scanner.js';
 import { FileSystemError } from './ports.js';
-import { sameFolder } from './courses-roots.js';
 import { lookForVideos, readBrowsedFolder } from './read-browsed-folder.js';
 import type { QuickPickModel } from './quick-pick.js';
 import type { CourseScan, ScannedCourse } from './course-scanner.js';
@@ -22,7 +23,7 @@ import type { Ports } from './ports.js';
 import { recentCourses, recentCoursesUnchecked } from './recent-courses.js';
 
 export interface CoursePickerSession {
-  readonly ports: Pick<Ports, 'fileSystem' | 'ui' | 'logger'>;
+  readonly ports: Pick<Ports, 'fileSystem' | 'storage' | 'ui' | 'logger'>;
   readonly scans: CourseScans;
   /** The Courses roots, as the setting has them. */
   readonly roots: readonly string[];
@@ -53,7 +54,14 @@ export async function showCoursePicker(
   // looked at: the picker never waits for the disk before it shows.
   let courses: readonly ScannedCourse[] = scans.cached(roots) ?? [];
   let recentShown = recentCoursesUnchecked(recent, courses);
-  let busy = true;
+  let scanning = true;
+  /** Progress lines being read in the background, each batch counted until it is done. */
+  let reading = 0;
+  /** Looks at the Recent Courses under way: the list is complete only when they are looked at. */
+  let checking = 0;
+  /** The Progress lines read so far, and the Courses already asked for (read once per scan). */
+  const lines = new Map<string, string | undefined>();
+  const asked = new Set<string>();
   let closed = false;
   /** Counts what is shown (redraws) and what is asked for (scans): only the latest counts. */
   let drawn = 0;
@@ -75,7 +83,8 @@ export async function showCoursePicker(
           courses,
           recent: recentShown,
           openFolder: session.openFolder(),
-          scanning: busy,
+          scanning: scanning || reading > 0 || checking > 0,
+          progressLines: lines,
         });
 
   /** Looks at which Recent Courses are missing, then shows the list as it is now. */
@@ -83,6 +92,7 @@ export async function showCoursePicker(
     drawn += 1;
     const mine = drawn;
     let checked = recentShown;
+    checking += 1;
     try {
       checked = await recentCourses(ports, recent, courses);
     } catch (error) {
@@ -90,6 +100,8 @@ export async function showCoursePicker(
         level: 'error',
         message: `Could not look at the Recent Courses: ${describe(error)}`,
       });
+    } finally {
+      checking -= 1;
     }
     if (!closed && mine === drawn) {
       recentShown = checked;
@@ -116,8 +128,39 @@ export async function showCoursePicker(
         session.warnUnreadableRoot(root);
       }
     }
-    busy = false;
+    scanning = false;
+    // Started before the redraw, so the list stays busy until the Progress lines are in.
+    const reads = readLines();
     await redraw();
+    await reads;
+  };
+
+  /**
+   * Reads the Progress lines of the Courses shown that were not read yet, in the background, and
+   * shows each batch when it is in. The picker is not waiting for them: it is open already.
+   */
+  const readLines = async (): Promise<void> => {
+    const folders = [...recentShown.filter((course) => !course.missing), ...courses]
+      .map((course) => course.folder)
+      .filter((folder) => !asked.has(keyOf(folder)));
+    for (const folder of folders) {
+      asked.add(keyOf(folder));
+    }
+    if (folders.length === 0) {
+      return;
+    }
+    reading += 1;
+    try {
+      const found = await readProgressLines(ports, folders, () => closed);
+      for (const [key, line] of found) {
+        lines.set(key, line);
+      }
+    } finally {
+      reading -= 1;
+    }
+    if (!closed) {
+      picker.update(view());
+    }
   };
 
   /** Shows the Folder browser at `next`, busy while it goes on looking at what it lists. */
@@ -213,7 +256,8 @@ export async function showCoursePicker(
   const picker = ports.ui.openPicker<PickerIntent>(view(), (intent) => {
     switch (intent.type) {
       case 'refreshCourses':
-        busy = true;
+        scanning = true;
+        asked.clear();
         drawn += 1;
         picker.update(view());
         void showScan(scans.scan(roots, recent, { fresh: true }));
@@ -235,9 +279,10 @@ export async function showCoursePicker(
     }
   });
   if (roots.length > 0) {
+    void readLines();
     void showScan(scans.scan(roots, recent));
   } else {
-    busy = false;
+    scanning = false;
     void redraw();
   }
   const intent = await picker.answer;

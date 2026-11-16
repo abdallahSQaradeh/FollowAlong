@@ -45,6 +45,11 @@ export interface CoursePickerInput {
    * found (the cache), or nothing yet, and the picker shows it is busy.
    */
   readonly scanning: boolean;
+  /**
+   * The Progress line of each Course read so far, by {@link keyOf} its folder: shown under the
+   * Course's name. A Course not in it has none (yet).
+   */
+  readonly progressLines?: ReadonlyMap<string, string | undefined>;
 }
 
 function placeholderOf({ hasRoots, courses, recent, scanning }: CoursePickerInput): string {
@@ -73,10 +78,15 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
     ];
     return parts.length === 0 ? {} : { description: parts.join(' · ') };
   };
+  const detail = (folder: string, missing: boolean) => {
+    const line = missing ? undefined : input.progressLines?.get(keyOf(folder));
+    return line === undefined ? {} : { detail: line };
+  };
   const recent = input.recent.map((course): Entry => ({
     kind: 'item',
     label: course.name,
     ...description(course.categories, course.folder, course.missing),
+    ...detail(course.folder, course.missing),
     intent: course.missing
       ? { type: 'locateCourse', folder: course.folder }
       : { type: 'openCourse', folder: course.folder },
@@ -105,6 +115,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
       kind: 'item',
       label: course.name,
       ...description(course.categories, course.folder, false),
+      ...detail(course.folder, false),
       intent: { type: 'openCourse', folder: course.folder },
     }));
   return {

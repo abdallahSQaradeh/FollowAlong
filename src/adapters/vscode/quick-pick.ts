@@ -70,6 +70,7 @@ export function openQuickPick<Intent>(
         : {
             label: entry.label,
             ...(entry.description === undefined ? {} : { description: entry.description }),
+            ...(entry.detail === undefined ? {} : { detail: entry.detail }),
             ...(entry.buttons === undefined ? {} : { buttons: buttonsOf(entry.buttons) }),
             ...(entry.keepsOpen === true ? { keepsOpen: true } : {}),
             intent: entry.intent,
