@@ -34,6 +34,36 @@ async function reopen(h: Harness, course: string) {
 }
 
 describe('remembering where the learner is in each Lesson', () => {
+  it('saves nothing into a Course from a late report about the previous Course’s Lesson of the same id', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'First/01 Intro.webm': 'video',
+      'Second/01 Intro.webm': 'video',
+      'Second/02 Setup.webm': 'video',
+    });
+    // Both Courses under one Courses root: the player page is kept when the Course changes.
+    h.config.set('coursesRoots', [learning]);
+    const second = join(learning, 'Second');
+    await h.core.openCourse(join(learning, 'First'));
+    h.player.ready();
+    const firstLoad = h.player.sent.at(-1);
+    playTo(h, '01 Intro.webm', 20);
+    await h.core.openCourse(second);
+
+    // Reports the page sent about the first Course's 01 Intro, arriving after the switch.
+    const late =
+      firstLoad?.type === 'load' && firstLoad.loadId !== undefined
+        ? { loadId: firstLoad.loadId }
+        : {};
+    const lessonId = '01 Intro.webm';
+    h.player.emit({ type: 'played', lessonId, ...late });
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 300, duration: 600, ...late });
+    h.player.emit({ type: 'seeked', lessonId, ...late });
+    h.player.emit({ type: 'paused', lessonId, byUser: true, ...late });
+
+    expect(await reopen(h, second)).toMatchObject({ lessonId, startAt: 0 });
+  });
+
   it('reopens the Course on the last Lesson played, paused 5 s before where the learner paused', async () => {
     const h = await createHarness();
     const course = await h.folder('course', lessons);
