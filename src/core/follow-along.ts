@@ -5,6 +5,7 @@
 import { basename } from 'node:path';
 
 import { messageOf } from './logger.js';
+import { createAudioCache } from './audio-cache.js';
 import { isTyping, type DocumentEdit } from './auto-pause.js';
 import { findSection, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
@@ -180,11 +181,20 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let sidecarSound: SidecarSound | undefined;
   /** The `followalong.ffmpegPath` values the learner was told are ignored in this window. */
   const warnedFfmpegPaths = new Set<string>();
+  /** The prepared sound of every Course on this machine, kept under its limit (ADR 0096). */
+  const audioCache = createAudioCache(ports);
+  // A lower limit takes effect at once, not at the next conversion.
+  const limitWatch = config.onDidChange((affects) => {
+    if (affects('audioCacheLimit')) {
+      audioCache.prune();
+    }
+  });
 
   /** The audio sidecars of the Course in `folder` replace the open Course's, which stop. */
   function openSoundOf(folder: string): void {
     sidecarSound?.stop();
-    sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
+    sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths, audioCache);
+    audioCache.prune();
   }
 
   /** What the Lesson tree shows now (as JSON), so a redraw that would change nothing is skipped. */
@@ -1043,6 +1053,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await opening;
       await loaded.leave();
       loaded.dispose();
+      limitWatch.dispose();
       sidecarSound?.stop();
     },
     nextLesson() {
@@ -1053,6 +1064,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     dispose() {
       loaded.dispose();
+      limitWatch.dispose();
       sidecarSound?.stop();
     },
   };

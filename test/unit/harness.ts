@@ -919,6 +919,7 @@ export async function createHarness(): Promise<Harness> {
       hold.reach();
       return track(hold.released.then(() => nodeFileSystem.writeText(path, content)));
     },
+    remove: (path) => track(nodeFileSystem.remove(path)),
     lock: (path) =>
       track(nodeFileSystem.lock(path).then((release) => (): Promise<void> => track(release()))),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),

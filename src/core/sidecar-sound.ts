@@ -10,10 +10,16 @@
 import { createHash } from 'node:crypto';
 import { basename, extname, join } from 'node:path';
 
+import { soundFolderName, type AudioCache, type AudioCacheUse } from './audio-cache.js';
 import { openCourseData, type CourseData } from './course-data.js';
 import { isFullPath } from './courses-roots.js';
 import type { Lesson } from './course-model.js';
-import { createSoundQueue, type PreparedSound, type SoundRequest } from './sound-queue.js';
+import {
+  aheadCount,
+  createSoundQueue,
+  type PreparedSound,
+  type SoundRequest,
+} from './sound-queue.js';
 
 export type { PreparedSound, SoundRequest } from './sound-queue.js';
 import {
@@ -23,9 +29,6 @@ import {
   type FileStat,
   type Ports,
 } from './ports.js';
-
-/** The Course data subfolder that holds prepared sound. */
-const soundFolderName = 'sound';
 
 /** The ffmpeg used on a machine with no bundled one, when `followalong.ffmpegPath` is not set. */
 const pathProgram = 'ffmpeg';
@@ -241,23 +244,78 @@ export interface SidecarSound {
 /**
  * `folder` is the Course folder's absolute path, which also keys the fallback storage.
  * `warnedPaths` holds the `followalong.ffmpegPath` values the learner was told are ignored, shared
- * across the Courses of one window so each is said once.
+ * across the Courses of one window so each is said once. `cache` is the window's audio cache
+ * (ADR 0096): it is told which sound files are made and opened, and which must stay.
  */
 export function openSidecarSound(
   folder: string,
   ports: SidecarSoundPorts,
   warnedPaths: Set<string>,
+  cache: AudioCache,
 ): SidecarSound {
   const data = openCourseData(folder, ports);
-  return createSoundQueue(
-    (lesson, request) => prepareSound(ports, data, lesson, request, warnedPaths),
+  const queue = createSoundQueue(
+    (lesson, request) => prepareSound(ports, data, cache, lesson, request, warnedPaths),
     ports.logger,
   );
+  /** The Lesson that is loaded and the ones after it that get their sound ahead of time. */
+  let loaded: Lesson | undefined;
+  let ahead: readonly Lesson[] = [];
+  const release = cache.follow(() => inUse(ports, data, loaded, ahead));
+  return {
+    async prepare(lesson, request) {
+      loaded = lesson;
+      const sound = await queue.prepare(lesson, request);
+      if (sound.kind === 'sidecar') {
+        cache.opened(sound.path);
+      }
+      return sound;
+    },
+    prepareAhead(opened, lessonsInOrder, pageDecodes) {
+      loaded = opened;
+      const here =
+        opened === undefined ? -1 : lessonsInOrder.findIndex((lesson) => lesson.id === opened.id);
+      ahead = here === -1 ? [] : lessonsInOrder.slice(here + 1, here + 1 + aheadCount);
+      queue.prepareAhead(opened, lessonsInOrder, pageDecodes);
+    },
+    stop() {
+      release();
+      queue.stop();
+    },
+  };
+}
+
+/** The sound files of the Lessons in use, wherever Course data keeps them, for the audio cache. */
+async function inUse(
+  { fileSystem }: SidecarSoundPorts,
+  data: CourseData,
+  loaded: Lesson | undefined,
+  ahead: readonly Lesson[],
+): Promise<AudioCacheUse> {
+  const soundFolders = data.folders(soundFolderName);
+  const pathsOf = async (lessons: readonly Lesson[]): Promise<string[]> => {
+    const paths: string[] = [];
+    for (const lesson of lessons) {
+      try {
+        const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
+        paths.push(...soundFolders.map((folder) => join(folder, name)));
+      } catch {
+        // A Lesson file that is gone has no sound to keep.
+      }
+    }
+    return paths;
+  };
+  return {
+    soundFolders,
+    loaded: await pathsOf(loaded === undefined ? [] : [loaded]),
+    ahead: await pathsOf(ahead),
+  };
 }
 
 async function prepareSound(
   ports: SidecarSoundPorts,
   data: CourseData,
+  cache: AudioCache,
   lesson: Lesson,
   { signal, onProgress, pageDecodes }: SoundRequest,
   warnedPaths: Set<string>,
@@ -314,5 +372,8 @@ async function prepareSound(
     output = await convertInto(fallback);
   }
   logger.log({ level: 'info', message: `Prepared the sound of ${lesson.id}` });
+  // A new file may take the cache over its limit: older sound goes, in the background.
+  cache.made(output);
+  cache.prune();
   return { kind: 'sidecar', path: output };
 }

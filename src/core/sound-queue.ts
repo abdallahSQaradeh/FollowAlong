@@ -13,7 +13,7 @@ import type { Lesson } from './course-model.js';
 import type { Logger } from './logger.js';
 
 /** How many Lessons after the opened one get their sound ahead of time. */
-const aheadCount = 3;
+export const aheadCount = 3;
 
 /**
  * What an MP4 Lesson's sound needs:
