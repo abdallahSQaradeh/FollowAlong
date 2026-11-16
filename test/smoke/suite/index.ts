@@ -38,6 +38,8 @@ interface SeenEvent {
 /** What `activate` returns in ExtensionMode.Test (src/adapters/vscode/extension.ts). */
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
+  /** What the PDF viewers reported (src/protocol/pdf-viewer-messages.ts). */
+  readonly pdfViewerEvents: readonly { readonly type: string; readonly pages?: number }[];
   lessonTree(): { readonly nodes: readonly TreeNode[] };
   /** The status bar items VS Code shows, with the command each one runs. */
   statusBar(): readonly {
@@ -155,6 +157,135 @@ export async function run(): Promise<void> {
 
   await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
   say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+
+  await resourcesOpenByType(extension.extensionPath, hooks);
+  say('Markdown, HTML, an image and a PDF each open in their own kind of tab beside the code');
+}
+
+/** A 1 × 1 PNG, for the image Resource. */
+const onePixelPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/**
+ * Attaches a Markdown file, an HTML file, an image and a PDF to a Lesson and opens each from the
+ * tree: each gets the kind of tab its type calls for, in a group that is not the player's, and the
+ * code keeps the focus. Which kind a type gets is covered at Seam 1, and what the pages show and
+ * run at Seam 2; this checks that VS Code accepts them.
+ */
+async function resourcesOpenByType(extensionPath: string, hooks: TestHooks): Promise<void> {
+  const scratch = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
+  try {
+    const course = join(scratch, 'Course');
+    mkdirSync(course);
+    copyFileSync(
+      join(extensionPath, 'test', 'fixtures', 'media', 'lesson.webm'),
+      join(course, 'lesson.webm'),
+    );
+    const files = {
+      markdown: join(scratch, 'notes.md'),
+      html: join(scratch, 'page.html'),
+      image: join(scratch, 'pic.png'),
+      pdf: join(scratch, 'sample.pdf'),
+    };
+    writeFileSync(files.markdown, '# Cheat sheet\n\nSee `map`.\n');
+    writeFileSync(files.html, '<!doctype html><title>Page</title><h1>Closures</h1>\n');
+    writeFileSync(files.image, onePixelPng);
+    copyFileSync(join(extensionPath, 'test', 'fixtures', 'pdf', 'sample.pdf'), files.pdf);
+
+    // A clean window: the groups the steps before left behind would decide where the player and
+    // the Resources land, and this step is about where its own tabs go.
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    const code = await vscode.workspace.openTextDocument({
+      language: 'javascript',
+      content: '1;\n',
+    });
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+    const lesson = await waitFor('the scratch Course in the tree', () =>
+      hooks.lessonTree().nodes.find((node) => node.id === 'lesson.webm'),
+    );
+    await waitFor('the player tab', () =>
+      vscode.window.tabGroups.all
+        .flatMap((group) => group.tabs)
+        .find(
+          (tab) =>
+            tab.input instanceof vscode.TabInputWebview &&
+            tab.input.viewType.endsWith('followalong.player'),
+        ),
+    );
+    const errorsBefore = hooks.playerEvents.filter((event) => event.type === 'error').length;
+
+    const opened: vscode.Tab[] = [];
+    for (const [index, file] of Object.values(files).entries()) {
+      await vscode.commands.executeCommand(
+        'followalong.attachResource',
+        lesson,
+        vscode.Uri.file(file),
+      );
+      const shown = await waitFor(
+        `the Resource ${file} under its Lesson`,
+        () => hooks.lessonTree().nodes.find((node) => node.id === lesson.id)?.resources?.[index],
+      );
+      await vscode.commands.executeCommand('followalong.openResource', shown.id);
+    }
+    const tabFor = (label: string): vscode.Tab | undefined =>
+      vscode.window.tabGroups.all.flatMap((group) => group.tabs).find((tab) => tab.label === label);
+    const kindOf = (tab: vscode.Tab): string =>
+      tab.input instanceof vscode.TabInputWebview
+        ? tab.input.viewType
+        : tab.input instanceof vscode.TabInputCustom
+          ? tab.input.viewType
+          : tab.input instanceof vscode.TabInputText
+            ? 'text'
+            : 'other';
+    const expectations: readonly (readonly [string, string])[] = [
+      ['notes.md', 'followalong.preview'],
+      ['page.html', 'followalong.preview'],
+      ['pic.png', 'imagePreview.previewEditor'],
+      ['sample.pdf', 'followalong.pdf'],
+    ];
+    for (const [label, kind] of expectations) {
+      const tab = await waitFor(`the tab ${label}`, () => tabFor(label));
+      opened.push(tab);
+      // VS Code puts a prefix before the view type of a webview.
+      assert.ok(kindOf(tab).endsWith(kind), `${label} opened as ${kindOf(tab)}, not as ${kind}`);
+    }
+
+    // Story 94: none of them covers the video or the code, and they collect in one group.
+    const isPlayer = (tab: vscode.Tab): boolean =>
+      tab.input instanceof vscode.TabInputWebview &&
+      tab.input.viewType.endsWith('followalong.player');
+    const playerGroup = vscode.window.tabGroups.all.find((group) => group.tabs.some(isPlayer));
+    assert.ok(playerGroup, 'opening the Resources closed the player');
+    assert.ok(playerGroup.activeTab && isPlayer(playerGroup.activeTab), 'the player is covered');
+    const groups = new Set(opened.map((tab) => tab.group.viewColumn));
+    assert.equal(groups.size, 1, 'the Resources did not open in one group');
+    const [column] = [...groups];
+    assert.notEqual(column, playerGroup.viewColumn, 'a Resource opened in the player’s group');
+    assert.notEqual(column, vscode.ViewColumn.One, 'a Resource opened over the code');
+    assert.equal(
+      vscode.window.activeTextEditor?.document,
+      code,
+      'opening the Resources took the focus from the code',
+    );
+
+    // The PDF viewer drew the first page of the three-page fixture.
+    await waitFor('the PDF viewer drawing the first page', () =>
+      hooks.pdfViewerEvents.find((event) => event.type === 'rendered' && event.pages === 3),
+    );
+    assert.ok(!hooks.pdfViewerEvents.some((event) => event.type === 'failed'), 'the PDF failed');
+    assert.equal(
+      hooks.playerEvents.filter((event) => event.type === 'error').length,
+      errorsBefore,
+      'opening a Resource made the player report an error',
+    );
+  } finally {
+    // The Resource tabs hold the scratch files open: Windows refuses to delete an open file.
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
 }
 
 /**

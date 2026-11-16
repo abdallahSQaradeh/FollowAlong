@@ -21,6 +21,7 @@ import {
   newResource,
   noResources,
   resourcePath,
+  resourceTarget,
   resourcesFile,
   resourcesFileExists,
   withResource,
@@ -824,7 +825,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       const path = resourcePath(course.folder, record);
       try {
-        await ui.openResource({ kind: 'file', path });
+        await ui.openResource(resourceTarget(path));
       } catch (error) {
         logger.log({
           level: 'warn',
