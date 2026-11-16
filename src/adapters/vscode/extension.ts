@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { createFollowAlong } from '../../core/follow-along.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
+import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
@@ -16,6 +17,7 @@ import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
+import { ResourceViewers } from './resource-viewers.js';
 import {
   createConfig,
   createOutputLogger,
@@ -60,6 +62,8 @@ export const commands = {
  */
 export interface TestHooks {
   readonly playerEvents: readonly PlayerEvent[];
+  /** What the PDF viewers reported, in order. */
+  readonly pdfViewerEvents: readonly PdfViewerEvent[];
   /** The Lesson tree the learner sees now. */
   lessonTree(): LessonTreeModel;
   /** The status bar items VS Code shows now, with the command each one runs. */
@@ -73,6 +77,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
   const lessonTree = new LessonTreeView(logger);
+  const viewers = new ResourceViewers(context.extensionPath, logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
   const focus = new FocusReturn();
   const core = createFollowAlong({
@@ -86,6 +91,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       lessonTree,
       statusBar,
       createResourcePlacement(() => player.viewColumn),
+      viewers,
       focus,
       logger,
     ),
@@ -110,9 +116,14 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   let testHooks: TestHooks | undefined;
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     const playerEvents: PlayerEvent[] = [];
-    context.subscriptions.push(player.onEvent((event) => playerEvents.push(event)));
+    const pdfViewerEvents: PdfViewerEvent[] = [];
+    context.subscriptions.push(
+      player.onEvent((event) => playerEvents.push(event)),
+      viewers.onPdfEvent((event) => pdfViewerEvents.push(event)),
+    );
     testHooks = {
       playerEvents,
+      pdfViewerEvents,
       lessonTree: () => lessonTree.current,
       statusBar: () => statusBar.drawn(),
       selectedLesson: () => lessonTree.selectedLesson(),
@@ -122,6 +133,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   context.subscriptions.push(
     channel,
     player,
+    viewers,
     lessonTree,
     statusBar,
     focus,

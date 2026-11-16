@@ -22,7 +22,10 @@
     "out/extension.js",
     "out/player/player.js",
     "out/player/player.css",
-    "media/followalong.svg"
+    "out/pdf/pdf-viewer.js",
+    "out/pdf/pdf.worker.js",
+    "media/followalong.svg",
+    "THIRD_PARTY_NOTICES.txt"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -283,6 +286,7 @@
     "globals": "17.14.0",
     "husky": "9.1.7",
     "lint-staged": "17.6.1",
+    "pdfjs-dist": "6.5.438",
     "prettier": "3.10.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",
