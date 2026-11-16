@@ -305,7 +305,7 @@ export function createLoadedLesson(
             rate,
             shortStep: stepSeconds('short'),
             zoom,
-            autoPause: autoPauseView(autoPause).mode,
+            ...autoPauseView(autoPause),
           });
     if (JSON.stringify(next) === JSON.stringify(statusBar)) {
       return;

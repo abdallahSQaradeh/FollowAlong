@@ -67,6 +67,8 @@ export interface StatusBarState {
   readonly zoom: number;
   /** The `followalong.autoPause` setting (ADR 0052). */
   readonly autoPause: AutoPauseMode;
+  /** Whether auto-pause paused the Lesson, and it has not played since. */
+  readonly pausedByTyping: boolean;
 }
 
 /** How each mode of auto-pause is named in the play/pause item's tooltip. */
@@ -83,7 +85,8 @@ function playPauseItem(state: StatusBarState): StatusBarItemModel {
   const common = {
     id: 'playPause',
     icon: state.playing ? 'pause' : 'play',
-    text: '',
+    // Says why the video stopped, when typing stopped it (story 104).
+    text: !state.playing && state.pausedByTyping ? 'Paused (typing)' : '',
     command: 'playPause',
   } as const;
   return state.autoPause === 'off'

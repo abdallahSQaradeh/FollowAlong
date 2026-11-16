@@ -80,14 +80,14 @@ export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): Aut
 
 /** What the learner is shown of auto-pause: the mode (the marker), and whether it paused the Lesson. */
 export interface AutoPauseView {
-  readonly mode: AutoPauseMode;
+  readonly autoPause: AutoPauseMode;
   readonly pausedByTyping: boolean;
 }
 
 export function autoPauseView(state: AutoPauseState): AutoPauseView {
   return state.kind === 'off'
-    ? { mode: 'off', pausedByTyping: false }
-    : { mode: state.mode, pausedByTyping: state.kind === 'autoPaused' };
+    ? { autoPause: 'off', pausedByTyping: false }
+    : { autoPause: state.mode, pausedByTyping: state.kind === 'autoPaused' };
 }
 
 /** A change to the text of a document open in VS Code, as the adapter forwards it. */

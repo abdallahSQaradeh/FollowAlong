@@ -231,4 +231,51 @@ describe('auto-pause while typing', () => {
       expect(playPauseItem(h)).not.toHaveProperty('marker');
     });
   });
+
+  describe('“Paused (typing)”', () => {
+    /** A Lesson that auto-pause paused: the player has reported the pause it was sent. */
+    async function pausedByTyping(h: Harness): Promise<void> {
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+    }
+
+    it('shows on the play/pause item once auto-pause has paused the Lesson', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+
+      expect(playPauseItem(h)).toMatchObject({
+        icon: 'play',
+        marker: 'autoPause',
+        text: 'Paused (typing)',
+      });
+    });
+
+    it('goes when the Lesson plays again', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'pause', text: '' });
+    });
+
+    it('does not show for a pause of the learner’s own', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      h.player.emit({ type: 'paused', lessonId, byUser: true });
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+
+    it('goes when the learner turns auto-pause off', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      h.config.set('autoPause', 'off');
+
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+    });
+  });
 });
