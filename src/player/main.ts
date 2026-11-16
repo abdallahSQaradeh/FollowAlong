@@ -7,6 +7,7 @@ import {
   type PlayerCommand,
   type PlayerEvent,
 } from '../protocol/player-messages.js';
+import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
 
 declare global {
@@ -23,6 +24,10 @@ if (video === null) {
 function post(event: PlayerEvent): void {
   host.postMessage(event);
 }
+
+const interactions = new Interactions(() => {
+  post({ type: 'userInteracted' });
+});
 
 interface Lesson {
   readonly lessonId: string;
@@ -44,8 +49,6 @@ let current: Lesson | undefined;
 let pauseBy: 'extension' | 'picture' | undefined;
 /** Set while the player's own `play()` starts the media element, so its `play` is not the control bar's. */
 let playRequested = false;
-/** Set while the learner drags a native slider (the seek bar or the volume). */
-let dragging = false;
 
 /** Reports the Lesson's one `error`, and silences it from then on. */
 function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
@@ -174,12 +177,12 @@ function reportMediaEvents(media: HTMLVideoElement): void {
     });
     pauseBy = undefined;
     if (fromControlBar) {
-      interacted();
+      interactions.ended();
     }
   });
   on('play', () => {
     if (!playRequested) {
-      interacted();
+      interactions.ended();
     }
     playRequested = false;
   });
@@ -190,13 +193,6 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   on('error', (lesson) => {
     fail(lesson, media.error?.message ?? 'the video failed', media);
   });
-}
-
-/** Tells the extension the learner is done with the player, so it hands focus back (ADR 0009). */
-function interacted(): void {
-  if (!dragging) {
-    post({ type: 'userInteracted' });
-  }
 }
 
 /** A click on the picture plays or pauses the Lesson. */
@@ -213,25 +209,29 @@ function togglePlayback(media: HTMLVideoElement): void {
 }
 
 /**
- * Reports the end of each learner interaction as `userInteracted`. The native control bar keeps
- * its pointer events to itself, so its buttons show only through what they change, and its
- * sliders through their pointer capture, which ends when the learner lets go.
+ * Reports the end of each learner interaction as `userInteracted` (ADR 0009). The native control
+ * bar keeps its pointer events to itself, so its buttons show only through what they change, and
+ * its sliders through their pointer capture, which ends when the learner lets go.
  */
 function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
+  const ended = () => {
+    interactions.ended();
+  };
   overlay.addEventListener('click', () => {
     togglePlayback(media);
   });
   // A click on the picture, or on the video under a hidden control bar.
-  window.addEventListener('pointerup', interacted);
+  window.addEventListener('pointerup', ended);
+  // A key on the native controls, after the learner tabbed to them.
+  window.addEventListener('keyup', ended);
   media.addEventListener('gotpointercapture', () => {
-    dragging = true;
+    interactions.beginGesture();
   });
   media.addEventListener('lostpointercapture', () => {
-    dragging = false;
-    interacted();
+    interactions.endGesture();
   });
   // The mute button; the volume slider reports on release, as above.
-  media.addEventListener('volumechange', interacted);
+  media.addEventListener('volumechange', ended);
 }
 
 const overlay = document.querySelector('.overlay');

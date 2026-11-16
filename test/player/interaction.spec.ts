@@ -128,6 +128,22 @@ test.describe('the native control bar', () => {
   });
 });
 
+test.describe('the keyboard in the player', () => {
+  test('hands focus back once a key is released', async ({ page }) => {
+    const player = await openPlayer(page);
+    await player.post(load({ autoplay: false }));
+    await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+
+    // Tab to the native controls, as the learner might after a click in the player.
+    await page.keyboard.down('Tab');
+    await page.waitForTimeout(100);
+    expect(await interactions(player)).toBe(0);
+    await page.keyboard.up('Tab');
+
+    await player.waitForEvent({ type: 'userInteracted' });
+  });
+});
+
 test.describe('commands from the extension', () => {
   test('play and pause without asking for focus', async ({ page }) => {
     const player = await openPlayer(page);
