@@ -480,14 +480,16 @@ async function aPlayerOpensInTheStripFromTheSetting(
   await waitFor('the player in the editor group', () =>
     hooks.playerSpot()?.spot === 'editorSplit' ? true : undefined,
   );
-  const tab = playerGroups()
-    .flatMap((group) => group.tabs)
-    .find(
-      (candidate) =>
-        candidate.input instanceof vscode.TabInputWebview &&
-        candidate.input.viewType.includes(playerViewType),
-    );
-  assert.ok(tab, 'the player has no tab');
+  // The tab API hears of the new tab a moment after the panel shows.
+  const tab = await waitFor('the player tab', () =>
+    playerGroups()
+      .flatMap((group) => group.tabs)
+      .find(
+        (candidate) =>
+          candidate.input instanceof vscode.TabInputWebview &&
+          candidate.input.viewType.includes(playerViewType),
+      ),
+  );
   await vscode.window.tabGroups.close(tab);
   await waitFor('the player to be gone', () =>
     hooks.playerSpot() === undefined ? true : undefined,
