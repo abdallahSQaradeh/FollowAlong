@@ -8,9 +8,10 @@
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import type { Lesson } from './course-model.js';
 import type { PreparedSound } from './sidecar-sound.js';
-import type { Disposable, Ports } from './ports.js';
+import type { Disposable, PlayerShowResult, Ports } from './ports.js';
 import type { PlayheadSeen } from './lesson-status.js';
 import { lessonStatus, type ProgressRecorder } from './progress.js';
+import { settingSpot, type VideoSpot } from './video-placement.js';
 import {
   buildStatusBar,
   hiddenStatusBar,
@@ -71,6 +72,11 @@ export interface LoadedLesson {
   lesson(): Lesson | undefined;
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   load(lesson: Lesson, options: LoadOptions): void;
+  /**
+   * Brings the player of the Loaded Lesson to the front, in the spot it sits in, without loading
+   * the Lesson again. Does nothing while no Lesson is loaded.
+   */
+  reveal(resourceRoots: readonly string[]): void;
   /**
    * Leaves the Loaded Lesson (another Lesson, another Course, the window closes): no more saves
    * on the clock, its late events are ignored, and the Course's Progress is saved. Resolves once
@@ -246,6 +252,11 @@ export function createLoadedLesson(
    * the Lesson (ADR 0037): it stays from Lesson to Lesson, and a new page starts at 1×.
    */
   let zoom = 1;
+  /**
+   * The spot the open player sits in, or `undefined` while no player is open: a new player opens
+   * in the spot the `followalong.videoLocation` setting names (ADR 0049).
+   */
+  let spot: VideoSpot | undefined;
   /**
    * What a player page that has just started is like (one that posted `ready`, or one that is
    * starting or gone): it plays at normal speed and shows the whole picture, until it says
@@ -657,6 +668,7 @@ export function createLoadedLesson(
   /** The learner closed the player: a new page starts from scratch, at normal speed. */
   function onPlayerClosed(): void {
     newPage(false);
+    spot = undefined;
     // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
     void leave();
     // The Lesson shows where it was left, saved with it.
@@ -697,13 +709,20 @@ export function createLoadedLesson(
     };
     // Nothing is known about this Lesson until the player loads it and reports.
     resetPlayhead(false);
-    const shown = player.show({ title: lesson.title, resourceRoots });
-    if (shown === 'created') {
-      newPage(false);
-    } else if (playerReady) {
+    if (showPlayer(lesson, resourceRoots) === 'revealed' && playerReady) {
       loadCurrent();
     }
     refreshStatusBar();
+  }
+
+  /** Shows the player for `lesson` in its spot; a page that is starting is a new page. */
+  function showPlayer(lesson: Lesson, resourceRoots: readonly string[]): PlayerShowResult {
+    spot ??= settingSpot(config);
+    const shown = player.show({ title: lesson.title, resourceRoots, spot });
+    if (shown === 'created') {
+      newPage(false);
+    }
+    return shown;
   }
 
   /**
@@ -778,6 +797,11 @@ export function createLoadedLesson(
   return {
     lesson: () => current?.lesson,
     load,
+    reveal(resourceRoots) {
+      if (current !== undefined) {
+        showPlayer(current.lesson, resourceRoots);
+      }
+    },
     leave,
     unload,
     playPause,

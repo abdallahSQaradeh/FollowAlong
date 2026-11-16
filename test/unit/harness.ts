@@ -49,6 +49,8 @@ export class FakePlayer implements PlayerPort {
   private readonly listeners = new Set<(event: PlayerEvent) => void>();
   private readonly closeListeners = new Set<() => void>();
   private openRoots: readonly string[] | undefined;
+  /** The spot the open player sits in; a show in another spot makes a new page there. */
+  private openSpot: PlayerShowOptions['spot'] | undefined;
   /** The `loadId` of the last `load` the page received. */
   private loadId: number | undefined;
 
@@ -56,8 +58,10 @@ export class FakePlayer implements PlayerPort {
     this.shown.push(options);
     const same =
       this.openRoots?.length === options.resourceRoots.length &&
-      this.openRoots.every((root, index) => root === options.resourceRoots[index]);
+      this.openRoots.every((root, index) => root === options.resourceRoots[index]) &&
+      this.openSpot === options.spot;
     this.openRoots = options.resourceRoots;
+    this.openSpot = options.spot;
     return same ? 'revealed' : 'created';
   }
 
@@ -90,6 +94,7 @@ export class FakePlayer implements PlayerPort {
   /** The learner closed the player tab. */
   close(): void {
     this.openRoots = undefined;
+    this.openSpot = undefined;
     for (const listener of this.closeListeners) {
       listener();
     }

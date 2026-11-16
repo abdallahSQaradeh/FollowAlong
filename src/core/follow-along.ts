@@ -417,10 +417,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // the Lesson is not reloaded and the learner does not land on Lesson 1 (ADR 0041).
       logger.log({ level: 'info', message: `Not opening ${folder}: it is the open Course.` });
       ui.selectLesson(playing.id);
-      ports.player.show({
-        title: playing.title,
-        resourceRoots: resourceRootsOf(openedCourse),
-      });
+      loaded.reveal(resourceRootsOf(openedCourse));
       return;
     }
     let course: Course;
