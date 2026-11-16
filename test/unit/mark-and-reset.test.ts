@@ -1,7 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
 import { createHarness, type Harness } from './harness.js';
+import { makeReadOnly } from './read-only.js';
 
 /** Every node of the tree the learner sees, in tree order, whatever its depth. */
 function allNodes(h: Harness): LessonTreeNode[] {
@@ -235,5 +239,116 @@ describe('Reset Course progress', () => {
     });
     await reopen(h, course);
     expect(glyphs(h)['Basics/01 Intro.webm']).toBe('✓');
+  });
+});
+
+describe('marking and resetting leave the rest of the Course data alone', () => {
+  it('never touches the Resources or the sound files in .followalong, checked on disk', async () => {
+    const h = await createHarness();
+    const sound = '.followalong/sound/01 Intro-0123456789abcdef.mp3';
+    const course = await h.folder('course', {
+      ...twoSections,
+      'cheat.md': '# cheat sheet',
+      [sound]: 'sound of the first Lesson',
+    });
+    await h.core.openCourse(course);
+    h.player.ready();
+    await h.core.attachCourseResource(join(course, 'cheat.md'));
+    await h.core.attachResource('Basics/01 Intro.webm', join(course, 'cheat.md'));
+    const resources = await readFile(join(course, '.followalong', 'resources.json'), 'utf8');
+
+    await h.core.markSectionDone('Basics/');
+    await h.core.resetSection('Basics/');
+    const resetting = h.core.resetCourseProgress();
+    await h.settle();
+    h.ui.answerQuestion('accept');
+    await resetting;
+
+    expect(await readFile(join(course, '.followalong', 'resources.json'), 'utf8')).toBe(resources);
+    expect(await readFile(join(course, sound), 'utf8')).toBe('sound of the first Lesson');
+    expect(await h.listFiles(join(course, '.followalong'))).toEqual([
+      'progress.json',
+      'resources.json',
+      'sound/01 Intro-0123456789abcdef.mp3',
+    ]);
+    expect(h.ui.lessonTree?.course?.resources).toHaveLength(1);
+  });
+
+  it('wins over the older copy in .followalong when the Course turned read-only', async () => {
+    const h = await createHarness();
+    const course = await openWithProgress(h);
+    await h.core.markSectionDone('Basics/');
+    await h.settle();
+    makeReadOnly(join(course, '.followalong'));
+
+    // VS Code starts again within the same millisecond as the marks were saved.
+    h.restart();
+    await h.core.openCourse(course);
+    h.player.ready();
+    await h.core.resetSection('Basics/');
+
+    // The reset went to the fallback storage; the next session reads both and the reset is newer.
+    await reopen(h, course);
+    expect(glyphs(h)['Basics/01 Intro.webm']).toBe('○');
+    expect(glyphs(h)['Basics/02 Setup.webm']).toBe('○');
+    expect(glyphs(h)['Advanced/03 Closures.webm']).toBe('◐');
+  });
+
+  it('keeps a progress file it cannot read as it is, and saves the marks in the extension storage', async () => {
+    const h = await createHarness();
+    const damaged = '{"version": 1, "data": ';
+    const course = await h.folder('course', {
+      ...twoSections,
+      '.followalong/progress.json': damaged,
+    });
+    await h.core.openCourse(course);
+    h.player.ready();
+
+    await h.core.markSectionDone('Basics/');
+
+    expect(await readFile(join(course, '.followalong', 'progress.json'), 'utf8')).toBe(damaged);
+    expect(await h.listFiles(h.storage.folder)).toEqual([
+      expect.stringMatching(/^courses\/course-[0-9a-f]{16}\/progress\.json$/),
+    ]);
+    await reopen(h, course);
+    expect(glyphs(h)['Basics/01 Intro.webm']).toBe('✓');
+  });
+
+  it('resets nothing when another Course was opened while the learner was asked', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'First/00 Intro.webm': 'video',
+      'First/Part/01 One.webm': 'video',
+      'First/Part/02 Two.webm': 'video',
+      'Second/01 Intro.webm': 'video',
+    });
+    const first = join(learning, 'First');
+    await h.core.openCourse(first);
+    h.player.ready();
+    await h.core.markSectionDone('Part/');
+    const resetting = h.core.resetCourseProgress();
+    await h.settle();
+    await h.core.openCourse(join(learning, 'Second'));
+
+    h.ui.answerQuestion('accept');
+    await resetting;
+
+    expect(h.ui.messages.at(-1)?.text).toContain('did not reset “First”');
+    await reopen(h, first);
+    expect(glyphs(h)['Part/01 One.webm']).toBe('✓');
+    expect(glyphs(h)['Part/02 Two.webm']).toBe('✓');
+  });
+
+  it('says so when no Course is open, and ignores a Section the Course does not have', async () => {
+    const h = await createHarness();
+
+    await h.core.resetCourseProgress();
+    await h.core.markSectionDone('Basics/');
+    await h.core.resetSection('Basics/');
+
+    expect(h.ui.questions).toEqual([]);
+    expect(h.ui.messages).toEqual([
+      { severity: 'info', text: 'Open a Course first, then reset its progress.' },
+    ]);
   });
 });
