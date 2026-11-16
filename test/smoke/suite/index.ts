@@ -34,6 +34,7 @@ interface TestHooks {
     readonly text: string;
     readonly command?: { readonly id: string; readonly argument: unknown };
   }[];
+  selectedLesson(): string | undefined;
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -74,6 +75,8 @@ export async function run(): Promise<void> {
     'followalong.speedUp',
     'followalong.speedDown',
     'followalong.statusBarClick',
+    'followalong.nextLesson',
+    'followalong.previousLesson',
     'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
@@ -91,8 +94,19 @@ export async function run(): Promise<void> {
   goToLessonIsBoundToItsChord(extension.packageJSON);
   say("FollowAlong: Go to Lesson… is in the Command Palette and bound to Ctrl+' L");
 
-  speedIsBoundToItsKeys(extension.packageJSON);
+  chordCommandsAreBound(extension.packageJSON, [
+    ['speedUp', 'Speed up', "ctrl+' up"],
+    ['speedDown', 'Speed down', "ctrl+' down"],
+  ]);
   say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
+
+  chordCommandsAreBound(extension.packageJSON, [
+    ['nextLesson', 'Next Lesson', "ctrl+' n"],
+    ['previousLesson', 'Previous Lesson', "ctrl+' p"],
+  ]);
+  say(
+    "FollowAlong: Next Lesson / Previous Lesson are in the Command Palette, bound to Ctrl+' N / P",
+  );
 
   stepsAreBoundToTheirKeys(extension.packageJSON);
   say(
@@ -110,6 +124,18 @@ export async function run(): Promise<void> {
   // A click on a Lesson in the tree runs this command with the Lesson's id.
   await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
   say(await theLessonStarts(hooks.playerEvents, 'long.webm'));
+
+  // The Lesson tree is on screen, and the selection follows the Lesson the keys load.
+  await vscode.commands.executeCommand('followalong.lessons.focus');
+  await vscode.commands.executeCommand('followalong.previousLesson');
+  await waitFor('the tree selecting the previous Lesson', () =>
+    hooks.selectedLesson() === 'lesson.webm' ? true : undefined,
+  );
+  await vscode.commands.executeCommand('followalong.nextLesson');
+  await waitFor('the tree selecting the next Lesson', () =>
+    hooks.selectedLesson() === 'long.webm' ? true : undefined,
+  );
+  say('Previous Lesson and Next Lesson load their Lesson, and the tree selection follows it');
 
   await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
   say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
@@ -305,13 +331,13 @@ function stepsAreBoundToTheirKeys(packageJson: unknown): void {
   assert.equal(settings.get('longStep'), 30, 'the long step defaults to 30 s');
 }
 
-/** The speed commands' Palette entries and chord keys. */
-function speedIsBoundToItsKeys(packageJson: unknown): void {
+/** Each command has its `FollowAlong: <title>` Palette entry and exactly one chord key. */
+function chordCommandsAreBound(
+  packageJson: unknown,
+  expected: readonly (readonly [name: string, title: string, key: string])[],
+): void {
   const { contributes } = packageJson as { contributes?: Contributes };
-  for (const [name, title, key] of [
-    ['speedUp', 'Speed up', "ctrl+' up"],
-    ['speedDown', 'Speed down', "ctrl+' down"],
-  ] as const) {
+  for (const [name, title, key] of expected) {
     const id = `followalong.${name}`;
     const command = contributes?.commands?.find((entry) => entry.command === id);
     assert.deepEqual(

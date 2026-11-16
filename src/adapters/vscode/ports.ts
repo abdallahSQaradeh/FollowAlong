@@ -58,6 +58,9 @@ export function createUiSink(
     showStatusBar(model) {
       statusBar.show(model);
     },
+    selectLesson(lessonId) {
+      tree.select(lessonId);
+    },
     async openResource(target) {
       // VS Code picks the editor for the file (text and code in the text editor). The group is
       // never the player's, so the video stays in sight, and focus stays where it was.

@@ -185,6 +185,8 @@ export class RecordingUi implements UiSink {
   lessonTree: LessonTreeModel | undefined;
   /** The status bar items the learner sees now; none until the core shows some. */
   statusBar: StatusBarModel = { items: [] };
+  /** The id of the Lesson the tree shows as selected. */
+  selectedLesson: string | undefined;
   /** The Resources opened in a tab beside the code, in order. */
   readonly opened: ResourceTarget[] = [];
   /** Set to make opening a file fail, as VS Code does for a file that is gone. */
@@ -237,6 +239,10 @@ export class RecordingUi implements UiSink {
 
   showStatusBar(model: StatusBarModel): void {
     this.statusBar = model;
+  }
+
+  selectLesson(lessonId: string): void {
+    this.selectedLesson = lessonId;
   }
 
   openResource(target: ResourceTarget): Promise<void> {

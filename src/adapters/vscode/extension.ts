@@ -38,13 +38,17 @@ export const commands = {
   speedDown: 'followalong.speedDown',
   /** Run by a click on a status bar item, with the name of the core command the item names. */
   statusBarClick: 'followalong.statusBarClick',
+  /** `Ctrl+'` `N` / `P`: the next or previous Lesson in Course order. */
+  nextLesson: 'followalong.nextLesson',
+  previousLesson: 'followalong.previousLesson',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
 } as const;
 
 /**
  * What `activate` returns when VS Code runs the extension's tests (`ExtensionMode.Test`): the
- * player events the extension received, so the smoke test can see the real page play a Lesson.
+ * player events the extension received, so the smoke test can see the real page play a Lesson,
+ * and the Lesson the tree has selected.
  * In normal use `activate` returns nothing.
  */
 export interface TestHooks {
@@ -53,13 +57,15 @@ export interface TestHooks {
   lessonTree(): LessonTreeModel;
   /** The status bar items VS Code shows now, with the command each one runs. */
   statusBar(): readonly DrawnItem[];
+  /** The id of the Lesson the Lesson tree shows as selected. */
+  selectedLesson(): string | undefined;
 }
 
 export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
-  const lessonTree = new LessonTreeView();
+  const lessonTree = new LessonTreeView(logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
   const core = createFollowAlong({
     player,
@@ -98,6 +104,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       playerEvents,
       lessonTree: () => lessonTree.current,
       statusBar: () => statusBar.drawn(),
+      selectedLesson: () => lessonTree.selectedLesson(),
     };
   }
 
@@ -190,6 +197,12 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       // the learner would have to click back into the code. The click is a mouse action, so the
       // editor is where the learner was typing.
       await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+    }),
+    register(commands.nextLesson, () => {
+      core.nextLesson();
+    }),
+    register(commands.previousLesson, () => {
+      core.previousLesson();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );

@@ -151,6 +151,8 @@ export interface UiSink {
   showLessonTree(model: LessonTreeModel): void;
   /** Replaces the status bar items: none while no Lesson is loaded. */
   showStatusBar(model: StatusBarModel): void;
+  /** Selects the Lesson in the Lesson tree, and scrolls it into view without taking focus. */
+  selectLesson(lessonId: string): void;
   /** Opens a Resource in a tab beside the code, without touching the player or taking focus. */
   openResource(target: ResourceTarget): Promise<void>;
 }
