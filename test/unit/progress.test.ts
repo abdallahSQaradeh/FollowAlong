@@ -523,7 +523,13 @@ describe('Progress kept with the Course', () => {
       version: 1,
       data: {
         lessons: {
-          'Section 1/01 Intro.webm': { position: 42, duration: 600, savedAt: h.clock.now() },
+          // `statusAt: 0`: no status was ever set (ADR 0074).
+          'Section 1/01 Intro.webm': {
+            position: 42,
+            duration: 600,
+            savedAt: h.clock.now(),
+            statusAt: 0,
+          },
         },
         last: { lessonId: 'Section 1/01 Intro.webm', savedAt: h.clock.now() },
       },

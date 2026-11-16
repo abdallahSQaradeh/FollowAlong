@@ -1,4 +1,5 @@
-import { readFile, utimes, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -170,6 +171,37 @@ describe('two windows on the same Course', () => {
 
     expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 15 });
     expect(glyphs(h)[intro]).toBe('✓');
+  });
+
+  it('keeps a reset and the play after it over a done mark the other window still had', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', { [intro]: 'video', [setup]: 'video' });
+    await h.core.openCourse(course);
+    h.player.ready();
+    await h.core.markLessonDone(intro);
+    await h.settle();
+    const other = h.openWindow({ clockOffsetMs: 0 });
+    await other.core.openCourse(course);
+    other.player.ready();
+    wait(h, other, 1_000);
+
+    await h.core.markLessonNotDone(intro);
+    wait(h, other, 1_000);
+    // This window plays the Lesson again, past its 10 s: it is in progress again.
+    h.player.emit({ type: 'played', lessonId: intro });
+    for (let position = 0; position <= 20; position += 2) {
+      h.player.emit({ type: 'timeUpdate', lessonId: intro, position, duration: 600 });
+    }
+    pause(h.player, intro);
+    await h.settle();
+    wait(h, other, 1_000);
+    // The other window, which still has the Lesson done, saves another Lesson.
+    other.core.playLesson(setup);
+    playTo(other.player, setup, 50);
+    pause(other.player, setup);
+
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 15 });
+    expect(glyphs(h)[intro]).toBe('◐');
   });
 
   it('keeps the place the other window saved when a Lesson is marked done', async () => {
@@ -424,6 +456,34 @@ describe('Course data another window changes while this one has the Course open'
     expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 195 });
     expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
     expect(h.ui.messages.filter((message) => message.text.includes('damaged'))).toEqual([]);
+  });
+
+  it('lets a reset written before statusAt existed win over an older done mark in the other copy', async () => {
+    const h = await createHarness();
+    const progress = (lessons: Record<string, unknown>): string =>
+      `${JSON.stringify({ version: 1, data: { lessons } })}\n`;
+    // A reset as FollowAlong wrote it before #27 (ADR 0061), in the Course's copy…
+    const course = await h.folder('course', {
+      [intro]: 'video',
+      '.followalong/progress.json': progress({
+        [intro]: { position: 0, duration: 0, savedAt: 200 },
+      }),
+    });
+    // …and an older done mark in the fallback copy (ADR 0005: keyed by the Course's path).
+    const hash = createHash('sha256').update(course).digest('hex').slice(0, 16);
+    const fallback = join(h.storage.folder, 'courses', `course-${hash}`);
+    await mkdir(fallback, { recursive: true });
+    await writeFile(
+      join(fallback, 'progress.json'),
+      progress({ [intro]: { position: 300, duration: 600, savedAt: 100, status: 'done' } }),
+    );
+
+    await h.core.openCourse(course);
+
+    expect(glyphs(h)[intro]).toBe('○');
+    h.player.ready();
+    h.core.playLesson(intro);
+    expect(h.player.sent.at(-1)).toMatchObject({ lessonId: intro, startAt: 0 });
   });
 
   it('keeps the Resources both windows attach at the same moment', async () => {

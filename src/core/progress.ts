@@ -27,9 +27,11 @@ export interface LessonProgress {
   /** Whether the Lesson is in progress or done (ADR 0030); no mark means not started. */
   readonly status?: StoredStatus;
   /**
-   * When `status` was last set, by play or by hand (ms since the epoch). Two copies of an entry
-   * merge their positions by `savedAt` and their statuses by this, so a done mark is not lost to a
-   * newer save of the place alone (ADR 0074). Absent when it is {@link statusSetAt}'s default.
+   * When the learner last set the status by hand (mark done, reset), 0 when never (ms since the
+   * epoch). Play raises the status but keeps this stamp. Two copies of an entry merge their places
+   * by `savedAt` and their statuses by this, so a done mark is not lost to another window's newer
+   * save of the place, nor a reset to a done mark another window still holds (ADR 0074). Absent
+   * when it equals `savedAt`.
    */
   readonly statusAt?: number;
 }
@@ -118,11 +120,12 @@ export function lessonEntry(
 }
 
 /**
- * When an entry's status was last set: its `statusAt`, else `savedAt` for an entry with a status
- * (written before `statusAt` existed, or set when its place was saved), else never (0).
+ * When an entry's status was set: its `statusAt`, else `savedAt`. An entry without `statusAt` was
+ * written before it existed (a reset of ADR 0061 among them) or by an older FollowAlong, and its
+ * whole entry was saved at `savedAt`. A status never set is written as `statusAt: 0`.
  */
 function statusSetAt(entry: LessonProgress): number {
-  return entry.statusAt ?? (entry.status === undefined ? 0 : entry.savedAt);
+  return entry.statusAt ?? entry.savedAt;
 }
 
 /** An entry with this place and status; `statusAt` is written only when it is not the default. */
@@ -140,22 +143,12 @@ function entryOf(
 }
 
 /**
- * Of two entries, the one whose status counts: the one set later, except that in progress never
- * replaces done. Only the learner un-marks a done Lesson, with a reset (ADR 0030); play in a window
- * that had not seen the mark yet only reaches in progress. `a` wins a tie.
- */
-function statusHolder(a: LessonProgress, b: LessonProgress): LessonProgress {
-  const [later, earlier] = statusSetAt(b) > statusSetAt(a) ? [b, a] : [a, b];
-  return later.status === 'inProgress' && earlier.status === 'done' ? earlier : later;
-}
-
-/**
- * Two entries of one Lesson (ADR 0074): the place saved later, with the status set later (see
- * {@link statusHolder}). `a` wins a tie.
+ * Two entries of one Lesson (ADR 0074): the place saved later, with the status set later. `a` wins
+ * a tie.
  */
 function mergeEntry(a: LessonProgress, b: LessonProgress): LessonProgress {
   const place = b.savedAt > a.savedAt ? b : a;
-  const marked = statusHolder(a, b);
+  const marked = statusSetAt(b) > statusSetAt(a) ? b : a;
   return place === marked ? place : entryOf(place, marked.status, statusSetAt(marked));
 }
 
@@ -185,7 +178,7 @@ function savedAfter(before: { readonly savedAt: number } | undefined, now: numbe
   return before === undefined ? now : Math.max(now, before.savedAt + 1);
 }
 
-/** The stamp of a status play left as it was: the entry's own, or never (0) for a new entry. */
+/** The stamp of a status play leaves or raises: the entry's own, or never (0) for a new entry. */
 function keptStatusAt(before: LessonProgress | undefined): number {
   return before === undefined ? 0 : statusSetAt(before);
 }
@@ -354,8 +347,11 @@ export async function openProgress(
       const savedAt = savedAfter(before, now);
       const statusBefore = lessonStatus(progress, lessonId);
       const status = statusAfter(statusBefore, seen);
-      // The status keeps its stamp unless play changed it: another window's later mark wins.
-      const statusAt = status === statusBefore ? keptStatusAt(before) : changedAfter(before, now);
+      // Play only raises a status, and the raised status keeps the stamp of the one it rose from:
+      // the learner's last mark or reset, or never (0). So a mark or reset in another window this
+      // one has not seen wins over it, and a reset this window made wins over a done mark the other
+      // window still holds (ADR 0074).
+      const statusAt = keptStatusAt(before);
       progress = {
         lessons: {
           ...progress.lessons,
