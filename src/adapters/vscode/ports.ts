@@ -9,7 +9,7 @@ import type { LessonTreeView } from './lesson-tree-view.js';
 import type { ResourcePlacement } from './resource-placement.js';
 import { openInEditor, openInSimpleBrowser, type ResourceViewers } from './resource-viewers.js';
 import type { StatusBarView } from './status-bar-view.js';
-import { showQuickPick } from './quick-pick.js';
+import { openQuickPick, showQuickPick } from './quick-pick.js';
 import type { FocusReturn } from './focus-return.js';
 
 function store(memento: vscode.Memento): KeyValueStore {
@@ -78,6 +78,7 @@ export function createUiSink(
       return pressed === accept ? 'accept' : pressed === decline ? 'decline' : undefined;
     },
     pick: showQuickPick,
+    openPicker: openQuickPick,
     showLessonTree(model) {
       tree.show(model);
     },

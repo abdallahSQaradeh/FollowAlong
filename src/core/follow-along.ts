@@ -8,7 +8,8 @@ import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
-import { scanCourses } from './course-scanner.js';
+import type { CourseScan } from './course-scanner.js';
+import { createCourseScans } from './course-scan-cache.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { locateCourse } from './locate-course.js';
 import { buildLessonPicker } from './lesson-picker.js';
@@ -550,6 +551,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** The Courses roots setting entries, and the roots, the learner was told about in this window. */
   const warnedRoots = new Set<string>();
   const warnedUnreadable = new Set<string>();
+  const courseScans = createCourseScans(ports);
   /**
    * Opens run one after another, so the one asked for last is the Course left open. An open that
    * a later one superseded while it waited, or while it read its folder, is dropped when it gets
@@ -613,24 +615,76 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     const { roots, notAbsolute } = readCoursesRoots(config);
     warnNotAbsolute(notAbsolute);
     const recent = readRecent(storage.global);
-    // A Recent Course is a known Course: listed as itself, not as its Sections (ADR 0032).
-    const scan = await scanCourses(ports, roots, recent);
-    // Once per window: a drive that stays unplugged would otherwise be named at every open.
-    for (const root of scan.unreadableRoots.filter((unread) => !warnedUnreadable.has(unread))) {
-      warnedUnreadable.add(root);
-      ui.showMessage({
-        severity: 'warning',
-        text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
-      });
-    }
-    const intent = await ui.pick(
-      buildCoursePicker({
+    // Shown from the cache at once; the scan below fills in what is new (ADR 0058).
+    let courses = courseScans.cached(roots) ?? [];
+    let scanning = roots.length > 0;
+    const modelNow = async () => {
+      const [shown, busy] = [courses, scanning];
+      return buildCoursePicker({
         hasRoots: roots.length > 0,
-        courses: scan.courses,
-        recent: await recentCourses(ports, recent, scan.courses),
+        courses: shown,
+        recent: await recentCourses(ports, recent, shown),
         openFolder: openedCourse?.folder,
-      }),
-    );
+        scanning: busy,
+      });
+    };
+    let closed = false;
+    let drawn = 0;
+    let newest = 0;
+    /** Shows the list as it is now; of two redraws under way, only the later one is shown. */
+    const redraw = async (): Promise<void> => {
+      drawn += 1;
+      const mine = drawn;
+      const model = await modelNow();
+      if (!closed && mine === drawn) {
+        picker.update(model);
+      }
+    };
+    /** Waits for a scan, then shows it, unless the picker is closed or a newer scan was asked for. */
+    const showScan = async (scan: Promise<CourseScan>): Promise<void> => {
+      newest += 1;
+      const mine = newest;
+      try {
+        const found = await scan;
+        if (closed || mine !== newest) {
+          return;
+        }
+        courses = found.courses;
+        // Once per window: a drive that stays unplugged would otherwise be named at every open.
+        for (const root of found.unreadableRoots.filter(
+          (unread) => !warnedUnreadable.has(unread),
+        )) {
+          warnedUnreadable.add(root);
+          ui.showMessage({
+            severity: 'warning',
+            text: `FollowAlong can't read the Courses root “${root}”. Is the folder or drive still there?`,
+          });
+        }
+      } catch (error) {
+        if (closed || mine !== newest) {
+          return;
+        }
+        logger.log({
+          level: 'error',
+          message: `The Course scan failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+      scanning = false;
+      await redraw();
+    };
+    const picker = ui.openPicker(await modelNow(), (button) => {
+      if (button.type === 'refreshCourses') {
+        scanning = true;
+        void showScan(courseScans.scan(roots, recent, { fresh: true }));
+        void redraw();
+      }
+    });
+    if (scanning) {
+      // A known Course is not walked into: Recent folders are passed as known (ADR 0032).
+      void showScan(courseScans.scan(roots, recent));
+    }
+    const intent = await picker.answer;
+    closed = true;
     switch (intent?.type) {
       case 'openCourse':
         await openInTurn(intent.folder, false);
