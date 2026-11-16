@@ -200,6 +200,11 @@ export function createLoadedLesson(
   /** The playhead and length the player last reported for the current Lesson, in seconds. */
   let position = 0;
   let duration = 0;
+  /**
+   * The open player page's zoom level, as it last reported it. Zoom belongs to the page, not to
+   * the Lesson (ADR 0037): it stays from Lesson to Lesson, and a new page starts at 1×.
+   */
+  let zoom = 1;
   /** What the status bar shows now; a new model is sent to the UI only when it differs. */
   let statusBar: StatusBarModel = hiddenStatusBar;
 
@@ -213,6 +218,7 @@ export function createLoadedLesson(
             duration,
             rate,
             shortStep: stepSeconds('short'),
+            zoom,
           });
     if (JSON.stringify(next) === JSON.stringify(statusBar)) {
       return;
@@ -301,6 +307,8 @@ export function createLoadedLesson(
         playerReady = true;
         playerResumeRewind = 0;
         rate = normalRate;
+        // A page that kept its zoom reports it right after `ready`.
+        zoom = 1;
         askedRates = [];
         logger.log({
           level: 'debug',
@@ -432,6 +440,9 @@ export function createLoadedLesson(
       case 'userInteracted':
         ui.returnFocus();
         break;
+      case 'zoomChanged':
+        zoom = event.level;
+        break;
     }
     refreshStatusBar();
   }
@@ -469,6 +480,7 @@ export function createLoadedLesson(
   function onPlayerClosed(): void {
     playerReady = false;
     rate = normalRate;
+    zoom = 1;
     askedRates = [];
     // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
     void leave();
@@ -499,9 +511,10 @@ export function createLoadedLesson(
     resetPlayhead(false);
     const shown = player.show({ title: lesson.title, resourceRoots });
     if (shown === 'created') {
-      // A new page is not ready and plays at normal speed.
+      // A new page is not ready, plays at normal speed, and is not zoomed until it says so.
       playerReady = false;
       rate = normalRate;
+      zoom = 1;
       askedRates = [];
     } else if (playerReady) {
       loadCurrent();
@@ -608,6 +621,12 @@ export function createLoadedLesson(
         case 'speedCycle':
           if (hasPlayableLesson('Speed cycle')) {
             setRate(cycledRate(rate));
+          }
+          break;
+        case 'zoomReset':
+          // The item goes once the player reports the whole picture: it knows what it shows.
+          if (hasPlayableLesson('Zoom reset')) {
+            player.send({ type: 'zoom', action: 'reset' });
           }
           break;
       }
