@@ -29,6 +29,12 @@ export function createStorage(context: vscode.ExtensionContext): Storage {
 export function createConfig(): Config {
   return {
     get: (name) => vscode.workspace.getConfiguration('followalong').get<unknown>(name),
+    update: (name, value) =>
+      Promise.resolve(
+        vscode.workspace
+          .getConfiguration('followalong')
+          .update(name, value, vscode.ConfigurationTarget.Global),
+      ),
     onDidChange: (listener) =>
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('followalong')) {
@@ -73,6 +79,16 @@ export function createUiSink(
         preserveFocus: true,
       });
       placement.opened(target.path);
+    },
+    async chooseFolder({ title, openLabel }) {
+      const chosen = await vscode.window.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel,
+        title,
+      });
+      return chosen?.[0]?.fsPath;
     },
     returnFocus() {
       focus.returnFocus().catch((error: unknown) => {

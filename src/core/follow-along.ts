@@ -8,6 +8,7 @@ import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js'
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
+import { buildCoursePicker } from './course-picker.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
@@ -58,6 +59,8 @@ export interface FollowAlong {
   previousLesson(): void;
   /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
   goToLesson(): Promise<void>;
+  /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
+  pickCourse(): Promise<void>;
   dispose(): void;
 }
 
@@ -86,6 +89,8 @@ function cycledRate(rate: number): number {
 /** The settings' defaults, in seconds (spec #12, Settings). */
 const defaultStepSeconds = { short: 5, long: 30 } as const;
 const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
+/** The learner's Courses roots: a user-level list of folders, empty by default (spec #12). */
+const coursesRootsSetting = 'coursesRoots';
 
 /** What the player reported about the current Lesson since its last `load`. */
 interface Playback {
@@ -463,6 +468,34 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /** The Courses roots the learner named in `followalong.coursesRoots`, as written there. */
+  function coursesRoots(): string[] {
+    const value = config.get(coursesRootsSetting);
+    return Array.isArray(value)
+      ? value.filter((root): root is string => typeof root === 'string' && root !== '')
+      : [];
+  }
+
+  /** The Course picker. */
+  async function pickCourse(): Promise<void> {
+    const intent = await ui.pick(buildCoursePicker());
+    if (intent?.type === 'addCoursesRoot') {
+      await addCoursesRoot();
+    }
+  }
+
+  /** Asks for a folder and adds it to the Courses roots, after the ones already there. */
+  async function addCoursesRoot(): Promise<void> {
+    const root = await ui.chooseFolder({ title: 'Add Courses root', openLabel: 'Add' });
+    if (root === undefined) {
+      return;
+    }
+    const roots = coursesRoots();
+    if (!roots.includes(root)) {
+      await config.update(coursesRootsSetting, [...roots, root]);
+    }
+  }
+
   return {
     async openCourse(folder) {
       let course: Course;
@@ -503,6 +536,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       play(course, first);
     },
     playLesson,
+    pickCourse,
     async goToLesson() {
       if (openedCourse === undefined) {
         ui.showMessage({

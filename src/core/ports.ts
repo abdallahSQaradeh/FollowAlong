@@ -121,6 +121,8 @@ export interface Converter {
 export interface Config {
   /** The value of a `followalong.*` setting, by its name without the prefix. */
   get(name: string): unknown;
+  /** Writes a `followalong.*` setting, by its name without the prefix, in the user settings. */
+  update(name: string, value: unknown): Promise<void>;
   /** Calls `listener` with a check for which settings changed. */
   onDidChange(listener: (affects: (name: string) => boolean) => void): Disposable;
 }
@@ -139,6 +141,13 @@ export interface FileResourceTarget {
 }
 
 export type ResourceTarget = FileResourceTarget;
+
+/** A dialog in which the learner chooses one folder. */
+export interface FolderDialog {
+  readonly title: string;
+  /** The label of the button that chooses the folder. */
+  readonly openLabel: string;
+}
 
 export interface UiSink {
   showMessage(message: UserMessage): void;
@@ -160,6 +169,8 @@ export interface UiSink {
    * the player is not a Focus change (ADR 0009).
    */
   returnFocus(): void;
+  /** Asks the learner for one folder; resolves with its absolute path, or `undefined` on cancel. */
+  chooseFolder(dialog: FolderDialog): Promise<string | undefined>;
 }
 
 // --- All of them --------------------------------------------------------------------------------

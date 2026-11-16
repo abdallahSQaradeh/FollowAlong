@@ -23,6 +23,7 @@ import {
   Converter,
   Disposable,
   FileSystem,
+  FolderDialog,
   KeyValueStore,
   PlayerPort,
   PlayerShowOptions,
@@ -170,6 +171,12 @@ export class FakeConfig implements Config {
     return { dispose: () => this.listeners.delete(listener) };
   }
 
+  /** FollowAlong writes a setting in the learner's user settings. */
+  update(name: string, value: unknown): Promise<void> {
+    this.set(name, structuredClone(value));
+    return Promise.resolve();
+  }
+
   /** The learner changed a `followalong.*` setting. */
   set(name: string, value: unknown): void {
     this.values.set(name, value);
@@ -196,6 +203,10 @@ export class RecordingUi implements UiSink {
   private answer: ((intent: unknown) => void) | undefined;
   /** How many times the core asked to hand keyboard focus back to the Practice area. */
   focusReturns = 0;
+  /** Every folder dialog the core opened, in order. */
+  readonly folderDialogs: FolderDialog[] = [];
+  /** The folders the learner will choose in the next folder dialogs; none left is a cancel. */
+  readonly folderAnswers: string[] = [];
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
@@ -257,6 +268,11 @@ export class RecordingUi implements UiSink {
 
   returnFocus(): void {
     this.focusReturns += 1;
+  }
+
+  chooseFolder(dialog: FolderDialog): Promise<string | undefined> {
+    this.folderDialogs.push(dialog);
+    return Promise.resolve(this.folderAnswers.shift());
   }
 }
 
