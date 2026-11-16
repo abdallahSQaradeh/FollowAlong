@@ -77,3 +77,6 @@ player), for the audio sidecar of an MP4 Lesson when the page cannot decode AAC;
 Ticket #46 added `zoom {action}` (extension → player; `reset` only, until #48) and
 `zoomChanged {level}` (player → extension, without `lessonId`: zoom belongs to the page); see
 ADR 0037.
+
+Ticket #42 added `soundProgress {percent}` (extension → player), `playWithoutSound` (player → extension,
+with `lessonId` and `loadId`), and the optional `soundCodecs` of `ready`; see ADR 0055 and ADR 0056.

@@ -11,7 +11,7 @@ import { formatClock } from './clock-text.js';
 /** The commands a status bar item can run when clicked, named as the core knows them. */
 export type StatusBarCommand = 'playPause' | 'speedCycle' | 'seekBackShort' | 'zoomReset';
 
-export type StatusBarIcon = 'play' | 'pause' | 'back' | 'zoom';
+export type StatusBarIcon = 'play' | 'pause' | 'back' | 'zoom' | 'sound';
 
 /** Every command a status bar item can name; the type makes a new one a compile error here. */
 const statusBarCommands: Readonly<Record<StatusBarCommand, true>> = {
@@ -26,7 +26,7 @@ export function isStatusBarCommand(value: unknown): value is StatusBarCommand {
   return typeof value === 'string' && Object.hasOwn(statusBarCommands, value);
 }
 
-export type StatusBarItemId = 'playPause' | 'time' | 'speed' | 'back' | 'zoom';
+export type StatusBarItemId = 'playPause' | 'time' | 'speed' | 'back' | 'sound' | 'zoom';
 
 export interface StatusBarItemModel {
   /** Stable across updates: the adapter keeps one item per id, in the order of the list. */
@@ -59,6 +59,8 @@ export interface StatusBarState {
   readonly shortStep: number;
   /** The player's zoom level: 1 is the whole picture (ADR 0037). */
   readonly zoom: number;
+  /** How far the Lesson's sound is prepared, in percent, while it is (ADR 0055). */
+  readonly soundPercent?: number | undefined;
 }
 
 const unknownTime = '--:--';
@@ -91,6 +93,18 @@ export function buildStatusBar(state: StatusBarState): StatusBarModel {
         tooltip: `Back ${String(state.shortStep)} seconds`,
         command: 'seekBackShort',
       },
+      // Only while the sound is prepared (spec #12, story 69): the same words as over the picture.
+      ...(state.soundPercent === undefined
+        ? []
+        : [
+            {
+              id: 'sound',
+              icon: 'sound',
+              text: `Preparing sound… ${String(state.soundPercent)}%`,
+              tooltip:
+                'Preparing the sound of this Lesson: it plays by itself once the sound is ready',
+            } as const,
+          ]),
       // Only while zoomed, so the learner always knows the picture is not whole (story 63).
       ...(state.zoom > 1
         ? [
