@@ -76,3 +76,51 @@ describe('a zoom view stored by an earlier page', () => {
     }
   });
 });
+
+describe('the spot move messages of the player protocol', () => {
+  const zoom = { level: 2, left: 0.25, top: 0.5 };
+
+  it('accept takeSnapshot, and restore with a view the player can show', () => {
+    expect(parsePlayerCommand({ type: 'takeSnapshot' })).toEqual({ type: 'takeSnapshot' });
+    expect(parsePlayerCommand({ type: 'restore', zoom: { ...zoom, extra: 1 } })).toEqual({
+      type: 'restore',
+      zoom,
+    });
+    for (const bad of [
+      undefined,
+      null,
+      { level: 2, left: 0.75, top: 0 },
+      { level: 9, left: 0, top: 0 },
+    ]) {
+      expect(parsePlayerCommand({ type: 'restore', zoom: bad })).toBeUndefined();
+    }
+  });
+
+  it('accept a snapshot with or without the Lesson the page holds', () => {
+    const lesson = { lessonId: 'a.webm', loadId: 3, position: 12.5, playing: true };
+    expect(parsePlayerEvent({ type: 'snapshot', snapshot: { rate: 1.5, zoom, lesson } })).toEqual({
+      type: 'snapshot',
+      snapshot: { rate: 1.5, zoom, lesson },
+    });
+    expect(parsePlayerEvent({ type: 'snapshot', snapshot: { rate: 1, zoom } })).toEqual({
+      type: 'snapshot',
+      snapshot: { rate: 1, zoom },
+    });
+  });
+
+  it('drop a snapshot that is not one', () => {
+    const lesson = { lessonId: 'a.webm', position: 1, playing: false };
+    for (const snapshot of [
+      undefined,
+      { rate: 0, zoom, lesson },
+      { rate: 1, zoom: { level: 0.5, left: 0, top: 0 }, lesson },
+      { rate: 1, zoom, lesson: { ...lesson, position: -1 } },
+      { rate: 1, zoom, lesson: { ...lesson, playing: 'yes' } },
+      { rate: 1, zoom, lesson: { ...lesson, lessonId: 4 } },
+      { rate: 1, zoom, lesson: { ...lesson, loadId: 1.5 } },
+      { rate: 1, zoom, lesson: 'a.webm' },
+    ]) {
+      expect(parsePlayerEvent({ type: 'snapshot', snapshot })).toBeUndefined();
+    }
+  });
+});
