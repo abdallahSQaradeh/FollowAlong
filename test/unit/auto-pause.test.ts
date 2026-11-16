@@ -273,6 +273,21 @@ describe('auto-pause while typing', () => {
       expect(edit(h)).toEqual([{ type: 'pause' }]);
     });
 
+    it('ends the play-through at the Lesson’s end: the next Lesson pauses for typing', async () => {
+      const h = await createHarness();
+      const secondId = '02 Setup.webm';
+      await openLesson(h, 'pause', { [lessonId]: 'video', [secondId]: 'video' });
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.player.emit({ type: 'played', lessonId });
+      h.player.emit({ type: 'ended', lessonId });
+      h.core.nextLesson();
+      h.player.emit({ type: 'played', lessonId: secondId });
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
     it('acts from the moment the learner turns it on, mid-Lesson', async () => {
       const h = await createHarness();
       await openLesson(h, 'off');
