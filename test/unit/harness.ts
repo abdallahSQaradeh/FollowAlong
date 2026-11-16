@@ -601,7 +601,10 @@ export async function createHarness(): Promise<Harness> {
       });
       const released = new Promise<void>((resolve) => {
         release = () => {
-          heldFiles.delete(path);
+          // Only this hold: a later hold of the same file stays until its own release.
+          if (heldFiles.get(path)?.released === released) {
+            heldFiles.delete(path);
+          }
           resolve();
         };
       });

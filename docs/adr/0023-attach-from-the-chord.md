@@ -14,8 +14,9 @@ node to name the Lesson, so these are the choices the spec leaves open.
   ADR 0002 as `ask` and `pick` did). The core, not the extension command, must decide which Lesson
   is meant, and a Seam 1 test can only see that decision if the core runs the whole flow. The
   dialog code itself stays in the adapter; the tree's "+" calls the same helper
-  (`pickFileToAttach`). `attachResource` is unchanged. (Revised by ADR 0024: the tree's "+" now
-  also lets the core ask, through `attachResource(lessonId)` with no path.)
+  (`pickFileToAttach`). `attachResource` is unchanged. (Revised by ADR 0024: `pickFileToAttach`
+  is now private to the adapter's `UiSink.pickFile`, and the tree's "+" lets the core ask too,
+  through `attachResource(lessonId)` with no path.)
 - **The Lesson is fixed when the key is pressed**, not when the dialog closes: the learner means
   the Lesson they were watching, even if the next one starts while the dialog is open. (Revised by
   ADR 0024: its Course is fixed too, so a Course opened meanwhile never receives the Resource.)

@@ -20,7 +20,7 @@ export interface PlayerShowOptions {
   readonly title: string;
   /**
    * Absolute folders the player may read media from: the Courses roots, the Course when it is
-   * outside them, and the fallback root of Course data (ADR 0022, ADR 0024).
+   * outside them, and the fallback root of Course data (ADR 0022, ADR 0025).
    */
   readonly resourceRoots: readonly string[];
 }

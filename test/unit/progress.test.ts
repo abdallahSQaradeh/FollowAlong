@@ -96,6 +96,12 @@ describe('remembering where the learner is in each Lesson', () => {
     h.clock.advance(10_000);
 
     expect(sentForTheClick).toEqual([]);
+    // The second Course's Progress, as written, holds nothing about the first Course's Lesson.
+    await h.settle();
+    const written = await readFile(join(second, '.followalong', 'progress.json'), 'utf8').catch(
+      () => '',
+    );
+    expect(written).not.toContain('02 Setup.webm');
     expect(await reopen(h, second)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 0 });
   });
 

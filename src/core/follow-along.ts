@@ -213,6 +213,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return done;
   }
 
+  /**
+   * Both attach routes, once they have fixed the Lesson and its Course: asks for the file when
+   * none is given yet, then attaches it in turn. A closed dialog attaches nothing.
+   */
+  async function attachTo(
+    course: Course,
+    data: CourseData,
+    lessonId: string,
+    absolutePath?: string,
+  ): Promise<void> {
+    const path = absolutePath ?? (await ui.pickFile());
+    if (path !== undefined) {
+      await attachInTurn(course, data, lessonId, path);
+    }
+  }
+
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */
   async function readResources(data: CourseData, folder: string): Promise<ResourcesData> {
     try {
@@ -485,10 +501,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      const path = absolutePath ?? (await ui.pickFile());
-      if (path !== undefined) {
-        await attachInTurn(course, data, lessonId, path);
-      }
+      await attachTo(course, data, lessonId, absolutePath);
     },
     async attachToLoadedLesson() {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the
@@ -505,10 +518,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       try {
-        const path = await ui.pickFile();
-        if (path !== undefined) {
-          await attachInTurn(course, data, lesson.id, path);
-        }
+        await attachTo(course, data, lesson.id);
       } finally {
         // The dialog took keyboard focus: hand it back, also when the attach failed (ADR 0023).
         ui.returnFocus();

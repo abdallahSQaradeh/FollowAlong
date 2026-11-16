@@ -12,9 +12,8 @@ const coursesRootsSetting = 'coursesRoots';
 /** On Windows, two spellings that differ only in letter case name the same folder. */
 const caseInsensitive = process.platform === 'win32';
 
-/** The path rules a Courses root follows: Windows' or POSIX's, as VS Code runs on. */
-export type PathFlavour = 'win32' | 'posix';
-const hostFlavour: PathFlavour = caseInsensitive ? 'win32' : 'posix';
+/** The path rules a Courses root follows: those of the OS VS Code runs on. */
+const hostFlavour = process.platform === 'win32' ? 'win32' : 'posix';
 
 /** What the setting holds, as the core uses it. */
 export interface CoursesRoots {
@@ -41,7 +40,7 @@ function normalisedRoot(path: string): string | undefined {
  * a share (`\\server\share`): `\Learning` counts as absolute there, but on whichever drive
  * VS Code happens to run from. `flavour` is the host's; tests give each one on every OS.
  */
-export function isFullPath(path: string, flavour: PathFlavour = hostFlavour): boolean {
+export function isFullPath(path: string, flavour: 'win32' | 'posix' = hostFlavour): boolean {
   return flavour === 'win32'
     ? /^([a-zA-Z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)/.test(path)
     : posix.isAbsolute(path);
@@ -95,7 +94,7 @@ export async function addCoursesRoot(config: Config, root: string): Promise<bool
 
 /**
  * The folders the player may read media from: the Courses roots, the Course folder when it is
- * outside them, and the fallback root of Course data (`<storage>/courses`, ADR 0024), not the
+ * outside them, and the fallback root of Course data (`<storage>/courses`, ADR 0025), not the
  * whole extension storage. A change reloads the player page, which loses the click that lets it
  * start playback (#12 D3), so Courses under the same roots share them.
  */

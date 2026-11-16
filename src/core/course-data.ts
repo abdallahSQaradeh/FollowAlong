@@ -71,7 +71,7 @@ type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
 
 /**
  * `<storage>/courses`: where the fallback copies of every Course's data live. It is the same for
- * every Course, so the player may read prepared sound there without a page reload (ADR 0024).
+ * every Course, so the player may read prepared sound there without a page reload (ADR 0025).
  */
 export function fallbackRoot(storageFolder: string): string {
   return join(storageFolder, 'courses');

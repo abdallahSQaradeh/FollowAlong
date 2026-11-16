@@ -1,4 +1,4 @@
-# The Loaded Lesson module, Lesson identity across Courses, and the player's storage root
+# The Loaded Lesson module, and a Lesson's identity across Courses
 
 By CP1 (the first architecture checkpoint), `src/core/follow-along.ts` had grown to about 1,050
 lines with two jobs woven together:
@@ -20,8 +20,8 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   clicked.
 - **The seam is internal.** `createFollowAlong(ports)` and its `FollowAlong` interface do not
   change. Seam 1 tests still reach both modules only through it, and no test imports
-  `loaded-lesson.ts` (CODING_STANDARDS.md, _Tests_). The split moved no test. The 294 Seam 1 tests
-  that passed before it pass after it, and their bodies are unchanged.
+  `loaded-lesson.ts` (CODING_STANDARDS.md, _Tests_). The split itself moved no test. The 294 Seam 1
+  tests that passed before it passed after it, with unchanged bodies.
 - **A Lesson is compared by identity, not by its id, inside the open Course.** Another Course can
   hold a Lesson with the same id (`01.mp4`).
   - Player events already carry the `loadId` (ADR 0022).
@@ -34,24 +34,10 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
     - the tree's "+": `attachResource(lessonId, absolutePath?)` now asks for the file itself when
       it is given none. The adapter no longer opens the dialog first and then attaches by id
       (this revises ADR 0012's "the file dialog stays in the adapter" for this route). A caller
-      that passes a path behaves as before.
-  - These two fixes are CP1's only behaviour changes, each with a red-then-green Seam 1 test.
-
-## The player reads `<storage>/courses`, not the whole extension storage
-
-ADR 0022 gave the player the Courses roots, the Course folder when it is outside them, and the
-whole extension storage folder. At CP1 the player reads nothing from storage: its only file is
-the Lesson (`resourceUri(lesson.path)`), and the Resource viewers have their own roots (the
-Resource's folder, ADR 0021). The one planned reader is prepared sound (#41–#43). It lives in
-Course data, whose fallback copy is `<storage>/courses/<name>-<hash>/` (ADR 0005).
-
-- **Decision:** the player's last root is `<storage>/courses` (`fallbackRoot` in `course-data.ts`).
-  The rest of the extension storage is no longer readable from the page. It is the same folder for
-  every Course, so a Course switch under the Courses roots still keeps the page and its click
-  (#12 D3, D9).
-- **Rejected: the open Course's own fallback folder.** It is the narrowest root, but it changes on
-  every Course switch. A changed root reloads the page and loses the click that lets it start
-  playback (ADR 0022, measured in VS Code 1.146), so every switch would need a click again.
+      that passes a path behaves as before. With no Course open, or an id the open Course does not
+      have, no dialog opens now (before, it opened and the attach was then dropped).
+  - Each fix has a red-then-green Seam 1 test. With the narrower player root of ADR 0025, they are
+    CP1's only behaviour changes.
 
 ## Considered options
 
