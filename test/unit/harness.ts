@@ -13,12 +13,14 @@ import { createNodeFileSystem } from '../../src/adapters/node/file-system.js';
 import { createFollowAlong, type FollowAlong } from '../../src/core/follow-along.js';
 import type { LessonTreeModel } from '../../src/core/lesson-tree.js';
 import type { LogEntry, Logger } from '../../src/core/logger.js';
-import type {
-  Clock,
+import {
+  FileSystemError,
+  type Clock,
   Config,
   ConversionRequest,
   Converter,
   Disposable,
+  FileSystem,
   KeyValueStore,
   PlayerPort,
   PlayerShowOptions,
@@ -197,6 +199,12 @@ export interface Harness {
   readonly storage: Storage;
   /** The temp dir every fixture lives in. */
   readonly root: string;
+  /**
+   * Makes reading `folder` fail as it does for a folder the learner may not read (Windows
+   * "System Volume Information"). Containers often run as root, which reads everything, so the
+   * denial is applied at the File system port with the error the Node adapter gives for EACCES.
+   */
+  makeUnreadable(folder: string): void;
   /** Writes a fixture folder (a Course, or any folder) under the temp dir and returns its path. */
   folder(name: string, tree: Tree): Promise<string>;
   /** Every file under `folder`, as sorted relative paths with `/`. */
@@ -216,9 +224,22 @@ export async function createHarness(): Promise<Harness> {
     workspace: new MemoryStore(),
     folder: join(root, 'extension-storage'),
   };
+  const nodeFileSystem = createNodeFileSystem();
+  const unreadable = new Set<string>();
+  const fileSystem: FileSystem = {
+    ...nodeFileSystem,
+    readDirectory(path) {
+      if (unreadable.has(path)) {
+        return Promise.reject(
+          new FileSystemError('readOnly', path, `EACCES: permission denied, scandir '${path}'`),
+        );
+      }
+      return nodeFileSystem.readDirectory(path);
+    },
+  };
   const ports: Ports = {
     player,
-    fileSystem: createNodeFileSystem(),
+    fileSystem,
     storage,
     clock,
     converter,
@@ -243,6 +264,9 @@ export async function createHarness(): Promise<Harness> {
     logger,
     storage,
     root,
+    makeUnreadable(folder) {
+      unreadable.add(folder);
+    },
     async folder(name, tree) {
       const folder = join(root, name);
       await mkdir(folder, { recursive: true });

@@ -19,7 +19,7 @@ export interface FollowAlong {
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, fileSystem, storage, ui, logger } = ports;
+  const { player, storage, ui, logger } = ports;
 
   /** The Lesson the player should show. */
   let current: Lesson | undefined;
@@ -114,7 +114,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     async openCourse(folder) {
       let course: Course;
       try {
-        course = buildCourse(await readFolderListing(fileSystem, folder, basename(folder)));
+        course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
       } catch (error) {
         if (FileSystemError.is(error, 'notFound')) {
           ui.showMessage({
