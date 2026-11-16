@@ -5,17 +5,22 @@
 import { basename } from 'node:path';
 
 import type { Course, Outline, Section } from './course-model.js';
-import { resourcePath, type ResourceRecord, type ResourcesData } from './resources.js';
+import { resourcePath, urlLabel, type ResourceRecord, type ResourcesData } from './resources.js';
 
 export interface ResourceNode {
   readonly kind: 'resource';
   /** Stable across sessions: what a click passes to `openResource`. */
   readonly id: string;
-  /** The file's name. */
+  /** A file on disk, or a web page (ADR 0047). */
+  readonly type: 'file' | 'url';
+  /** The file's name, or the web page's address without its scheme. */
   readonly label: string;
-  /** The file's full path. */
+  /** The file's full path, or the web page's address. */
   readonly path: string;
-  /** Whether the file is no longer where the Resource points: the tree shows it dimmed. */
+  /**
+   * Whether the file is no longer where the Resource points: the tree shows it dimmed. Never true
+   * for a URL, which has no file to lose.
+   */
   readonly missing: boolean;
 }
 
@@ -72,10 +77,21 @@ interface TreeSource {
 }
 
 function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode {
+  if (record.kind === 'url') {
+    return {
+      id: record.id,
+      kind: 'resource',
+      type: 'url',
+      label: urlLabel(record.url),
+      path: record.url,
+      missing: false,
+    };
+  }
   const path = resourcePath(source.folder, record);
   return {
     id: record.id,
     kind: 'resource',
+    type: 'file',
     label: basename(path),
     path,
     missing: source.missing.has(record.id),

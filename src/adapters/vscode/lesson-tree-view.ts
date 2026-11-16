@@ -156,6 +156,16 @@ export class LessonTreeView implements vscode.TreeDataProvider<TreeNode>, vscode
       item.contextValue = 'section';
       return item;
     }
+    if (node.kind === 'resource' && node.type === 'url') {
+      // A web page has no file to lose: never dimmed, and no Relink… (ADR 0047).
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.id = node.id;
+      item.tooltip = node.path;
+      item.contextValue = 'resourceUrl';
+      item.iconPath = new vscode.ThemeIcon('globe');
+      item.command = { command: openResourceCommand, title: 'Open Resource', arguments: [node.id] };
+      return item;
+    }
     if (node.kind === 'resource') {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.id = node.id;

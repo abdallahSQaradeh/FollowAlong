@@ -7,7 +7,7 @@ import type { Logger } from '../../core/logger.js';
 import type { Config, KeyValueStore, Storage, TerminalSettings, UiSink } from '../../core/ports.js';
 import type { LessonTreeView } from './lesson-tree-view.js';
 import type { ResourcePlacement } from './resource-placement.js';
-import { openInEditor, type ResourceViewers } from './resource-viewers.js';
+import { openInEditor, openInSimpleBrowser, type ResourceViewers } from './resource-viewers.js';
 import type { StatusBarView } from './status-bar-view.js';
 import { showQuickPick } from './quick-pick.js';
 import type { FocusReturn } from './focus-return.js';
@@ -90,6 +90,10 @@ export function createUiSink(
     async openResource(target) {
       // The group is never the player's, so the video stays in sight, and focus stays where it was.
       const column = placement.column();
+      if (target.kind === 'url') {
+        await openInSimpleBrowser(target.url, column);
+        return;
+      }
       switch (target.kind) {
         case 'markdown':
         case 'html':
@@ -127,6 +131,16 @@ export function createUiSink(
         title,
       });
       return chosen?.[0]?.fsPath;
+    },
+    async askText({ title, prompt, placeholder, validate }) {
+      // A box that stays open when focus leaves it, so a click in the player does not close it.
+      return vscode.window.showInputBox({
+        title,
+        prompt,
+        placeHolder: placeholder,
+        ignoreFocusOut: true,
+        validateInput: (text) => validate(text),
+      });
     },
     returnFocus() {
       focus.returnFocus().catch((error: unknown) => {
