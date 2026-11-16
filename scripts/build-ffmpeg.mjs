@@ -158,11 +158,15 @@ function toolVersions() {
   /** @param {string} program */
   const firstLine = (program) =>
     run(program, ['--version'], { capture: true }).split('\n')[0] ?? '';
-  const runtime = spawnSync(`${pinned.target}-gcc`, ['-dM', '-E', '-'], {
+  const runtime = spawnSync(`${pinned.target}-gcc`, ['-x', 'c', '-dM', '-E', '-'], {
     input: '#include <_mingw.h>\n',
     encoding: 'utf8',
   });
-  const mingw = /__MINGW64_VERSION_STR "([^"]+)"/.exec(runtime.stdout)?.[1] ?? 'unknown';
+  /** @param {string} part */
+  const number = (part) =>
+    new RegExp(`^#define __MINGW64_VERSION_${part} (\\d+)$`, 'm').exec(runtime.stdout)?.[1];
+  const parts = ['MAJOR', 'MINOR', 'BUGFIX'].map(number);
+  const mingw = parts.every((part) => part !== undefined) ? parts.join('.') : 'unknown';
   return [
     firstLine(`${pinned.target}-gcc`),
     firstLine(`${pinned.target}-strip`),
