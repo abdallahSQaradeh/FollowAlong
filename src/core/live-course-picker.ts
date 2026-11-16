@@ -13,7 +13,7 @@ import {
 } from './folder-browser.js';
 import { folderLabel } from './course-scanner.js';
 import { FileSystemError } from './ports.js';
-import { readBrowsedFolder } from './read-browsed-folder.js';
+import { lookForVideos, readBrowsedFolder } from './read-browsed-folder.js';
 import type { QuickPickModel } from './quick-pick.js';
 import type { CourseScan, ScannedCourse } from './course-scanner.js';
 import type { Ports } from './ports.js';
@@ -119,34 +119,49 @@ export async function showCoursePicker(
   const browseTo = async (folder: string | undefined): Promise<void> => {
     newestFolder += 1;
     const mine = newestFolder;
+    /** Whether the picker is closed, or the learner asked for another folder since. */
+    const stale = (): boolean => closed || mine !== newestFolder;
     if (folder === undefined) {
       browsing = { kind: 'top', roots: roots.map((path) => ({ path })) };
       picker.update(view());
       return;
     }
     // Busy while the folder is read, the list the learner picked from still in view.
-    const before = view();
-    picker.update({ ...before, busy: true });
+    const previous = browsing;
+    picker.update({ ...view(), busy: true });
     try {
       const content = await readBrowsedFolder(ports, folder);
-      if (!closed && mine === newestFolder) {
-        browsing = { kind: 'folder', folder, ...content };
+      if (stale()) {
+        return;
+      }
+      // The folders are shown at once; which of them hold videos is looked at while they are.
+      browsing = { kind: 'folder', folder, ...content };
+      picker.update({ ...view(), busy: true });
+      const folders = await lookForVideos(ports, content.folders);
+      if (!stale()) {
+        browsing = { kind: 'folder', folder, folders, videos: content.videos };
         picker.update(view());
       }
     } catch (error) {
       if (!(error instanceof FileSystemError)) {
-        throw error;
+        ports.logger.log({
+          level: 'error',
+          message: `Could not browse ${folder}: ${describe(error)}`,
+        });
+      } else {
+        ports.logger.log({
+          level: 'warn',
+          message: `Cannot browse ${folder} (${error.message}).`,
+        });
+        ports.ui.showMessage({
+          severity: 'warning',
+          text: `FollowAlong can't read the folder “${folderLabel(folder)}”.`,
+        });
       }
-      ports.logger.log({
-        level: 'warn',
-        message: `Cannot browse ${folder} (${error.message}).`,
-      });
-      ports.ui.showMessage({
-        severity: 'warning',
-        text: `FollowAlong can't read the folder “${folderLabel(folder)}”.`,
-      });
-      if (!closed && mine === newestFolder) {
-        picker.update(before);
+      if (!stale()) {
+        // Back to the list the learner picked from, not busy any more.
+        browsing = previous;
+        picker.update(view());
       }
     }
   };

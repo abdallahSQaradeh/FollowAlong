@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { QuickPickModel } from '../../src/core/quick-pick.js';
@@ -60,6 +62,7 @@ describe('walking folders in the Folder browser', () => {
     await h.ui.pickerShown();
     expect(rows(h.ui.picker)).toEqual([
       'Up',
+      'Open “React” as Course',
       'slides',
       'Intro.WEBM',
       'lesson2.mp4',
@@ -79,7 +82,7 @@ describe('walking folders in the Folder browser', () => {
     h.ui.choose('Node');
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Up', '01 Intro.mp4']);
+    expect(rows(h.ui.picker)).toEqual(['Up', 'Open “Node” as Course', '01 Intro.mp4']);
 
     h.ui.choose('Up');
     await h.ui.pickerShown();
@@ -88,5 +91,105 @@ describe('walking folders in the Folder browser', () => {
     h.ui.choose('Up');
     await h.ui.pickerShown();
     expect(rows(h.ui.picker)).toEqual(['Up', 'Courses', 'Other']);
+  });
+});
+
+describe('Open as Course in the Folder browser', () => {
+  it('is offered only on folders that directly hold videos', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/React/01 Intro.mp4': 'v',
+      'Web/Vue/01 Intro.WEBM': 'v',
+      'Web/Notes/readme.txt': 'no videos',
+      'Web/Zipped/course.zip': 'only a zip',
+      'Web/Sections/Part 1/01 Intro.mp4': 'videos only below',
+    });
+    h.config.set('coursesRoots', [learning]);
+    await browse(h);
+    h.ui.choose('Learning');
+    await h.ui.pickerShown();
+    h.ui.choose('Web');
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual(['Up', 'Notes', 'React', 'Sections', 'Vue', 'Zipped']);
+    expect(h.ui.buttonsOf('React')).toEqual(['Open as Course']);
+    expect(h.ui.buttonsOf('Vue')).toEqual(['Open as Course']);
+    expect(h.ui.buttonsOf('Notes')).toEqual([]);
+    expect(h.ui.buttonsOf('Zipped')).toEqual([]);
+    expect(h.ui.buttonsOf('Sections')).toEqual([]);
+  });
+
+  it('shows the folders at once and is busy until it knows which ones hold videos', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Web/React/01 Intro.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+    await browse(h);
+    h.ui.choose('Learning');
+    await h.ui.pickerShown();
+    const react = join(learning, 'Web', 'React');
+    const release = h.holdReads(react);
+
+    h.ui.choose('Web');
+    // The folder is read, and listed at once: the first update after the busy one.
+    await h.ui.nextUpdate();
+
+    expect(h.ui.pickerBusy).toBe(true);
+    expect(rows(h.ui.picker)).toEqual(['Up', 'React']);
+    expect(h.ui.buttonsOf('React')).toEqual([]);
+    release();
+    await h.ui.pickerShown();
+    expect(h.ui.buttonsOf('React')).toEqual(['Open as Course']);
+  });
+
+  it('opens the folder as the Course when the learner presses it, and closes the picker', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/React/01 Intro.mp4': 'v',
+      'Web/React/02 State.mp4': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+    h.ui.choose('Learning');
+    await h.ui.pickerShown();
+    h.ui.choose('Web');
+    await h.ui.pickerShown();
+
+    h.ui.press('React', 'Open as Course');
+    await picking;
+
+    h.player.ready();
+    expect(h.player.sent).toMatchObject([
+      {
+        type: 'load',
+        videoUri: h.player.resourceUri(join(learning, 'Web', 'React', '01 Intro.mp4')),
+      },
+    ]);
+    expect(h.ui.picker).toBeUndefined();
+  });
+
+  it('is also offered inside a folder that holds videos, for the folder itself', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Web/React/01 Intro.mp4': 'v' });
+    h.config.set('coursesRoots', [learning]);
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('Browse…');
+    await h.ui.pickerShown();
+    h.ui.choose('Learning');
+    await h.ui.pickerShown();
+    h.ui.choose('Web');
+    await h.ui.pickerShown();
+    expect(rows(h.ui.picker)).toEqual(['Up', 'React']);
+    h.ui.choose('React');
+    await h.ui.pickerShown();
+
+    expect(rows(h.ui.picker)).toEqual(['Up', 'Open “React” as Course', '01 Intro.mp4']);
+    h.ui.choose('Open “React” as Course');
+    await picking;
+    h.player.ready();
+    expect(h.player.sent).toMatchObject([{ type: 'load' }]);
   });
 });

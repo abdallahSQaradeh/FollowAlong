@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { isLessonFile, naturalOrder } from './course-model.js';
 import { isWalked } from './course-scanner.js';
 import type { BrowsedFolder, BrowsedVideo } from './folder-browser.js';
-import type { Ports } from './ports.js';
+import { FileSystemError, type Ports } from './ports.js';
 
 /** What a folder holds, as the browser lists it. */
 export interface BrowsedContent {
@@ -36,4 +36,30 @@ export async function readBrowsedFolder(
       .map((entry) => ({ name: entry.name, path: join(folder, entry.name) }))
       .sort(byName),
   };
+}
+
+/**
+ * `folders` with whether each directly holds a video. A folder that cannot be read counts as one
+ * that holds none: the learner is told when they open it.
+ */
+export async function lookForVideos(
+  ports: Pick<Ports, 'fileSystem'>,
+  folders: readonly BrowsedFolder[],
+): Promise<BrowsedFolder[]> {
+  return Promise.all(
+    folders.map(async (folder) => {
+      try {
+        const entries = await ports.fileSystem.readDirectory(folder.path);
+        return {
+          ...folder,
+          holdsVideos: entries.some((entry) => entry.kind === 'file' && isLessonFile(entry.name)),
+        };
+      } catch (error) {
+        if (!(error instanceof FileSystemError)) {
+          throw error;
+        }
+        return { ...folder, holdsVideos: false };
+      }
+    }),
+  );
 }

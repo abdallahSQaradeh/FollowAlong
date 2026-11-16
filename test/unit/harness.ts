@@ -408,6 +408,9 @@ export class RecordingUi implements UiSink {
       update: (next) => {
         this.shownModel = next;
         this.afterModel();
+        for (const waiter of this.updateWaiters.splice(0)) {
+          waiter();
+        }
       },
     };
   }
@@ -455,6 +458,15 @@ export class RecordingUi implements UiSink {
           this.pickerWaiters.push(resolve);
         });
   }
+
+  /** Resolves when the core next replaces what the open quick pick lists (even with a busy list). */
+  nextUpdate(): Promise<void> {
+    return new Promise((resolve) => {
+      this.updateWaiters.push(resolve);
+    });
+  }
+
+  private readonly updateWaiters: (() => void)[] = [];
 
   /** Resolves once a quick pick is open, even while it still lists only what it has so far. */
   pickerOpened(): Promise<void> {

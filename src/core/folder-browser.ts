@@ -14,6 +14,8 @@ export type FolderBrowserIntent =
   | { readonly type: 'browseTo'; readonly folder: string | undefined }
   /** Leaves the Folder browser for the Course picker's list of Courses. */
   | { readonly type: 'backToCourses' }
+  /** Opens `folder` as the Course (Open as Course). */
+  | { readonly type: 'openCourse'; readonly folder: string }
   /** Plays a video: its folder opens as the Course, and this video is the Lesson that plays. */
   | { readonly type: 'playVideo'; readonly folder: string; readonly video: string };
 
@@ -25,6 +27,11 @@ export interface BrowsedFolder {
   readonly name?: string;
   /** Absolute path. */
   readonly path: string;
+  /**
+   * Whether the folder directly holds a video, so it can be opened as a Course. `undefined` until
+   * it has been looked at: it is then not offered yet.
+   */
+  readonly holdsVideos?: boolean;
 }
 
 /** A video the browser lists. */
@@ -62,6 +69,17 @@ function folderItem(folder: BrowsedFolder, withPath: boolean): Entry {
     ...(withPath ? { description: folder.path } : {}),
     intent: { type: 'browseTo', folder: folder.path },
     keepsOpen: true,
+    ...(folder.holdsVideos === true
+      ? {
+          buttons: [
+            {
+              label: 'Open as Course',
+              icon: 'play-circle',
+              intent: { type: 'openCourse', folder: folder.path },
+            },
+          ],
+        }
+      : {}),
   };
 }
 
@@ -96,6 +114,16 @@ export function buildFolderBrowser(view: FolderBrowserView): QuickPickModel<Fold
         intent: { type: 'browseTo', folder: parent },
         keepsOpen: true,
       },
+      // Also for the folder itself: a key can pick this, and a button beside a row it cannot press.
+      ...(view.videos.length === 0
+        ? []
+        : [
+            {
+              kind: 'item',
+              label: `Open “${folderLabel(view.folder)}” as Course`,
+              intent: { type: 'openCourse', folder: view.folder },
+            } as const,
+          ]),
       ...view.folders.map((folder) => folderItem(folder, false)),
       ...view.videos.map((video): Entry => ({
         kind: 'item',
