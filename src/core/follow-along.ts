@@ -27,6 +27,7 @@ import {
   type ResourcesData,
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
+import { createTerminalKeysOffer } from './terminal-keys.js';
 
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
@@ -379,6 +380,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
   let attaching: Promise<unknown> = Promise.resolve();
 
+  /** Offers, once, to add the one-press commands to the terminal's skip-shell setting. */
+  const offerTerminalKeys = createTerminalKeysOffer(ports);
+
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson): void {
     current = lesson;
@@ -399,6 +403,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       loadCurrent();
     }
     refreshStatusBar();
+    offerTerminalKeys();
   }
 
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */
