@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { QuickPickModel } from '../../src/core/quick-pick.js';
@@ -36,5 +38,46 @@ describe('Go to Lesson…', () => {
       '── Section 2',
       '03 Tools.mp4  ·  Section 2',
     ]);
+  });
+
+  it('plays the Lesson the learner picks, right away', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'Section 1/01 Welcome.webm': 'v',
+      'Section 2/03 Tools.mp4': 'v',
+    });
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.player.sent.length = 0;
+
+    const going = h.core.goToLesson();
+    h.ui.choose('03 Tools.mp4');
+    await going;
+
+    expect(h.player.shown.at(-1)?.title).toBe('03 Tools.mp4');
+    expect(h.player.sent).toEqual([
+      {
+        type: 'load',
+        lessonId: 'Section 2/03 Tools.mp4',
+        videoUri: h.player.resourceUri(join(course, 'Section 2', '03 Tools.mp4')),
+        container: 'mp4',
+        startAt: 0,
+        autoplay: true,
+      },
+    ]);
+  });
+
+  it('plays nothing when the learner closes the picker without picking', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { 'Section 1/01 Welcome.webm': 'v' });
+    await h.core.openCourse(course);
+    h.player.ready();
+    h.player.sent.length = 0;
+
+    const going = h.core.goToLesson();
+    h.ui.dismissPicker();
+    await going;
+
+    expect(h.player.sent).toEqual([]);
   });
 });

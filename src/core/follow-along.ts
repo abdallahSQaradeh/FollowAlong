@@ -113,6 +113,20 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /** Plays a Lesson of the open Course, by its id. */
+  function playLesson(lessonId: string): void {
+    const course = openedCourse;
+    const lesson = course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+    if (course === undefined || lesson === undefined) {
+      logger.log({
+        level: 'warn',
+        message: `Cannot play ${lessonId}: it is not a Lesson of the open Course.`,
+      });
+      return;
+    }
+    play(course, lesson);
+  }
+
   return {
     async openCourse(folder) {
       let course: Course;
@@ -140,24 +154,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       play(course, first);
     },
-    playLesson(lessonId) {
-      const course = openedCourse;
-      const lesson =
-        course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
-      if (course === undefined || lesson === undefined) {
-        logger.log({
-          level: 'warn',
-          message: `Cannot play ${lessonId}: it is not a Lesson of the open Course.`,
-        });
-        return;
-      }
-      play(course, lesson);
-    },
+    playLesson,
     async goToLesson() {
       if (openedCourse === undefined) {
         return;
       }
-      await ui.pick(buildLessonPicker(openedCourse));
+      const intent = await ui.pick(buildLessonPicker(openedCourse));
+      if (intent?.type === 'playLesson') {
+        playLesson(intent.lessonId);
+      }
     },
     dispose() {
       for (const subscription of subscriptions) {
