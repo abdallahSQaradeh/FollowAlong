@@ -73,3 +73,7 @@ optional on both sides, so a `load` without it gets events without it.
 Ticket #41 added `soundReady {audioUri}` and `soundFailed {message}` (extension → player), for the
 audio sidecar of an MP4 Lesson when the page cannot decode AAC; see ADR 0034. `load` has no
 `audioUri`: the sound always comes with `soundReady`, after the `load` it belongs to.
+
+Ticket #46 added `zoom {action}` (extension → player; `reset` only, until #48) and
+`zoomChanged {level}` (player → extension, without `lessonId`: zoom belongs to the page); see
+ADR 0037.

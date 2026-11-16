@@ -337,3 +337,19 @@ test('the sidecar plays only while the video plays, also from its native play bu
   await aMoment();
   expect((await player.sound()).paused).toBe(true);
 });
+
+test('hides the native control bar while the sound is awaited, also after a zoom reset', async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
+  await player.post(loadMp4({ autoplay: false }));
+  await aMoment();
+  expect((await player.video()).controls).toBe(false);
+
+  await player.post({ type: 'zoom', action: 'reset' });
+  await aMoment();
+  expect((await player.video()).controls).toBe(false);
+
+  await player.post(soundReady);
+  await expect.poll(async () => (await player.video()).controls).toBe(true);
+});

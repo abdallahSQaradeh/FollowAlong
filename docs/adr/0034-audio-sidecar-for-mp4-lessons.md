@@ -49,7 +49,9 @@ future VS Code that ships AAC turns this off with no code change (spec #12, tick
   through `writeTime` (ADR 0030) and are never taken for the learner's seeks.
 
 - **Waiting for the sound.** While the sound is awaited, the native controls are hidden: their play
-  button would start the picture without its sound. A `play`, an autoplay, or a click on the picture
+  button would start the picture without its sound. The zoom (ADR 0037) also hides the control bar, so one rule
+  decides it: it shows only when the picture is not zoomed and no sound is awaited (`showControls` in
+  the player; the zoom controls ask `controlsHeldBack`). A `play`, an autoplay, or a click on the picture
   is remembered, and the Lesson starts when the sound arrives (spec story 70). A `pause`, or a
   second click, takes it back.
 - **The video is not muted.** This is a reasoned deviation from the spec's literal "MP4 plays

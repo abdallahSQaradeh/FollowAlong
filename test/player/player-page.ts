@@ -130,6 +130,8 @@ export interface PlayerHarness {
 
 export interface VideoState {
   readonly paused: boolean;
+  /** Whether the native control bar is on (it shows on hover). */
+  readonly controls: boolean;
   readonly muted: boolean;
   readonly volume: number;
   readonly ended: boolean;
@@ -331,8 +333,21 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       }
       const sent: unknown[] = [];
       window.followalongSent = sent;
+      // VS Code keeps a webview's state across reloads of its page; the tab's session storage does
+      // too, and Playwright's `page.reload()` keeps it.
+      const stateKey = 'followalong-webview-state';
       Object.defineProperty(window, 'acquireVsCodeApi', {
-        value: () => ({ postMessage: (message: unknown) => sent.push(message) }),
+        value: () => ({
+          postMessage: (message: unknown) => sent.push(message),
+          getState: (): unknown => {
+            const stored = sessionStorage.getItem(stateKey);
+            return stored === null ? undefined : JSON.parse(stored);
+          },
+          setState: (state: unknown) => {
+            sessionStorage.setItem(stateKey, JSON.stringify(state));
+            return state;
+          },
+        }),
       });
       if (aac !== undefined) {
         const original = HTMLMediaElement.prototype.canPlayType.bind(
@@ -420,6 +435,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         };
         return {
           paused: element.paused,
+          controls: element.controls,
           muted: element.muted,
           volume: element.volume,
           ended: element.ended,
