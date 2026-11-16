@@ -30,7 +30,10 @@ function lessonNode(h: Harness, lessonId: string): LessonTreeNode | undefined {
 /** The labels of the Resources shown under a Lesson. */
 function resourceLabels(h: Harness, lessonId: string): string[] {
   const node = lessonNode(h, lessonId);
-  return node?.kind === 'lesson' ? node.resources.map((resource) => resource.label) : [];
+  if (node?.kind !== 'lesson') {
+    throw new Error(`The tree shows no Lesson ${lessonId}`);
+  }
+  return node.resources.map((resource) => resource.label);
 }
 
 /** The id of the first Resource shown under a Lesson. */
@@ -164,10 +167,7 @@ describe('attaching a file Resource to a Lesson', () => {
       await h.core.openResource(id);
     }
 
-    expect(h.resourceOpener.opened).toEqual([
-      join(moved, 'notes', 'cheat.md'),
-      join(outside, 'snippet.ts'),
-    ]);
+    expect(h.ui.opened).toEqual([join(moved, 'notes', 'cheat.md'), join(outside, 'snippet.ts')]);
   });
 
   it('keeps the Resources of a Lesson in the order they were attached, each Lesson its own', async () => {
@@ -243,7 +243,6 @@ describe('attaching a file Resource to a Lesson', () => {
 
     expect(await h.listFiles(course)).toEqual(['a.md', 'intro.webm']);
     expect(resourceLabels(h, 'intro.webm')).toEqual([]);
-    expect(h.logger.entries).toContainEqual(expect.objectContaining({ level: 'warn' }));
   });
 
   it('opens the Course without Resources when the Resources file is damaged, and mends it on attach', async () => {
@@ -274,7 +273,7 @@ describe('opening a Resource', () => {
 
     await h.core.openResource(firstResourceId(h, 'intro.webm'));
 
-    expect(h.resourceOpener.opened).toEqual([join(course, 'notes', 'cheat.md')]);
+    expect(h.ui.opened).toEqual([join(course, 'notes', 'cheat.md')]);
     expect(h.player.shown).toEqual(shown);
     expect(h.player.sent).toEqual(sent);
   });
@@ -286,7 +285,24 @@ describe('opening a Resource', () => {
 
     await h.core.openResource('no-such-resource');
 
-    expect(h.resourceOpener.opened).toEqual([]);
-    expect(h.logger.entries).toContainEqual(expect.objectContaining({ level: 'warn' }));
+    expect(h.ui.opened).toEqual([]);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('says so when the file is gone, instead of failing silently', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { 'intro.webm': 'video', 'notes.md': '#' });
+    await h.core.openCourse(course);
+    await h.core.attachResource('intro.webm', join(course, 'notes.md'));
+    h.ui.openFailure = 'ENOENT: no such file';
+
+    await h.core.openResource(firstResourceId(h, 'intro.webm'));
+
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'error',
+        text: 'FollowAlong could not open “notes.md”. Is the file still there?',
+      },
+    ]);
   });
 });

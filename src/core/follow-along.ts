@@ -10,6 +10,7 @@ import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
+  findResource,
   newResource,
   noResources,
   resourcePath,
@@ -32,7 +33,7 @@ export interface FollowAlong {
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, storage, ui, resourceOpener, logger } = ports;
+  const { player, storage, ui, logger } = ports;
 
   /** The Lesson the player should show. */
   let current: Lesson | undefined;
@@ -156,9 +157,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         throw error;
       }
+      // Read first, then switch, so no click sees one Course's Resources next to another's folder.
+      const data = openCourseData(folder, ports);
+      const stored = await readResources(data, folder);
       openedCourse = course;
-      courseData = openCourseData(folder, ports);
-      resources = await readResources(courseData, folder);
+      courseData = data;
+      resources = stored;
       const first = lessonsInOrder(course)[0];
       if (first === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
@@ -214,9 +218,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     async openResource(resourceId) {
       const course = openedCourse;
-      const record = Object.values(resources.lessons)
-        .flat()
-        .find((candidate) => candidate.id === resourceId);
+      const record = findResource(resources, resourceId);
       if (course === undefined || record === undefined) {
         logger.log({
           level: 'warn',
@@ -224,7 +226,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      await resourceOpener.openFile(resourcePath(course.folder, record));
+      const path = resourcePath(course.folder, record);
+      try {
+        await ui.openFile(path);
+      } catch (error) {
+        logger.log({
+          level: 'warn',
+          message: `Could not open ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        ui.showMessage({
+          severity: 'error',
+          text: `FollowAlong could not open “${basename(path)}”. Is the file still there?`,
+        });
+      }
     },
     dispose() {
       for (const subscription of subscriptions) {

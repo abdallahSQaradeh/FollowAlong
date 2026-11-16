@@ -82,6 +82,12 @@ export function resourcePath(courseFolder: string, record: ResourceRecord): stri
   return record.relative ? join(courseFolder, ...record.path.split('/')) : record.path;
 }
 
+export function findResource(data: ResourcesData, id: string): ResourceRecord | undefined {
+  return Object.values(data.lessons)
+    .flat()
+    .find((record) => record.id === id);
+}
+
 export function withResource(
   data: ResourcesData,
   lessonId: string,

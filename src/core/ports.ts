@@ -132,12 +132,7 @@ export interface UiSink {
   showMessage(message: UserMessage): void;
   /** Replaces the Lesson tree in the activity bar. */
   showLessonTree(model: LessonTreeModel): void;
-}
-
-// --- Resource opener ------------------------------------------------------------------------------
-
-export interface ResourceOpener {
-  /** Opens a file Resource in a tab beside the code, without touching the player. */
+  /** Opens a file (a Resource) in a tab beside the code, without touching the player. */
   openFile(absolutePath: string): Promise<void>;
 }
 
@@ -151,6 +146,5 @@ export interface Ports {
   readonly converter: Converter;
   readonly config: Config;
   readonly ui: UiSink;
-  readonly resourceOpener: ResourceOpener;
   readonly logger: Logger;
 }

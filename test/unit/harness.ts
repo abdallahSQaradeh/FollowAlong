@@ -26,7 +26,6 @@ import {
   PlayerShowOptions,
   PlayerShowResult,
   Ports,
-  ResourceOpener,
   Storage,
   UiSink,
   UserMessage,
@@ -167,6 +166,10 @@ export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
+  /** The files opened in a tab beside the code, in order. */
+  readonly opened: string[] = [];
+  /** Set to make opening a file fail, as VS Code does for a file that is gone. */
+  openFailure: string | undefined;
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
@@ -175,13 +178,11 @@ export class RecordingUi implements UiSink {
   showLessonTree(model: LessonTreeModel): void {
     this.lessonTree = model;
   }
-}
-
-/** Records the files the learner opened as Resources, in order. */
-export class RecordingResourceOpener implements ResourceOpener {
-  readonly opened: string[] = [];
 
   openFile(absolutePath: string): Promise<void> {
+    if (this.openFailure !== undefined) {
+      return Promise.reject(new Error(this.openFailure));
+    }
     this.opened.push(absolutePath);
     return Promise.resolve();
   }
@@ -206,7 +207,6 @@ export interface Harness {
   readonly converter: FakeConverter;
   readonly config: FakeConfig;
   readonly ui: RecordingUi;
-  readonly resourceOpener: RecordingResourceOpener;
   readonly logger: RecordingLogger;
   readonly storage: Storage;
   /** The temp dir every fixture lives in. */
@@ -230,7 +230,6 @@ export async function createHarness(): Promise<Harness> {
   const converter = new FakeConverter();
   const config = new FakeConfig();
   const ui = new RecordingUi();
-  const resourceOpener = new RecordingResourceOpener();
   const logger = new RecordingLogger();
   const storage: Storage = {
     global: new MemoryStore(),
@@ -258,7 +257,6 @@ export async function createHarness(): Promise<Harness> {
     converter,
     config,
     ui,
-    resourceOpener,
     logger,
   };
   const core = createFollowAlong(ports);
@@ -275,7 +273,6 @@ export async function createHarness(): Promise<Harness> {
     converter,
     config,
     ui,
-    resourceOpener,
     logger,
     storage,
     root,

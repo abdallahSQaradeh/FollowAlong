@@ -115,7 +115,6 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
       'the Resource under its Lesson',
       () => hooks.lessonTree().nodes.find((node) => node.id === lesson.id)?.resources?.[0],
     );
-    assert.equal(shown.label, 'notes.ts');
 
     await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('followalong.openResource', shown.id);

@@ -33,13 +33,26 @@ read-only fallback without any code of its own. The file is version 1:
   does not know and tolerates their absence, so that ticket needs no version bump.
 - **A malformed entry is dropped when read; a malformed file is ignored** (ADR 0005), and the next
   attach writes a fresh file. A file from a newer FollowAlong is ignored the same way.
-- **Attaching re-reads the file before writing** and attaches run one at a time, so two quick
-  attaches, or two windows on the same Course, never overwrite each other.
-- **The Resource opener is a port** (`ResourceOpener.openFile`). The VS Code adapter runs
-  `vscode.open` with `ViewColumn.Beside`: VS Code picks the editor for the file (text and code in
+- **Attaching re-reads the file before writing** and attaches in one window run one at a time, so
+  two quick attaches never overwrite each other, and what another window attached since this one
+  opened the Course is kept. There is no lock between windows: two attaches in the same instant can
+  still lose one, and the other window's tree shows the change only when its Course is opened
+  again. Progress (story 85) has the same limit and the tickets for it may add a lock for both.
+- **A file that was ignored is replaced by the next attach.** `openCourseData.read` answers
+  `undefined` both for "no file" and for "ignored" (damaged, or from a newer FollowAlong; ADR 0005),
+  so an attach after an ignored read writes a new file. That mends a damaged file, and also
+  replaces a newer FollowAlong's file if the learner runs an older build. Telling the two apart
+  needs a change in `course-data.ts`, which this ticket leaves alone.
+- **Opening a Course reads the Resources, and a read failure is only logged**: the Lessons still
+  play without them. Attaching reads again and lets such a failure through as a command error,
+  because writing after a failed read could drop what was there.
+- **Opening a file is a UI sink method** (`UiSink.openFile`), not a new port: the list of ports in
+  spec #12 stays as it is. The VS Code adapter runs `vscode.open` with `ViewColumn.Beside`: VS Code picks the editor for the file (text and code in
   the text editor), in the group beside the code. The player is `retainContextWhenHidden`, so a
-  Resource tab in front of it does not stop the Lesson. The core sends the player nothing when a
-  Resource opens. The tickets for previews, PDFs and URLs add targets to this port.
+  Resource tab in front of it does not stop the Lesson, but the learner cannot see it while the tab
+  is in front: where the Resource should sit so both are visible is a Manual QA question (#64).
+  The core sends the player nothing when a Resource opens, and says so in a message when the file
+  cannot be opened. The tickets for previews, PDFs and URLs add targets here.
 - **The file dialog stays in the adapter**, as for Open Course…: the core's `attachResource` takes a
   Lesson id and an absolute path.
 
@@ -51,6 +64,12 @@ read-only fallback without any code of its own. The file is version 1:
   would have no stable identity for the tree.
 
 ## Consequences
+
+- `TestHooks` (ADR 0002) now also has `lessonTree()`, the tree the learner sees, so the smoke test
+  can find the id of a Resource it attached.
+- The Resources of a read-only Course live in the extension storage, keyed by the Course's absolute
+  path (ADR 0005), so they do not follow it when it is moved. Paths are not resolved through
+  symbolic links: a Course reached through a link is "inside" by the path it was opened with.
 
 - Nothing checks that a file still exists when it is attached or listed. Dimming a missing file and
   Relink (story 97) are a later ticket; until then clicking a Resource whose file is gone shows

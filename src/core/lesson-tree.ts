@@ -7,6 +7,16 @@ import { basename } from 'node:path';
 import type { Course, Outline, Section } from './course-model.js';
 import { resourcePath, type ResourcesData } from './resources.js';
 
+export interface ResourceNode {
+  readonly kind: 'resource';
+  /** Stable across sessions: what a click passes to `openResource`. */
+  readonly id: string;
+  /** The file's name. */
+  readonly label: string;
+  /** The file's full path. */
+  readonly path: string;
+}
+
 export type LessonTreeNode =
   | {
       readonly kind: 'lesson';
@@ -14,17 +24,9 @@ export type LessonTreeNode =
       readonly id: string;
       readonly label: string;
       /** The Lesson's Resources, in the order they were attached. */
-      readonly resources: readonly LessonTreeNode[];
+      readonly resources: readonly ResourceNode[];
     }
-  | {
-      readonly kind: 'resource';
-      /** Stable across sessions: what a click passes to `openResource`. */
-      readonly id: string;
-      /** The file's name. */
-      readonly label: string;
-      /** The file's full path. */
-      readonly tooltip: string;
-    }
+  | ResourceNode
   | {
       readonly kind: 'section';
       /** The Section's folder path in the Course, ending in `/`. */
@@ -40,24 +42,36 @@ export interface LessonTreeModel {
   readonly nodes: readonly LessonTreeNode[];
 }
 
-export function buildLessonTree(course: Course, resources: ResourcesData): LessonTreeModel {
-  const nodeOf = (section: Section): LessonTreeNode => ({
+/** What the tree is built from: the Course and what is attached to its Lessons. */
+interface TreeSource {
+  readonly folder: string;
+  readonly resources: ResourcesData;
+}
+
+function nodeOf(section: Section, source: TreeSource): LessonTreeNode {
+  return {
     id: section.id,
     kind: 'section',
     label: section.name,
-    children: nodesOf(section),
-  });
-  const nodesOf = (outline: Outline): LessonTreeNode[] => [
+    children: nodesOf(section, source),
+  };
+}
+
+function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
+  return [
     ...outline.lessons.map((lesson): LessonTreeNode => ({
       id: lesson.id,
       kind: 'lesson',
       label: lesson.title,
-      resources: (resources.lessons[lesson.id] ?? []).map((record): LessonTreeNode => {
-        const path = resourcePath(course.folder, record);
-        return { id: record.id, kind: 'resource', label: basename(path), tooltip: path };
+      resources: (source.resources.lessons[lesson.id] ?? []).map((record): ResourceNode => {
+        const path = resourcePath(source.folder, record);
+        return { id: record.id, kind: 'resource', label: basename(path), path };
       }),
     })),
-    ...outline.sections.map(nodeOf),
+    ...outline.sections.map((section) => nodeOf(section, source)),
   ];
-  return { nodes: nodesOf(course) };
+}
+
+export function buildLessonTree(course: Course, resources: ResourcesData): LessonTreeModel {
+  return { nodes: nodesOf(course, { folder: course.folder, resources }) };
 }

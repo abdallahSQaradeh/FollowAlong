@@ -56,8 +56,8 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.id = node.id;
       item.contextValue = 'resource';
-      item.tooltip = node.tooltip;
-      item.resourceUri = vscode.Uri.file(node.tooltip);
+      item.tooltip = node.path;
+      item.resourceUri = vscode.Uri.file(node.path);
       item.command = { command: openResourceCommand, title: 'Open Resource', arguments: [node.id] };
       return item;
     }

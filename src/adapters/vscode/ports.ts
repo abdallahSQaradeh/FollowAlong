@@ -47,6 +47,14 @@ export function createUiSink(tree: LessonTreeView): UiSink {
     showLessonTree(model) {
       tree.show(model);
     },
+    async openFile(absolutePath) {
+      // VS Code picks the editor for the file (text and code in the text editor), in the group
+      // beside the code. The player is retained while another tab is in front: the Lesson plays on.
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(absolutePath), {
+        viewColumn: vscode.ViewColumn.Beside,
+        preview: false,
+      });
+    },
   };
 }
 
