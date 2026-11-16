@@ -46,6 +46,19 @@ export class UnreadableCourseDataError extends Error {
   }
 }
 
+/**
+ * A write not made because the file it would replace, which read fine until now, could not be read
+ * for a moment (an antivirus scan holding it, say). Nothing was written anywhere: the caller keeps
+ * its data and writes it again later (ADR 0074).
+ */
+export class CourseDataBusyError extends Error {
+  override readonly name = 'CourseDataBusyError';
+
+  constructor(readonly path: string) {
+    super(`${path} could not be read just now.`);
+  }
+}
+
 /** Where a write went, when it was not where it would usually go. */
 export interface CourseDataWritten<T> {
   /**
@@ -109,6 +122,9 @@ export function isCourseDataFile(path: string, storageFolder: string): boolean {
     isInsideFolder(keyOf(storageFolder), file)
   );
 }
+
+/** How many times a write reads a file again that read fine before and fails to read now. */
+const rereadAttempts = 3;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -259,11 +275,17 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
         // Another window on the same Course may have written the file since this store read it
         // (#27): read it again and merge, so what it added is kept. `value` wins a tie: it is newer.
         const failedBefore = failedToRead.has(path);
-        const onDisk = await readFrom(location, file);
+        let onDisk = await readFrom(location, file);
+        for (let attempt = 1; attempt < rereadAttempts; attempt += 1) {
+          if (failedBefore || !failedToRead.has(path)) {
+            break;
+          }
+          onDisk = await readFrom(location, file);
+        }
         if (!failedBefore && failedToRead.has(path)) {
           // It read fine until now: something holds it for a moment (an antivirus scan). Neither
-          // written over nor sent elsewhere: this write fails, and the next one reads it again.
-          throw new FileSystemError('other', path, `${path} could not be read just now`);
+          // written over nor sent elsewhere: this write is not made, and the next one reads again.
+          throw new CourseDataBusyError(path);
         }
         if (onDisk !== undefined) {
           merged = file.merge(value, onDisk);

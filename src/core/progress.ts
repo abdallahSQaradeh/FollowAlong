@@ -6,7 +6,12 @@
  */
 import { basename } from 'node:path';
 
-import { openCourseData, UnreadableCourseDataError, type CourseDataFile } from './course-data.js';
+import {
+  CourseDataBusyError,
+  openCourseData,
+  UnreadableCourseDataError,
+  type CourseDataFile,
+} from './course-data.js';
 import {
   startPosition,
   statusAfter,
@@ -294,6 +299,14 @@ export async function openProgress(
       }
       // Not written: the next save (the 5 s timer, a pause, close()) tries again.
       unsaved = true;
+      if (error instanceof CourseDataBusyError) {
+        // The file is held for a moment: nothing for the learner to act on (ADR 0074).
+        if (!failing) {
+          failing = true;
+          logger.log({ level: 'warn', message: `Progress not saved yet: ${error.message}` });
+        }
+        return;
+      }
       const reason = FileSystemError.is(error, 'notFound')
         ? 'the Course folder is missing'
         : error instanceof Error

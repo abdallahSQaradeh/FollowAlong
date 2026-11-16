@@ -455,7 +455,8 @@ describe('Course data another window changes while this one has the Course open'
 
     expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 195 });
     expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
-    expect(h.ui.messages.filter((message) => message.text.includes('damaged'))).toEqual([]);
+    // A file held for a moment is nothing to tell the learner about: the next save went through.
+    expect(h.ui.messages).toEqual([]);
   });
 
   it('lets a reset written before statusAt existed win over an older done mark in the other copy', async () => {
