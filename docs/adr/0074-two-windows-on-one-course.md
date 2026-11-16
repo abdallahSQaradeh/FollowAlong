@@ -26,8 +26,11 @@ detaches are kept as times, so the merge never brings a detached Resource back.
 
 A re-read is not enough when two windows save at the same moment. Each reads the file before the
 other renames its new copy over it, and the rename that lands last drops the other window's Lesson.
-A Seam 1 test shows this on every run. A lock inside one process would not help, because two
-windows are two processes. So the File system port gained `lock(path)`. The Node adapter:
+A Seam 1 test parks one core between its re-read and its rename (the harness holds that write)
+while the other saves. Without the lock it fails on every run. A lock inside one process would
+not help, because two windows are two processes. So the File system port gained `lock(path)`.
+_Source: orchestrator answer to the #27 consult (lock file accepted, with conditions)._ The Node
+adapter:
 
 - makes `<file>.lock` beside the file, with exclusive create (`wx`), and removes it once the write
   is done;
@@ -36,15 +39,23 @@ windows are two processes. So the File system port gained `lock(path)`. The Node
   leaves behind (a write takes milliseconds). Each lock holds a token of the window that made it.
   A takeover removes the old lock only if it still holds the token first read, and a window gives
   back only a lock that holds its own token. So a window never removes a lock another window has
-  just taken. Only the moment between that look and the removal is left open. A lock that cannot
-  be removed is waited on, never taken for a read-only folder;
+  just taken. A lock that cannot be removed is waited on, never taken for a read-only folder.
+  **Residual case:** two windows that both find the same lock left behind can still both win, in
+  one way. The second re-reads the old token after the first has removed the lock, then removes
+  the first one's new lock before the first has written its token. That window is the few
+  microseconds between a read and a removal. Renaming the old lock away first narrows it no
+  further, since the second window's rename can still take the first one's new lock;
 - on Windows, takes `EPERM` while the lock file still exists to mean held, not read-only (a file
   being removed refuses to be made again).
 
 The store makes the folder, takes the lock, reads, merges and writes, then gives the lock back. A
 lock that cannot be made because the location is read-only or gone fails the write the same way
 the write would (fallback, or "the Course folder is missing"). A lock still held after the wait is
-logged, and the write goes ahead without it: a save is never lost to a stuck lock. Waiting and
+logged, and the write goes ahead without it: a save is never lost to a stuck lock and nothing is
+shown to the learner. The lock is given back in a `finally`, on every path: a failed write, a
+refusal (D5), and before a write falls back to the other location (which takes that file's own
+lock). The wait is async and bounded, so the save when the window closes (`deactivate`) takes at
+most about 2 s longer than the write itself. Waiting and
 the age check use real time in the adapter, like the rename retries of ADR 0005, so Seam 1 tests
 on the real file system contend for real.
 
@@ -98,13 +109,17 @@ one look fresh (then each save waits 2 s and goes ahead).
   test pass and leave the real race.
 - **No lock, documenting the gap.** Rejected: the gap was not rare in tests (a queued save of the
   other window landing during a reset), and a window's last save before closing would not heal.
-- **Raise `progress.json` to version 2.** Not done: `statusAt` is optional, and an older v1 reader
-  ignores it. It then writes entries without it, which read as before.
+- **Raise `progress.json` to version 2.** Not done, and the orchestrator confirmed it. `statusAt`
+  is optional and additive, so a FollowAlong that knows only version 1 still reads the file. A
+  version 2 file would be unreadable to it, and under D5 it would then keep its Progress elsewhere
+  rather than write over the file. Such a reader drops `statusAt` when it writes, and the entries
+  then read as before (`statusAt` defaults to `savedAt`).
 
 ## Consequences
 
 - `.followalong` (or the fallback folder) holds `progress.json.lock` or `resources.json.lock` for
-  the few milliseconds of a write. A crash can leave one behind for up to 10 s. Auto-pause ignores
-  them like any file there (ADR 0052).
+  the few milliseconds of a write. A crash can leave one behind for up to 10 s. Like everything in
+  `.followalong`, they are not Lessons: the Course model and scanner skip hidden folders, and
+  auto-pause ignores FollowAlong's own files (ADR 0052).
 - `ProgressRecorder.resetAll` takes the Course's Lesson ids.
 - Saves of entries whose status was set before their place carry `statusAt`.
