@@ -267,9 +267,15 @@ async function convert(
       duration = seconds(hours, minutes, rest);
     }
     const timeMatch = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
-    if (timeMatch !== null && duration > 0) {
+    if (timeMatch !== null) {
       const [, hours = '0', minutes = '0', rest = '0'] = timeMatch;
-      onProgress(Math.min(100, Math.floor((seconds(hours, minutes, rest) / duration) * 100)));
+      // A Lesson whose length ffmpeg cannot read still reports 0: the core takes no progress for
+      // 60 s to mean the conversion is stuck (ADR 0056).
+      onProgress(
+        duration > 0
+          ? Math.min(100, Math.floor((seconds(hours, minutes, rest) / duration) * 100))
+          : 0,
+      );
     }
   });
   if (run.code !== 0) {

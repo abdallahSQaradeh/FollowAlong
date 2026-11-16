@@ -25,6 +25,13 @@ puts the adapter's parsing and process handling under tests.
   SIGTERM or everything. The files, the temp names, the renames and the sweep are real, in a temp
   folder. CI has no ffmpeg, and a real one cannot be made to hang on cue; the recorded files are
   regenerated only when the parser or ffmpeg's output changes.
+- **A recorded exception (D11 on #12).** Testing the Node adapter is outside "tests only at the three
+  seams", and the orchestrator accepted it for this reason: its own routed notes asked for probe-parser
+  and sweep tests, and that behaviour lives in the adapter. Conditions: the test reaches the adapter only
+  through what `createFfmpegConverter` returns (the Converter port), fakes only the spawned process, and
+  asserts only what the port or the faked process boundary shows (progress, results, error text, files on
+  disk, and the signals and arguments the process receives), never a private function. A later change
+  may move ffmpeg's output parsing into the core, so this becomes a Seam 1 test.
 
 ## Considered options
 

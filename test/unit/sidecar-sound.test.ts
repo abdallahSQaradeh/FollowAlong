@@ -399,9 +399,83 @@ describe('sound for MP4 Lessons', () => {
     expect(h.converter.requests).toEqual([]);
   });
 
+  it('fails the sound when a conversion that started makes no progress for 60 seconds', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    const [request] = h.converter.requests;
+    request?.progress(37);
+
+    h.clock.advance(59_999);
+    await h.settle();
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([]);
+    expect(request?.request.signal.aborted).toBe(false);
+
+    h.clock.advance(1);
+    await h.settle();
+
+    expect(request?.request.signal.aborted).toBe(true);
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([
+      {
+        type: 'soundFailed',
+        message:
+          'ffmpeg made no progress on “01 Intro.mp4” for 60 seconds. Is its drive or network folder still there?',
+      },
+    ]);
+    // The status bar stops saying "Preparing sound… 37%".
+    expect(h.ui.statusBar.items.find((item) => item.id === 'sound')).toBeUndefined();
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('starts the 60 seconds again at every progress it reports', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    const [request] = h.converter.requests;
+
+    for (const percent of [10, 20, 30, 40]) {
+      h.clock.advance(59_000);
+      request?.progress(percent);
+    }
+    // The same percent again still counts: ffmpeg is alive.
+    h.clock.advance(59_000);
+    request?.progress(40);
+    h.clock.advance(59_000);
+    await h.settle();
+
+    expect(request?.request.signal.aborted).toBe(false);
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([]);
+    await request?.succeed();
+    await h.settle();
+    expect(h.player.sent.filter((command) => command.type === 'soundReady')).toHaveLength(1);
+  });
+
+  it('does not wait for a conversion that ignores being stopped', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+
+    h.clock.advance(60_000);
+    await h.settle();
+
+    // The fake never settles its request, as an ffmpeg stuck on a dead mount does not.
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toHaveLength(1);
+  });
+
+  it('stops counting once the conversion is done, so a prepared sound is never failed later', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    await h.converter.requests[0]?.succeed();
+    await h.settle();
+
+    h.clock.advance(10 * 60_000);
+    await h.settle();
+
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([]);
+  });
+
   it('does not time out a probe that answers in time', async () => {
     const h = await createHarness();
     await openMp4Lesson(h, false);
+    // The conversion that follows the probe finishes at once; only the probe's own time is tested.
+    await h.converter.requests[0]?.succeed();
     h.clock.advance(60_000);
     await h.settle();
 

@@ -4,6 +4,12 @@
  * own interface. Only the process is stood in for, because what it writes (recorded from a real
  * ffmpeg in test/fixtures/probe, by scripts/make-probe-fixtures.mjs) and how it ends are all the
  * adapter sees: CI has no ffmpeg, and a real one could not be made to hang on cue.
+ *
+ * A recorded exception to "tests only at the three seams" (D11 on #12), on the orchestrator's
+ * conditions: it reaches the adapter only through what `createFfmpegConverter` returns (the
+ * Converter port), fakes only the spawned process, and asserts only what that port or the faked
+ * process boundary shows: progress, results, error text, files on disk, and the signals and
+ * arguments the process receives; never a private function.
  */
 import { EventEmitter } from 'node:events';
 import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
@@ -268,6 +274,31 @@ describe('converting the sound', () => {
     const args = started[0]?.args ?? [];
     expect(args).toContain(input);
     expect(args.slice(0, 5)).toEqual(['-hide_banner', '-nostdin', '-y', '-i', input]);
+  });
+
+  it('still reports progress while ffmpeg converts a Lesson whose length it cannot read, so it is not taken for stalled', async () => {
+    const output = join(folder, 'Lesson-0123456789abcdef.mp3');
+    const { converter } = converterRunning((process) => {
+      const [temporary] = process.args.slice(-1);
+      process.say('  Duration: N/A, bitrate: N/A\n');
+      process.say('size=      10kB time=00:00:02.00 bitrate=  40.0kbits/s speed=50x    \r');
+      process.say('size=      20kB time=00:00:04.00 bitrate=  40.0kbits/s speed=50x    \r');
+      void writeFile(temporary ?? '', 'ID3 mp3 sound').then(() => {
+        process.finish(0);
+      });
+    });
+    const percents: number[] = [];
+
+    await converter.extractSound({
+      program: 'ffmpeg',
+      input: join(folder, 'Lesson.mp4'),
+      output,
+      onProgress: (percent) => percents.push(percent),
+      signal: never,
+    });
+
+    // One report per progress line from ffmpeg, then the end: 0 is "alive, length unknown".
+    expect(percents).toEqual([0, 0, 100]);
   });
 
   it('never shows the temp file’s own name either, in whatever form ffmpeg writes it', async () => {

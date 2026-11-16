@@ -13,7 +13,13 @@ import { basename, extname, join } from 'node:path';
 import { openCourseData, type CourseData } from './course-data.js';
 import { isFullPath } from './courses-roots.js';
 import type { Lesson } from './course-model.js';
-import { FileSystemError, type Disposable, type FileStat, type Ports } from './ports.js';
+import {
+  FileSystemError,
+  type ConversionRequest,
+  type Disposable,
+  type FileStat,
+  type Ports,
+} from './ports.js';
 
 /** The Course data subfolder that holds prepared sound. */
 const soundFolderName = 'sound';
@@ -82,6 +88,68 @@ type SidecarSoundPorts = Pick<
  * and the Lesson's controls would stay hidden for ever (ADR 0056).
  */
 const probeTimeoutMs = 30_000;
+
+/**
+ * How long a conversion may go without reporting progress before the sound is given up. ffmpeg
+ * reports every fraction of a second while it works; a drive that drops mid-conversion leaves it
+ * blocked reading, and the learner would see "Preparing sound… 37%" for ever (ADR 0056).
+ */
+const stallTimeoutMs = 60_000;
+
+/**
+ * Writes `output` with the converter. Rejects when the conversion reports no progress for
+ * {@link stallTimeoutMs}, even if ffmpeg ignores being stopped, so nothing waits on it; every
+ * progress it reports, the same percent again included, starts the time over.
+ */
+async function extractWithStallGuard(
+  { clock, converter }: SidecarSoundPorts,
+  lesson: Lesson,
+  request: ConversionRequest,
+): Promise<void> {
+  const { signal, onProgress } = request;
+  const stalled = new AbortController();
+  let timer: Disposable | undefined;
+  let leave: (() => void) | undefined;
+  let restart: () => void = () => undefined;
+  const stall = new Promise<never>((_resolve, reject) => {
+    restart = () => {
+      timer?.dispose();
+      timer = clock.schedule(stallTimeoutMs, () => {
+        stalled.abort();
+        reject(
+          new Error(
+            `ffmpeg made no progress on “${basename(lesson.id)}” for ${String(stallTimeoutMs / 1000)} seconds. Is its drive or network folder still there?`,
+          ),
+        );
+      });
+    };
+    // The learner left the Lesson: nothing waits for an ffmpeg that does not stop.
+    leave = () => {
+      reject(signal.reason instanceof Error ? signal.reason : new Error('The sound was stopped.'));
+    };
+    signal.addEventListener('abort', leave, { once: true });
+    restart();
+  });
+  const extraction = converter.extractSound({
+    ...request,
+    signal: AbortSignal.any([signal, stalled.signal]),
+    onProgress: (percent) => {
+      restart();
+      onProgress(percent);
+    },
+  });
+  // Whichever loses the race must not become an unhandled rejection.
+  extraction.catch(() => undefined);
+  stall.catch(() => undefined);
+  try {
+    await Promise.race([extraction, stall]);
+  } finally {
+    timer?.dispose();
+    if (leave !== undefined) {
+      signal.removeEventListener('abort', leave);
+    }
+  }
+}
 
 /**
  * The codec of `lesson`'s first sound track, or `undefined` for a silent video. Rejects when
@@ -189,7 +257,7 @@ async function prepareSound(
   { signal, onProgress, pageDecodes }: SoundRequest,
   warnedPaths: Set<string>,
 ): Promise<PreparedSound> {
-  const { fileSystem, converter, logger } = ports;
+  const { fileSystem, logger } = ports;
   const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
   for (const folder of data.folders(soundFolderName)) {
     const path = join(folder, name);
@@ -212,7 +280,7 @@ async function prepareSound(
   logger.log({ level: 'info', message: `Preparing the sound of ${lesson.id} with ${program}` });
   const convertInto = async (folder: string): Promise<string> => {
     const output = join(folder, name);
-    await converter.extractSound({
+    await extractWithStallGuard(ports, lesson, {
       program,
       input: lesson.path,
       output,

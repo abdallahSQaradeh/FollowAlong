@@ -16,8 +16,16 @@ codecs="…"')` (`mp4a.6B`, `opus`, `flac`) is not empty, as `aacSupported` has 
   reading “<file>” within 30 seconds. Is its drive or network folder still there?", which the learner
   sees with _Play without sound_ (ADR 0055). It does not wait for the converter to settle: a converter
   that ignores its abort cannot keep the Lesson's controls hidden. Leaving the Lesson ends the wait at
-  once too. The conversion itself has no timeout: its progress shows, and a stalled one can be left by
-  moving to another Lesson.
+  once too.
+- **A conversion that stops reporting progress fails after 60 s.** A drive that drops mid-conversion
+  would otherwise leave "Preparing sound… 37%" for ever, with no _Play without sound_ (story 72). The
+  audio sidecar service races the conversion against a timer on the Clock port that every progress report
+  starts again (the same percent counts: ffmpeg is alive). When it fires, the conversion is aborted and
+  the sound fails with "ffmpeg made no progress on “<file>” for 60 seconds. Is its drive or network
+  folder still there?", with the same error and button as any failure (ADR 0055). Again nothing waits
+  for a converter that ignores its abort. ffmpeg reports every fraction of a second while it works, so 60 s
+  is slow only for a stuck one; a Lesson whose length ffmpeg cannot read reports 0% on each of its progress
+  lines (the Converter adapter), so it is not taken for stuck.
 - **A stopped ffmpeg is killed.** A single SIGTERM does not end ffmpeg while it is blocked in `open()`.
   The Converter adapter now sends SIGTERM when its signal aborts, SIGKILL after 5 s, and gives up
   waiting 5 s after that (a process stuck in the kernel on a dead mount can resist even SIGKILL), so a
