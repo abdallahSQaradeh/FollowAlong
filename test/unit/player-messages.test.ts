@@ -124,3 +124,37 @@ describe('the spot move messages of the player protocol', () => {
     }
   });
 });
+
+describe('the sound messages of the player protocol (ticket #42)', () => {
+  it('accept soundProgress with a percent from 0 to 100, and nothing else', () => {
+    for (const percent of [0, 42, 100]) {
+      expect(parsePlayerCommand({ type: 'soundProgress', percent })).toEqual({
+        type: 'soundProgress',
+        percent,
+      });
+    }
+    for (const percent of [-1, 101, Number.NaN, '50', undefined, null]) {
+      expect(parsePlayerCommand({ type: 'soundProgress', percent })).toBeUndefined();
+    }
+  });
+
+  it('accept ready with or without the sound codecs the page decodes', () => {
+    expect(parsePlayerEvent({ type: 'ready', aacSupported: false })).toEqual({
+      type: 'ready',
+      aacSupported: false,
+    });
+    expect(
+      parsePlayerEvent({ type: 'ready', aacSupported: false, soundCodecs: ['mp3', 'opus'] }),
+    ).toEqual({ type: 'ready', aacSupported: false, soundCodecs: ['mp3', 'opus'] });
+    for (const soundCodecs of ['mp3', [1], [null], {}]) {
+      expect(parsePlayerEvent({ type: 'ready', aacSupported: false, soundCodecs })).toBeUndefined();
+    }
+  });
+
+  it('accept playWithoutSound for a Lesson, with its load number', () => {
+    expect(parsePlayerEvent({ type: 'playWithoutSound', lessonId: 'a/01.mp4', loadId: 3 })).toEqual(
+      { type: 'playWithoutSound', lessonId: 'a/01.mp4', loadId: 3 },
+    );
+    expect(parsePlayerEvent({ type: 'playWithoutSound' })).toBeUndefined();
+  });
+});

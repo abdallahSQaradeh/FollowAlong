@@ -11,8 +11,9 @@ future VS Code that ships AAC turns this off with no code change (spec #12, tick
   is. Otherwise ffmpeg reads the file's first sound track (`Converter.soundCodec`):
   - **no sound track:** the core sends `noSidecar`, with no error, and the video plays as it is at
     once;
-  - **a codec the page decodes in MP4 itself** (MP3, Opus, FLAC: Chromium's codecs without the
-    proprietary ones, as VS Code ships it): `noSidecar` too, and the video plays its own sound;
+  - **a codec the page decodes in MP4 itself** (the page reports which of MP3, Opus and FLAC in
+    `ready {soundCodecs}`, ADR 0056; VS Code's Chromium has all three): `noSidecar` too, and the video
+    plays its own sound;
   - **AAC, or any other codec:** it is converted, and the core sends `soundReady {audioUri}`.
 
   Every answer goes after the `load` it belongs to, and only while that `load` is the current one.
@@ -81,13 +82,13 @@ future VS Code that ships AAC turns this off with no code change (spec #12, tick
   - **Invariant:** a sidecar plays only where the video's own sound cannot. That needs two
     things: the page says it can't decode AAC (`ready {aacSupported}`, its `canPlayType`, the
     same check behind the player's waiting); and the file's sound, read by ffmpeg, is not one the
-    page decodes in MP4 (MP3, Opus, FLAC). So the sound never plays twice: not on an AAC-capable
+    page decodes in MP4 (what it reported in `ready {soundCodecs}`, ADR 0056). So the sound never plays twice: not on an AAC-capable
     page, and not for an MP4 whose sound is MP3 or Opus.
   - Only the Seam 2 harness, which forces "no AAC" in a Chromium that has it, plays both.
 - **Failure, until ticket #42.** The learner gets one error message per preparation. The player gets
   `soundFailed {message}` (again after a page reload) and then lets the video play, without sound. A
-  Lesson that can never play would be worse. **#42 replaces this** with the "Preparing sound… N%"
-  overlay and a _Play without sound_ button (`playWithoutSound`).
+  Lesson that can never play would be worse. **Replaced by ADR 0055** (ticket #42): the "Preparing
+  sound… N%" overlay, and an error with a _Play without sound_ button (`playWithoutSound`).
 
 ## Considered options
 
