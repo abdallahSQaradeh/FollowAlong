@@ -128,8 +128,14 @@ function newJob(lesson: Lesson, pageDecodes: ReadonlySet<string>): Job {
 export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQueue {
   /** The jobs not ended, by Lesson id. */
   const jobs = new Map<string, Job>();
-  /** The Lessons whose sound was prepared in this window: not done again ahead of time. */
+  /**
+   * The Lessons whose sound was prepared since the learner opened the Lesson they are ahead of:
+   * not looked at again until they move on, which finds a sound taken away since (cleared by hand,
+   * or pruned) and a Lesson file that changed.
+   */
   const prepared = new Set<string>();
+  /** The Lesson `ahead` follows. */
+  let openedId: string | undefined;
   /** The Lessons whose sound failed ahead of time: not tried again ahead of time. */
   const failed = new Set<string>();
   let ahead: readonly Lesson[] = [];
@@ -158,7 +164,10 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
 
   /** The job that should run now: the opened Lesson's, else the one running, else the next ahead. */
   function pick(): Job | undefined {
-    const opened = [...jobs.values()].find((job) => job.waiters.size > 0);
+    // A job stopped to make way waits for its old run to end (`ended`): it never runs twice at once.
+    const opened = [...jobs.values()].find(
+      (job) => job.waiters.size > 0 && job.state !== 'preempted',
+    );
     if (opened !== undefined) {
       return opened;
     }
@@ -168,6 +177,9 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
     for (const lesson of ahead) {
       if (lesson.container === 'mp4' && !prepared.has(lesson.id) && !failed.has(lesson.id)) {
         const job = jobs.get(lesson.id) ?? newJob(lesson, aheadDecodes);
+        if (job.state === 'preempted') {
+          continue;
+        }
         jobs.set(lesson.id, job);
         return job;
       }
@@ -304,6 +316,10 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
     prepareAhead(opened, lessonsInOrder, pageDecodes) {
       const here =
         opened === undefined ? -1 : lessonsInOrder.findIndex((lesson) => lesson.id === opened.id);
+      if (opened?.id !== openedId) {
+        openedId = opened?.id;
+        prepared.clear();
+      }
       ahead = here === -1 ? [] : lessonsInOrder.slice(here + 1, here + 1 + aheadCount);
       aheadDecodes = pageDecodes;
       dropUnneeded();

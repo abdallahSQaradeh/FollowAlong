@@ -3,6 +3,7 @@
  * sound is ready, the next 3 Lessons in Course order are converted one at a time, in the
  * background. Opening another Lesson reorders the queue and cancels what is no longer needed.
  */
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -300,5 +301,26 @@ describe('preparing sound ahead', () => {
     expect(converting(h, course)).toEqual(['01', '02', '03', '01']);
     await finishNext(h, 3);
     expect(converting(h, course)).toEqual(['01', '02', '03', '01', '03']);
+  });
+
+  it('prepares a sound again that was taken away since, when the learner moves on', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h, lessons(6));
+    for (const index of [0, 1, 2, 3]) {
+      await finishNext(h, index);
+    }
+    expect(converting(h, course)).toEqual(['01', '02', '03', '04']);
+    // The sound of 03 is gone: cleared by hand, or pruned to make room.
+    const sounds = join(course, '.followalong', 'sound');
+    const third = (await h.listFiles(sounds)).find((file) => file.startsWith('03 Lesson-'));
+    await rm(join(sounds, third ?? ''));
+
+    h.core.nextLesson();
+    await h.settle();
+
+    // 02 is open: 03 is among its next 3 again, and 04 and 05 follow it.
+    expect(converting(h, course)).toEqual(['01', '02', '03', '04', '03']);
+    await finishNext(h, 4);
+    expect(converting(h, course)).toEqual(['01', '02', '03', '04', '03', '05']);
   });
 });

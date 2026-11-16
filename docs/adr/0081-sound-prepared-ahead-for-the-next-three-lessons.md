@@ -17,10 +17,15 @@ they are told.
   A conversion ahead for a Lesson still wanted, but not first, is stopped only to give the opened
   Lesson its turn, and starts again from the beginning in its own turn (ffmpeg cannot resume). Two
   Lessons still wanted ahead never pre-empt each other: the one running finishes first.
+  The next run starts when a stopped one has been told to stop, not when its ffmpeg has exited: a
+  stopped ffmpeg may take up to the kill grace of ADR 0056 to go, and the opened Lesson must not wait
+  for it. A stopped job is never started again before its own old run has ended.
 - **What is skipped.** A Lesson converted before (the cache name of ADR 0034: relative path, size
   and last change) costs no conversion; a WebM, a silent MP4 and an MP4 whose sound the page decodes
   (`ready.soundCodecs`, ADR 0056) are found out by the same probe the opened Lesson goes through, so
-  one rule decides it for both. Nothing is prepared ahead when the page plays AAC itself.
+  one rule decides it for both. Nothing is prepared ahead when the page plays AAC itself. A Lesson
+  looked at once is not looked at again until the learner opens another Lesson, which finds a sound
+  taken away since (cleared by hand, pruned by ticket #45) and a Lesson file that changed.
 - **A failure ahead is silent.** When the probe or the conversion fails, or the 30 s probe / 60 s
   no-progress timeouts of ADR 0056 fire, for a Lesson that is not the opened one: one line in the log
   (warn), no message, no overlay, no status bar item, and the queue goes on with the next. The Lesson
