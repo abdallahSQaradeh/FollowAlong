@@ -449,3 +449,121 @@ describe('Locate…', () => {
     ]);
   });
 });
+
+describe('picking the Course that is already open', () => {
+  function playTo(h: Harness, lessonId: string, position: number): void {
+    h.player.emit({ type: 'played', lessonId });
+    h.player.emit({ type: 'timeUpdate', lessonId, position, duration: 600 });
+  }
+
+  it('keeps the Lesson that plays: no reload, no jump to the first Lesson', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Learning', { 'A/01 Intro.webm': 'v', 'A/02 Setup.webm': 'v' });
+    h.config.set('coursesRoots', [root]);
+    await h.core.openCourse(join(root, 'A'));
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    playTo(h, '02 Setup.webm', 300);
+    h.player.clearSent();
+
+    const picking = h.core.pickCourse();
+    await h.ui.pickerShown();
+    h.ui.choose('A');
+    await picking;
+
+    expect(h.player.sent).toEqual([]);
+    expect(h.ui.selectedLesson).toBe('02 Setup.webm');
+  });
+
+  it('opens the Course again, paused where the learner left it, when the player was closed', async () => {
+    const h = await createHarness();
+    const root = await h.folder('Learning', { 'A/01 Intro.webm': 'v', 'A/02 Setup.webm': 'v' });
+    h.config.set('coursesRoots', [root]);
+    await h.core.openCourse(join(root, 'A'));
+    h.player.ready();
+    h.core.playLesson('02 Setup.webm');
+    playTo(h, '02 Setup.webm', 300);
+    h.player.emit({ type: 'paused', lessonId: '02 Setup.webm', byUser: true });
+    h.player.close();
+    h.player.clearSent();
+
+    await h.core.openCourse(join(root, 'A'));
+    h.player.ready();
+
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: '02 Setup.webm', startAt: 295, autoplay: false },
+    ]);
+  });
+});
+
+describe('while another Course is opening', () => {
+  const opening = { severity: 'info', text: 'FollowAlong is opening a Course…' } as const;
+
+  /** Course “First” plays; “Second” has read its folder and is storing its folder on a slow disk. */
+  async function switching(h: Harness) {
+    const root = await h.folder('Learning', {
+      'First/01 Intro.webm': 'v',
+      'First/02 Setup.webm': 'v',
+      'Second/01 Intro.webm': 'v',
+    });
+    h.config.set('coursesRoots', [root]);
+    await h.core.openCourse(join(root, 'First'));
+    h.player.ready();
+    h.player.clearSent();
+    const write = h.holdWorkspaceWrite();
+    const second = h.core.openCourse(join(root, 'Second'));
+    await write.reached;
+    return {
+      finish: async () => {
+        write.release();
+        await second;
+      },
+    };
+  }
+
+  it('tells the learner when a click on a Lesson is refused', async () => {
+    const h = await createHarness();
+    const { finish } = await switching(h);
+
+    h.core.playLesson('02 Setup.webm');
+
+    expect(h.ui.messages).toEqual([opening]);
+    expect(h.player.sent).toEqual([]);
+    await finish();
+  });
+
+  it('tells the learner, not “no Lesson is open”, when Next or Previous is pressed', async () => {
+    const h = await createHarness();
+    const { finish } = await switching(h);
+
+    h.core.nextLesson();
+    h.core.previousLesson();
+
+    expect(h.ui.messages).toEqual([opening, opening]);
+    await finish();
+  });
+
+  it('tells the learner, and opens no Lesson picker, when Go to Lesson… is used', async () => {
+    const h = await createHarness();
+    const { finish } = await switching(h);
+
+    await h.core.goToLesson();
+
+    expect(h.ui.messages).toEqual([opening]);
+    expect(h.ui.picker).toBeUndefined();
+    await finish();
+  });
+
+  it('plays Lessons again once the Course is open', async () => {
+    const h = await createHarness();
+    const { finish } = await switching(h);
+    await finish();
+    h.ui.messages.length = 0;
+    h.player.clearSent();
+
+    h.core.playLesson('01 Intro.webm');
+
+    expect(h.ui.messages).toEqual([]);
+    expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: '01 Intro.webm' }]);
+  });
+});

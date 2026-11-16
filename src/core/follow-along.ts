@@ -271,6 +271,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (superseded()) {
       return;
     }
+    const playing = loaded.lesson();
+    if (
+      playing !== undefined &&
+      openedCourse !== undefined &&
+      keyOf(openedCourse.folder) === keyOf(folder)
+    ) {
+      // The Course is open and its Lesson is in the player: picking it again changes nothing, so
+      // the Lesson is not reloaded and the learner does not land on Lesson 1 (ADR 0041).
+      logger.log({ level: 'info', message: `Not opening ${folder}: it is the open Course.` });
+      ui.selectLesson(playing.id);
+      ports.player.show({
+        title: playing.title,
+        resourceRoots: playerFolders(
+          readCoursesRoots(config).roots,
+          openedCourse.folder,
+          fallbackRoot(storage.folder),
+        ),
+      });
+      return;
+    }
     let course: Course;
     try {
       course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
@@ -340,9 +360,22 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /**
+   * Whether a Course is being opened, in which case a command that needs a Lesson is refused with
+   * one message: the tree and the status bar still show the Course being left, and a silent
+   * refusal looks like a dead key.
+   */
+  function refusedWhileOpening(): boolean {
+    if (!switching) {
+      return false;
+    }
+    ui.showMessage({ severity: 'info', text: 'FollowAlong is opening a Course…' });
+    return true;
+  }
+
   /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
   function playLesson(lessonId: string): void {
-    if (switching) {
+    if (refusedWhileOpening()) {
       logger.log({
         level: 'info',
         message: `Not playing ${lessonId}: another Course is opening.`,
@@ -390,6 +423,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
    * no Lesson to move from.
    */
   function moveToLesson(offset: number): void {
+    if (refusedWhileOpening()) {
+      return;
+    }
     const beside = lessonBeside(loaded.lesson(), offset);
     if (beside === undefined) {
       ui.showMessage({ severity: 'info', text: noLessonText });
@@ -529,6 +565,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     playLesson,
     pickCourse,
     async goToLesson() {
+      if (refusedWhileOpening()) {
+        return;
+      }
       if (openedCourse === undefined) {
         // With no Course there is no Lesson to go to: the key opens the Course picker (story 35).
         await pickCourse();
