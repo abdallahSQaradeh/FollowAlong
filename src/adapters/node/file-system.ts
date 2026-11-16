@@ -3,6 +3,7 @@
  * Seam 1 tests. Failures become a FileSystemError whose `reason` is the read-only check.
  */
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -12,13 +13,18 @@ import {
   type DirectoryEntry,
   type FileSystem,
   type FileSystemErrorReason,
+  type ReleaseLock,
 } from '../../core/ports.js';
 
 const run = promisify(execFile);
 
+/** The Node error code of `error` (`ENOENT`, …), if it has one. */
+function codeOf(error: unknown): unknown {
+  return error instanceof Error && 'code' in error ? error.code : undefined;
+}
+
 function reasonOf(error: unknown): FileSystemErrorReason {
-  const code = error instanceof Error && 'code' in error ? error.code : undefined;
-  switch (code) {
+  switch (codeOf(error)) {
     case 'ENOENT':
     case 'ENOTDIR':
       return 'notFound';
@@ -56,7 +62,7 @@ async function renameOver(from: string, to: string): Promise<void> {
       await rename(from, to);
       return;
     } catch (error) {
-      const code = error instanceof Error && 'code' in error ? error.code : undefined;
+      const code = codeOf(error);
       const delay = delaysMs[attempt];
       if (delay === undefined || !(code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')) {
         throw error;
@@ -72,61 +78,89 @@ const lockStepMs = 20;
 /** A lock this old was left behind by a window that stopped before giving it back. */
 const leftBehindLockMs = 10_000;
 
-/** Whether the lock file at `lockPath` is older than {@link leftBehindLockMs}; false if gone. */
-async function leftBehind(lockPath: string): Promise<boolean> {
-  return stat(lockPath).then(
-    (found) => Date.now() - found.mtimeMs >= leftBehindLockMs,
+/** What the lock file at `lockPath` holds: the token of the window that made it, if any. */
+async function lockToken(lockPath: string): Promise<string | undefined> {
+  return readFile(lockPath, 'utf8').then(
+    (token) => token,
+    () => undefined,
+  );
+}
+
+/** Whether anything is at `path`. */
+async function present(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
     () => false,
   );
 }
 
-/** Makes `lockPath` if nothing is there; resolves `false` while another window holds it. */
-async function makeLock(lockPath: string): Promise<boolean> {
+/** Makes `lockPath` holding `token` if nothing is there; `false` while another window holds it. */
+async function makeLock(lockPath: string, token: string): Promise<boolean> {
   try {
     const file = await open(lockPath, 'wx');
     try {
-      await file.writeFile(String(process.pid), 'utf8');
+      await file.writeFile(token, 'utf8');
     } finally {
       await file.close();
     }
     return true;
   } catch (error) {
-    const code = error instanceof Error && 'code' in error ? error.code : undefined;
+    const code = codeOf(error);
     if (code === 'EEXIST') {
       return false;
     }
     // On Windows, a lock file another window is just removing refuses to be made again (EPERM):
     // held for a moment more. A folder that may not be written to refuses it too, with no file.
-    if (
-      (code === 'EPERM' || code === 'EACCES') &&
-      (await stat(lockPath).then(
-        () => true,
-        () => false,
-      ))
-    ) {
+    if ((code === 'EPERM' || code === 'EACCES') && (await present(lockPath))) {
       return false;
     }
     throw error;
   }
 }
 
+/**
+ * Removes the lock at `lockPath` when it still holds `token`. Another window may have taken it over
+ * in between (it looked left behind): that lock is its, and stays. Only the moment between this
+ * look and the removal is left open.
+ */
+async function removeLockOf(lockPath: string, token: string): Promise<void> {
+  if ((await lockToken(lockPath)) === token) {
+    await rm(lockPath, { force: true, maxRetries: 5, retryDelay: 20 });
+  }
+}
+
+/**
+ * Takes over the lock at `lockPath` when it was left behind. Failing to remove it (on Windows,
+ * another process may hold it for a moment) is not a reason to call the folder read-only: the
+ * caller waits on, and gives up in time.
+ */
+async function takeOverLeftBehind(lockPath: string): Promise<void> {
+  const token = await lockToken(lockPath);
+  const old = await stat(lockPath).then(
+    (found) => Date.now() - found.mtimeMs >= leftBehindLockMs,
+    () => false,
+  );
+  if (token !== undefined && old) {
+    await removeLockOf(lockPath, token).catch(() => undefined);
+  }
+}
+
 /** See {@link FileSystem.lock}. */
-async function lock(path: string): Promise<() => Promise<void>> {
+async function lock(path: string): Promise<ReleaseLock> {
   const lockPath = `${path}.lock`;
+  const token = `${String(process.pid)}-${randomUUID()}`;
   const giveUpAt = Date.now() + lockWaitMs;
   for (;;) {
-    if (await makeLock(lockPath)) {
-      return () =>
-        wrap(lockPath, () => rm(lockPath, { force: true, maxRetries: 5, retryDelay: 20 }));
+    if (await makeLock(lockPath, token)) {
+      return () => wrap(lockPath, () => removeLockOf(lockPath, token));
     }
-    if (await leftBehind(lockPath)) {
-      await rm(lockPath, { force: true });
-      continue;
-    }
+    await takeOverLeftBehind(lockPath);
     if (Date.now() >= giveUpAt) {
       throw new FileSystemError('other', path, `${lockPath} is still held by another window.`);
     }
-    await new Promise((resolve) => setTimeout(resolve, lockStepMs));
+    if (await present(lockPath)) {
+      await new Promise((resolve) => setTimeout(resolve, lockStepMs));
+    }
   }
 }
 
@@ -194,7 +228,7 @@ export function createNodeFileSystem(): FileSystem {
         try {
           await mkdir(path, { recursive: options.parents });
         } catch (error) {
-          const code = error instanceof Error && 'code' in error ? error.code : undefined;
+          const code = codeOf(error);
           const isFolder =
             code === 'EEXIST' &&
             (await stat(path).then(

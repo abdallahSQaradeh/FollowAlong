@@ -13,7 +13,10 @@ on disk. What it was given wins a tie: it is the newer. `write` resolves with `m
 caller catches up with what the other window wrote. D5 as amended (spec #12) holds on that re-read
 too: a copy that has turned unreadable meanwhile (damaged, or rewritten by a newer FollowAlong) is
 never written over. The data goes to the fallback storage and the learner is told once, as when
-the Course opened with it (ADR 0005, ADR 0010). Reads already take the newest per Lesson across
+the Course opened with it (ADR 0005, ADR 0010). A copy that read fine until now and fails to read
+outright at a write (an antivirus scan holding it for a moment) is neither written over nor sent
+elsewhere: that one save fails, and the next reads it again (ADR 0010's "a passing lock does not
+divert saves"). Only a copy that keeps failing goes the fallback way. Reads already take the newest per Lesson across
 `.followalong` and the fallback (ADR 0010), so nothing changes there.
 
 The Resources follow the same rule. Their changes already re-read the file first (ADR 0039), and
@@ -30,7 +33,11 @@ windows are two processes. So the File system port gained `lock(path)`. The Node
   is done;
 - waits while another window holds it, in 20 ms steps for at most 2 s;
 - takes over a lock whose file is 10 s old or more, which only a window that stopped mid-write
-  leaves behind (a write takes milliseconds);
+  leaves behind (a write takes milliseconds). Each lock holds a token of the window that made it.
+  A takeover removes the old lock only if it still holds the token first read, and a window gives
+  back only a lock that holds its own token. So a window never removes a lock another window has
+  just taken. Only the moment between that look and the removal is left open. A lock that cannot
+  be removed is waited on, never taken for a read-only folder;
 - on Windows, takes `EPERM` while the lock file still exists to mean held, not read-only (a file
   being removed refuses to be made again).
 
@@ -53,7 +60,9 @@ so A's done mark would go (#26 left this to #27, ADR 0030). So an entry now has 
   has a status, else as never (0). It is written only when it differs from that.
 
 Merging two entries of one Lesson takes the place with the later `savedAt` and the status with the
-later `statusAt`; the first copy wins a tie. Every change is stamped after the entry it replaces,
+later `statusAt`; the first copy wins a tie. One exception: in progress never replaces done. Play
+only raises a status (ADR 0030), so a later in progress is play in a window that had not seen the
+mark yet. Only a reset, a later not started, un-marks a done Lesson. Every change is stamped after the entry it replaces,
 recorded play included (`savedAfter`, ADR 0061). A window's own last write comes back at its next
 write, through the re-read, and must never win over what that window did since.
 
@@ -63,6 +72,7 @@ write, through the re-read, and must never win over what that window did since.
 | A marks done while B's place is newer than anything A read                                               | done, at B's place (mark done changes only the status)                                                               |
 | A resets; B then writes a place stamped before the reset (B's write landed late, or B's clock is behind) | reset: 0:00, not started                                                                                             |
 | A resets; B then saves a place stamped after the reset                                                   | B's place counts again; the status stays reset until B's play sets one                                               |
+| A marks done; B, which had not seen it, then plays past 10 s and saves                                   | done, at B's place (in progress never replaces done)                                                                 |
 | B still had the Lesson done when A reset it, and B saves a newer place                                   | B's place, not done: B's done mark is older than the reset                                                           |
 | A resets the whole Course                                                                                | every Lesson of the Course gets a reset entry, also those only B saved, and `last` is reset even when A knew of none |
 

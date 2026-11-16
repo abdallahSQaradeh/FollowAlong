@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';
 
 import { isInsideFolder, keyOf } from './courses-roots.js';
-import { FileSystemError, type Ports } from './ports.js';
+import { FileSystemError, type Ports, type ReleaseLock } from './ports.js';
 
 export const courseDataFolderName = '.followalong';
 
@@ -25,13 +25,13 @@ export interface CourseDataFile<T> {
   /** Turns stored data of `version` (at most the current one) into `T`, or `undefined`. */
   parse(data: unknown, version: number): T | undefined;
   /**
-   * Combines two copies of the file; `a` wins a tie. `read` merges the copies in `.followalong` and
+   * Combines two copies of the file; `first` wins a tie. `read` merges the copies in `.followalong` and
    * in the fallback storage (a Course that turned read-only after FollowAlong wrote to it), and
    * `write` merges what it was given with the copy it replaces, read again under the file's lock
    * (another window may have written it, ADR 0074). Without it, `read` returns the copy of the
    * location written last in this session, else the one in `.followalong`.
    */
-  merge?(a: T, b: T): T;
+  merge?(first: T, second: T): T;
 }
 
 /**
@@ -162,14 +162,14 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
         return undefined;
       }
       failedToRead.add(path);
-      ignore(`it cannot be read (${error instanceof Error ? error.message : String(error)}).`);
+      ignore(`it cannot be read (${messageOf(error)}).`);
       return undefined;
     }
     let stored: unknown;
     try {
       stored = JSON.parse(text);
     } catch (error) {
-      ignore(`not valid JSON (${error instanceof Error ? error.message : String(error)}).`);
+      ignore(`not valid JSON (${messageOf(error)}).`);
       return undefined;
     }
     if (
@@ -213,8 +213,8 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
    * or gone fails like the write would; any other failure (held too long, say) is logged, and the
    * write goes ahead without it.
    */
-  async function lockFile(path: string): Promise<() => Promise<void>> {
-    let release: () => Promise<void>;
+  async function lockFile(path: string): Promise<ReleaseLock> {
+    let release: ReleaseLock;
     try {
       release = await fileSystem.lock(path);
     } catch (error) {

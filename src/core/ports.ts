@@ -78,6 +78,9 @@ export interface FileStat {
   readonly modifiedMs: number;
 }
 
+/** Gives back a lock taken with {@link FileSystem.lock}. */
+export type ReleaseLock = () => Promise<void>;
+
 /** Every method rejects with a {@link FileSystemError}. */
 export interface FileSystem {
   readDirectory(path: string): Promise<readonly DirectoryEntry[]>;
@@ -99,7 +102,7 @@ export interface FileSystem {
    * that gives it back. Rejects when the lock is still held after the wait, or cannot be made
    * there (`readOnly`, `notFound`).
    */
-  lock(path: string): Promise<() => Promise<void>>;
+  lock(path: string): Promise<ReleaseLock>;
   /**
    * Creates the folder, and its missing parents too when `parents` is set; without it, a missing
    * parent fails with `notFound`. A folder that already exists is fine. `hidden` also sets the

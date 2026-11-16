@@ -185,6 +185,11 @@ function savedAfter(before: { readonly savedAt: number } | undefined, now: numbe
   return before === undefined ? now : Math.max(now, before.savedAt + 1);
 }
 
+/** The stamp of a status play left as it was: the entry's own, or never (0) for a new entry. */
+function keptStatusAt(before: LessonProgress | undefined): number {
+  return before === undefined ? 0 : statusSetAt(before);
+}
+
 /** The stamp for a change made now to a Lesson's status: after both of the entry's stamps. */
 function changedAfter(before: LessonProgress | undefined, now: number): number {
   return before === undefined ? now : Math.max(now, before.savedAt + 1, statusSetAt(before) + 1);
@@ -350,12 +355,7 @@ export async function openProgress(
       const statusBefore = lessonStatus(progress, lessonId);
       const status = statusAfter(statusBefore, seen);
       // The status keeps its stamp unless play changed it: another window's later mark wins.
-      const statusAt =
-        status !== statusBefore
-          ? changedAfter(before, now)
-          : before === undefined
-            ? 0
-            : statusSetAt(before);
+      const statusAt = status === statusBefore ? keptStatusAt(before) : changedAfter(before, now);
       progress = {
         lessons: {
           ...progress.lessons,
