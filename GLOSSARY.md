@@ -60,6 +60,10 @@ _Avoid_: History, completion
 A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along. It is a reference to the file, never a copy.
 _Avoid_: Material, attachment
 
+**Course Resource**:
+A Resource attached to the whole Course, such as a cheat sheet, with the "+" on the Course node at the top of the Lesson tree. It shows above the Sections and opens like a Lesson's Resource.
+_Avoid_: Global Resource, shared Resource
+
 **Detach**:
 To take a Resource off a Lesson or a Course. Only the reference goes; the file stays where it is.
 _Avoid_: Delete, remove
