@@ -1,7 +1,7 @@
 /**
  * The Course scanner (spec #12, Core modules → Course scanner): finds the Courses under the
- * Courses roots through the File system port. It decides nothing about how a Course is shown; the
- * Course picker does that.
+ * Courses roots through the File system port, and decides each one's name and category path. How
+ * a Course is shown is for the Course picker.
  */
 import { dirname, join, posix, relative, sep, win32 } from 'node:path';
 
@@ -120,9 +120,17 @@ function isLesson(entry: DirectoryEntry): boolean {
   return entry.kind === 'file' && isLessonFile(entry.name);
 }
 
+/** The subfolders of `folder` the scan walks into, given its listing. */
+function walkedSubfolders(folder: string, entries: readonly DirectoryEntry[]): string[] {
+  return entries
+    .filter((entry) => entry.kind === 'directory' && isWalked(entry.name))
+    .map((entry) => join(folder, entry.name));
+}
+
 /**
  * The Courses at or below `folder`. A folder that holds no Course itself and has exactly one
  * Course below it is a wrapper around it, unless it is the Courses root, and takes over its name.
+ * It is not taken for one when a subfolder could not be read: that one may hold a second Course.
  * Rejects only when `folder` itself cannot be read.
  */
 async function walk(
@@ -139,19 +147,17 @@ async function walk(
     return (await holdsLessonBelow(ports, folder, entries)) ? [{ folder, nameFolder: folder }] : [];
   }
   const courses: FoundCourse[] = [];
-  for (const entry of entries) {
-    if (entry.kind !== 'directory' || !isWalked(entry.name)) {
-      continue;
-    }
-    const subfolder = join(folder, entry.name);
+  let allRead = true;
+  for (const subfolder of walkedSubfolders(folder, entries)) {
     try {
       courses.push(...(await walk(ports, subfolder, false)));
     } catch (error) {
       skipUnreadable(ports, subfolder, error);
+      allRead = false;
     }
   }
   const [only, ...others] = courses;
-  return !isRoot && only !== undefined && others.length === 0
+  return allRead && !isRoot && only !== undefined && others.length === 0
     ? [{ folder: only.folder, nameFolder: folder }]
     : courses;
 }
@@ -162,11 +168,7 @@ async function holdsLessonBelow(
   folder: string,
   entries: readonly DirectoryEntry[],
 ): Promise<boolean> {
-  for (const entry of entries) {
-    if (entry.kind !== 'directory' || !isWalked(entry.name)) {
-      continue;
-    }
-    const subfolder = join(folder, entry.name);
+  for (const subfolder of walkedSubfolders(folder, entries)) {
     try {
       const inside = await ports.fileSystem.readDirectory(subfolder);
       if (inside.some(isLesson) || (await holdsLessonBelow(ports, subfolder, inside))) {

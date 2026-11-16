@@ -45,7 +45,7 @@ A folder under a Courses root that groups several Courses and is not one itself.
 _Avoid_: Genre, topic folder, group
 
 **Known Course**:
-A folder that holds FollowAlong's own `.followalong` folder: it counts as a Course even when its Lessons are only in subfolders.
+A folder that holds FollowAlong's own `.followalong` folder and has a Lesson somewhere below it: it counts as a Course even when its Lessons are only in subfolders.
 _Avoid_: Opened Course, tracked Course
 
 **Title list**:

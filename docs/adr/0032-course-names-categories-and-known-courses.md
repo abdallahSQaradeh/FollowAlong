@@ -22,7 +22,7 @@ changes. These are the choices the spec leaves open.
 - **The category path is the folders between the Courses root and the folder that names the
   Course**, outermost first, kept as `categories: string[]` (the scan result is what #37
   caches, so it carries data and not display text). The root's own name is not part of it. The
-  Course picker shows it as the item's description, joined with `/`, and sets
+  Course picker shows it as the item's description, joined with `/` (VS Code matches a typed `Web/Frontend` against it as a subsequence), and sets
   `matchOnDescription`, so typing a category filters to it (story 7). A Course directly under
   its root has no description.
 - **A known Course is a folder with a `.followalong` folder and a Lesson anywhere below it.** It
@@ -45,3 +45,8 @@ changes. These are the choices the spec leaves open.
   is the inner folder's, not the name the picker shows (Manual QA with the real layout).
 - The scan reads every sibling subtree of a candidate wrapper before it decides, as the walk
   already did; a known Course reads below itself only until the first Lesson.
+- A folder that holds `.followalong` ends the walk on its branch wherever it is, a category
+  folder or the Courses root included: it becomes one Course, as a known Course must (the
+  spec's "the scan stops there"). FollowAlong only creates the folder inside a Course.
+- A folder is not taken for a wrapper when one of its subfolders could not be read, since that
+  folder may hold a second Course. The unreadable folder is logged, as before.

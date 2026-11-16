@@ -44,7 +44,9 @@ describe('the label of a Course folder', () => {
 });
 
 describe('a Course at the root of a drive', () => {
-  it('is listed under the drive’s name, not an empty label', async () => {
+  // A drive root cannot be made in a temp dir, so this one test gives the scan a File system port
+  // that lists it: the port is the seam, and the Course picker only shows `name`.
+  it('is named after the drive, not an empty label', async () => {
     const driveRoot = process.platform === 'win32' ? 'C:\\' : '/';
     const fileSystem: FileSystem = {
       readDirectory: (path) =>
@@ -164,17 +166,16 @@ describe('Courses under category and wrapper folders', () => {
     ]);
   });
 
-  it('matches what the learner types against the category path', async () => {
+  it('turns on matching the category path when the learner types', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
       'Web/Frontend/React Basics/01 Hello.mp4': 'v',
       'Web/Frontend/Vue Basics/01 Hello.mp4': 'v',
     });
-    h.config.set('coursesRoots', [learning]);
 
-    void h.core.pickCourse();
-    await h.ui.pickerShown();
+    await listed(h, learning);
 
+    // VS Code does the filtering: it matches the description only when the model asks it to.
     expect(h.ui.picker?.matchOnDescription).toBe(true);
   });
 
@@ -235,6 +236,70 @@ describe('Courses under category and wrapper folders', () => {
     expect(await listed(h, learning, join(learning, 'Web'))).toEqual([
       'React Basics — Web',
       'Vue Basics — Web',
+    ]);
+  });
+
+  it('files a Course by the root named first, whichever order the roots are in', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/React Basics/01 Hello.webm': 'v',
+      'Web/Vue Basics/01 Hello.webm': 'v',
+    });
+
+    // Under the Web root the same Courses have no category.
+    expect(await listed(h, join(learning, 'Web'), learning)).toEqual([
+      'React Basics',
+      'Vue Basics',
+    ]);
+  });
+
+  it('does not take a folder for a wrapper when a subfolder beside the Course cannot be read', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Docker Mastery/docker-mastery-2024/01 Intro.mp4': 'v',
+      'Docker Mastery/Locked Folder/02 Other.mp4': 'v',
+      'Other/01 Intro.mp4': 'v',
+    });
+    h.makeUnreadable(join(learning, 'Docker Mastery', 'Locked Folder'));
+
+    // The unreadable folder may hold a second Course, so “Docker Mastery” may be a category.
+    expect(await listed(h, learning)).toEqual(['docker-mastery-2024 — Docker Mastery', 'Other']);
+  });
+
+  it('lists a library laid out as the real downloads are', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      // A wrapper named by the instructor around the folder the platform's download made.
+      'JavaScript The Advanced Concepts/udemy-ajconfeb/01 Intro.mp4': 'v',
+      'JavaScript The Advanced Concepts/udemy-ajconfeb/02 Scope.mp4': 'v',
+      'JavaScript The Advanced Concepts/udemy-ajconfeb/Resources/slides.pdf': 'pdf',
+      'JavaScript The Advanced Concepts/udemy-ajconfeb/code.zip': 'zip',
+      // Categories, two levels deep, and a wrapper below them.
+      'Web/Frontend/React - The Complete Guide/React - The Complete Guide/01 Hello.mp4': 'v',
+      'Web/Frontend/Vue Basics/01 Hello.mp4': 'v',
+      'Web/Frontend/Vue Basics/Section 2/02 Next.mp4': 'v',
+      'Web/Backend/Node Basics/01 Welcome.mp4': 'v',
+      'Web/Backend/Deno Basics/01 Welcome.mp4': 'v',
+      // Only a zip: not a Course.
+      'Web/Backend/Express Basics/express-basics.zip': 'zip',
+      // Known: a Course with Lessons only in Sections, which FollowAlong has been used on.
+      'Algorithms/.followalong/progress.json': '{}',
+      'Algorithms/Part 1/01 Sorting.mp4': 'v',
+      'Algorithms/Part 2/01 Graphs.mp4': 'v',
+      // Downloads still zipped, and a folder of notes.
+      'Zipped/Python Bootcamp.zip': 'zip',
+      'Notes/cheatsheet.pdf': 'pdf',
+    });
+    const more = await h.folder('More', { 'CSS Grid/lesson10.mp4': 'v' });
+
+    expect(await listed(h, learning, more)).toEqual([
+      'Algorithms',
+      'CSS Grid',
+      'Deno Basics — Web / Backend',
+      'JavaScript The Advanced Concepts',
+      'Node Basics — Web / Backend',
+      'React - The Complete Guide — Web / Frontend',
+      'Vue Basics — Web / Frontend',
     ]);
   });
 });

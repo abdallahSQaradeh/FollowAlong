@@ -11,6 +11,7 @@ Two edge cases of ADR 0022 that review of #33 found, fixed in #34.
   shows the spelling to use. `isFullPath` rejects a `\\?\` or `\\.\` prefix with either
   separator; POSIX is unchanged.
 - **A Course that is a drive root is labelled with the drive.** `basename('D:\')` is empty, which
-  left the Course picker entry without a label. The label is the drive (`D:`), or `/` on POSIX.
+  left the Course picker entry without a label. The label is the drive (`D:`), or `/` on POSIX; a share root keeps its share name
+  (`\\server\share` is “share”).
   The volume label would need a new File system port call for one rare layout, and the drive
   letter is what the learner typed as the root.
