@@ -47,6 +47,7 @@ describe('Toggle Auto-pause', () => {
   it('turns it off, and back on in the mode that was on, with the marker following', async () => {
     const h = await createHarness();
     await openLesson(h, 'pauseAndResume');
+    h.config.set('autoPauseResumeAfter', 5);
 
     await h.core.toggleAutoPause();
     expect(h.config.get('autoPause')).toBe('off');
@@ -55,6 +56,8 @@ describe('Toggle Auto-pause', () => {
     await h.core.toggleAutoPause();
     expect(h.config.get('autoPause')).toBe('pauseAndResume');
     expect(playPauseItem(h)).toMatchObject({ marker: 'autoPause' });
+    // Only the mode is written: the learner's quiet period is theirs (D15, ADR 0089).
+    expect(h.config.get('autoPauseResumeAfter')).toBe(5);
   });
 
   it('remembers the mode the learner last set by hand in the settings', async () => {

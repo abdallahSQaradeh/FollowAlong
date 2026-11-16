@@ -9,10 +9,15 @@ import type { Config } from './ports.js';
 /** The `followalong.autoPause` setting. */
 export type AutoPauseMode = 'off' | 'pause' | 'pauseAndResume';
 
+/** Whether `value` is a mode in which auto-pause acts. */
+export function isAutoPauseOnMode(value: unknown): value is Exclude<AutoPauseMode, 'off'> {
+  return value === 'pause' || value === 'pauseAndResume';
+}
+
 /** The setting as the learner has it; anything else (unset, a hand-edited typo) is `off`. */
 export function readAutoPauseMode(config: Pick<Config, 'get'>): AutoPauseMode {
   const value = config.get('autoPause');
-  return value === 'pause' || value === 'pauseAndResume' ? value : 'off';
+  return isAutoPauseOnMode(value) ? value : 'off';
 }
 
 /**

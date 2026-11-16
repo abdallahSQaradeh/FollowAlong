@@ -18,7 +18,8 @@ its routed notes, D10 and D15 on #12, ADR 0023, ADR 0052, ADR 0089, ADR 0090.
 - **The last mode is remembered in the global storage** (`lastAutoPauseMode`), so it survives a
   restart of VS Code. It is kept by a watcher in the core that reads the setting when the window
   opens and on every change, so a mode the learner chose in the Settings editor counts too, not
-  only one the toggle turned off. A failed write is logged, never thrown at the learner.
+  only one the toggle turned off. The toggle itself writes only the setting, so a failed write of
+  the memory is logged by the watcher and never stops the toggle or reaches the learner.
 - **The setting is global, not per Lesson.** The ticket says "per Lesson" in the sense that it can be
   switched while a Lesson plays; there is no per-Lesson setting, and `followalong.autoPause` stays
   the one user setting #59 shipped.

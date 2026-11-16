@@ -7,7 +7,7 @@ import { basename } from 'node:path';
 import { messageOf } from './logger.js';
 import { createAudioCache } from './audio-cache.js';
 import { rememberAutoPauseMode, toggleAutoPause } from './auto-pause-toggle.js';
-import { isTyping, readAutoPauseMode, type DocumentEdit } from './auto-pause.js';
+import { isTyping, type DocumentEdit } from './auto-pause.js';
 import { findSection, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
@@ -1069,10 +1069,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
     },
     async toggleAutoPause() {
-      await toggleAutoPause(config, storage);
+      const mode = await toggleAutoPause(config, storage);
       if (loaded.spot() === undefined) {
         // No status bar marker to show it: say what the key did.
-        const mode = readAutoPauseMode(config);
         const text =
           mode === 'off'
             ? 'FollowAlong: auto-pause is off.'

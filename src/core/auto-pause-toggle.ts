@@ -4,7 +4,12 @@
  * `followalong.autoPauseResumeAfter` (ADR 0089), and the Loaded Lesson reacts to the change of the
  * mode as it does to the learner's own edit of the setting.
  */
-import { readAutoPauseMode, type AutoPauseOnMode } from './auto-pause.js';
+import {
+  isAutoPauseOnMode,
+  readAutoPauseMode,
+  type AutoPauseMode,
+  type AutoPauseOnMode,
+} from './auto-pause.js';
 import { messageOf, type Logger } from './logger.js';
 import type { Config, Disposable, Storage } from './ports.js';
 
@@ -16,25 +21,24 @@ const lastModeKey = 'lastAutoPauseMode';
 
 function lastMode(storage: Pick<Storage, 'global'>): AutoPauseOnMode {
   const value = storage.global.get(lastModeKey);
-  return value === 'pause' || value === 'pauseAndResume' ? value : defaultMode;
-}
-
-/** Switches auto-pause off, or back to the last mode that was on (`pause` if none). */
-export async function toggleAutoPause(
-  config: Pick<Config, 'get' | 'update'>,
-  storage: Pick<Storage, 'global'>,
-): Promise<void> {
-  const mode = readAutoPauseMode(config);
-  if (mode === 'off') {
-    await config.update('autoPause', lastMode(storage));
-    return;
-  }
-  await storage.global.set(lastModeKey, mode);
-  await config.update('autoPause', 'off');
+  return isAutoPauseOnMode(value) ? value : defaultMode;
 }
 
 /**
- * Keeps the last mode that was on, whoever turned it on or off: the toggle, or the learner in the
+ * Switches auto-pause off, or back to the last mode that was on (`pause` if none), and returns the
+ * mode it set. The mode that was on is already remembered: {@link rememberAutoPauseMode} keeps it.
+ */
+export async function toggleAutoPause(
+  config: Pick<Config, 'get' | 'update'>,
+  storage: Pick<Storage, 'global'>,
+): Promise<AutoPauseMode> {
+  const next = readAutoPauseMode(config) === 'off' ? lastMode(storage) : 'off';
+  await config.update('autoPause', next);
+  return next;
+}
+
+/**
+ * Keeps the last mode that was on, whoever turned it on: the toggle, or the learner in the
  * settings. Reads the setting now, so a window that opens with a mode on knows it.
  */
 export function rememberAutoPauseMode(
