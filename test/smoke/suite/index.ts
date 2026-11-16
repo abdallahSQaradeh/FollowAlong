@@ -122,8 +122,8 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
     await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
 
     // The "+" on the Lesson runs this command with the Lesson's tree node.
-    const lesson = hooks.lessonTree().nodes.find((node) => node.label === 'lesson.webm');
-    assert.ok(lesson, 'the scratch Course shows no lesson.webm');
+    const lesson = hooks.lessonTree().nodes.find((node) => node.id === 'lesson.webm');
+    assert.ok(lesson, 'the scratch Course shows no Lesson lesson.webm');
     await vscode.commands.executeCommand(
       'followalong.attachResource',
       lesson,
