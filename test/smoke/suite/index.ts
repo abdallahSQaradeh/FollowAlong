@@ -325,8 +325,10 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
       if (spot === 'miniStrip') {
         say(await theStripIsAboveTheCode(code));
       } else {
+        // The strip's group goes with its tab: the code alone, or the code and the group beside it.
+        const groups = spot === 'editorSplit' ? 2 : 1;
         await waitFor(`the strip's group to go after the move to ${spot}`, () =>
-          stripGroups().length === 0 ? true : undefined,
+          vscode.window.tabGroups.all.length === groups ? true : undefined,
         );
       }
       // Leaving the bottom panel must not leave the panel to fall back to the Terminal view, which
