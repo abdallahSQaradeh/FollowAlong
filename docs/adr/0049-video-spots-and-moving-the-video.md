@@ -108,6 +108,16 @@ tab into an auxiliary window (#51) was not measured here.
   passes the smoke step that moves back into the bottom panel on Ubuntu and Windows. **Not when
   focus went back to a terminal** (item 4): focus return wins (#12 D12), so the terminal the
   learner types in stays in front, and the video waits behind it.
+- **Leaving a view spot closes the panel or sidebar that showed the video**
+  (`workbench.action.closePanel`, `workbench.action.closeAuxiliaryBar`), before the view's `when`
+  clause hides it, and only when VS Code showed the video there. Measured (gate round 1, CI runs
+  43906351106 and 43906921384, the second without any mutation): when the video left the bottom
+  panel, the panel fell back to the Terminal view, which started a shell, and the focus return then
+  went into that terminal instead of the code. The prototype closed them the same way. A learner
+  who wants the terminal back opens the panel as usual (`Ctrl+J`). The smoke test checks that no
+  move starts a terminal, and reads keyboard focus itself (the workbench page's focused element,
+  over the DevTools protocol): `activeTextEditor` stays the code editor while focus sits in a
+  webview view, and VS Code 1.146 has no command that reads a context key.
 - **Closing.** Closing the player tab, or a view VS Code disposes, is a close as before; the page
   dropped for a move is not.
 - **Resources** (D4): in a view spot the player is in no editor group, so a Resource opens
