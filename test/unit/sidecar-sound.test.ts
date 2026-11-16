@@ -125,13 +125,34 @@ describe('sound for MP4 Lessons', () => {
 
   it('runs the ffmpeg on PATH, or the one the followalong.ffmpegPath setting names', async () => {
     const h = await createHarness();
+    // A full path on the machine the tests run on, as the learner's own ffmpeg would be.
+    const own = join(h.root, 'Tools', 'ffmpeg', 'bin', 'ffmpeg.exe');
     await openMp4Lesson(h, false, 'first');
-    h.config.set('ffmpegPath', 'C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe');
+    h.config.set('ffmpegPath', own);
     await openMp4Lesson(h, false, 'second');
+
+    expect(h.converter.requests.map(({ request }) => request.program)).toEqual(['ffmpeg', own]);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('runs the ffmpeg on PATH when followalong.ffmpegPath is not a full path, and says so once', async () => {
+    const h = await createHarness();
+    h.config.set('ffmpegPath', 'tools/ffmpeg');
+    await openMp4Lesson(h, false, 'first');
+    await openMp4Lesson(h, false, 'second');
+    h.config.set('ffmpegPath', '   ');
+    await openMp4Lesson(h, false, 'third');
 
     expect(h.converter.requests.map(({ request }) => request.program)).toEqual([
       'ffmpeg',
-      'C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe',
+      'ffmpeg',
+      'ffmpeg',
+    ]);
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'warning',
+        text: 'FollowAlong ignores the followalong.ffmpegPath setting “tools/ffmpeg”: it must be a full path, such as C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe. It uses ffmpeg on PATH instead.',
+      },
     ]);
   });
 

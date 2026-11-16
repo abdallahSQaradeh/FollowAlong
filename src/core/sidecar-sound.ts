@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { basename, extname, join } from 'node:path';
 
 import { openCourseData, type CourseData } from './course-data.js';
+import { isFullPath } from './courses-roots.js';
 import type { Lesson } from './course-model.js';
 import { FileSystemError, type FileStat, type Ports } from './ports.js';
 
@@ -31,9 +32,30 @@ function soundFileName(lesson: Lesson, { size, modifiedMs }: FileStat): string {
 }
 
 /** The ffmpeg to run: the `followalong.ffmpegPath` setting when it names one, else the default. */
-function ffmpegProgram(config: Ports['config']): string {
+function ffmpegProgram(ports: SidecarSoundPorts, warned: Set<string>): string {
+  const { config, ui, logger } = ports;
   const setting = config.get('ffmpegPath');
-  return typeof setting === 'string' && setting.trim() !== '' ? setting.trim() : defaultProgram;
+  const value = typeof setting === 'string' ? setting.trim() : '';
+  if (value === '') {
+    return defaultProgram;
+  }
+  if (isFullPath(value)) {
+    return value;
+  }
+  // A relative path would resolve against whatever folder VS Code runs in (as for Courses roots).
+  // Said once per window and value, not at every Lesson.
+  if (!warned.has(value)) {
+    warned.add(value);
+    logger.log({
+      level: 'warn',
+      message: `Ignoring followalong.ffmpegPath ${value}: not a full path.`,
+    });
+    ui.showMessage({
+      severity: 'warning',
+      text: `FollowAlong ignores the followalong.ffmpegPath setting “${value}”: it must be a full path, such as C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe. It uses ffmpeg on PATH instead.`,
+    });
+  }
+  return defaultProgram;
 }
 
 /** Whether a file is at `path`. */
@@ -49,7 +71,10 @@ async function exists(fileSystem: Ports['fileSystem'], path: string): Promise<bo
   }
 }
 
-type SidecarSoundPorts = Pick<Ports, 'fileSystem' | 'storage' | 'converter' | 'config' | 'logger'>;
+type SidecarSoundPorts = Pick<
+  Ports,
+  'fileSystem' | 'storage' | 'converter' | 'config' | 'ui' | 'logger'
+>;
 
 /** The audio sidecars of one Course, kept in its Course data. */
 export interface SidecarSound {
@@ -60,11 +85,19 @@ export interface SidecarSound {
   prepare(lesson: Lesson, signal: AbortSignal): Promise<string>;
 }
 
-/** `folder` is the Course folder's absolute path, which also keys the fallback storage. */
-export function openSidecarSound(folder: string, ports: SidecarSoundPorts): SidecarSound {
+/**
+ * `folder` is the Course folder's absolute path, which also keys the fallback storage.
+ * `warnedPaths` holds the `followalong.ffmpegPath` values the learner was told are ignored, shared
+ * across the Courses of one window so each is said once.
+ */
+export function openSidecarSound(
+  folder: string,
+  ports: SidecarSoundPorts,
+  warnedPaths: Set<string>,
+): SidecarSound {
   const data = openCourseData(folder, ports);
   return {
-    prepare: (lesson, signal) => prepareSound(ports, data, lesson, signal),
+    prepare: (lesson, signal) => prepareSound(ports, data, lesson, signal, warnedPaths),
   };
 }
 
@@ -73,8 +106,9 @@ async function prepareSound(
   data: CourseData,
   lesson: Lesson,
   signal: AbortSignal,
+  warnedPaths: Set<string>,
 ): Promise<string> {
-  const { fileSystem, converter, config, logger } = ports;
+  const { fileSystem, converter, logger } = ports;
   const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
   for (const folder of data.folders(soundFolderName)) {
     const path = join(folder, name);
@@ -85,7 +119,7 @@ async function prepareSound(
   }
   signal.throwIfAborted();
   const output = join(await data.prepareFolder(soundFolderName), name);
-  const program = ffmpegProgram(config);
+  const program = ffmpegProgram(ports, warnedPaths);
   logger.log({ level: 'info', message: `Preparing the sound of ${lesson.id} with ${program}` });
   await converter.extractSound({
     program,

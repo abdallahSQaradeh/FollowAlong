@@ -111,6 +111,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let progress: ProgressRecorder | undefined;
   /** The open Course's audio sidecars (ADR 0034). */
   let sidecarSound: SidecarSound | undefined;
+  /** The `followalong.ffmpegPath` values the learner was told are ignored in this window. */
+  const warnedFfmpegPaths = new Set<string>();
 
   /** The Lesson the player holds, and the playback commands. */
   const loaded = createLoadedLesson(ports, {
@@ -292,7 +294,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       openedCourse = course;
       resourceStore = store;
       progress = recorder;
-      sidecarSound = openSidecarSound(folder, ports);
+      sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths);
       if (first === undefined || recorder === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         ui.showLessonTree({ message: text, nodes: [] });
