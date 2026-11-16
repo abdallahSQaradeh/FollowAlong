@@ -5,12 +5,13 @@
  * commands, the rate it plays at, and saving Progress while the Lesson plays. The Course side
  * (`follow-along.ts`) decides which Lesson to load and from which Course.
  */
-import type {
-  AboutLesson,
-  PlayerCommand,
-  PlayerEvent,
-  PlayerSnapshot,
-  ZoomView,
+import {
+  wholePicture,
+  type AboutLesson,
+  type PlayerCommand,
+  type PlayerEvent,
+  type PlayerSnapshot,
+  type ZoomView,
 } from '../protocol/player-messages.js';
 import type { Lesson } from './course-model.js';
 import type { PreparedSound } from './sidecar-sound.js';
@@ -286,7 +287,7 @@ export function createLoadedLesson(
    * What a page that is starting in a new spot takes over from the page it replaces, once it is
    * ready: its speed and its zoom (ADR 0049).
    */
-  let pendingRestore: { readonly rate: number; readonly zoom: ZoomView | undefined } | undefined;
+  let pendingRestore: { readonly rate: number; readonly zoom: ZoomView } | undefined;
   /** Set while a move waits for the `snapshot` of the page it leaves. */
   let awaitingSnapshot: ((snapshot: PlayerSnapshot | undefined) => void) | undefined;
   /**
@@ -844,7 +845,9 @@ export function createLoadedLesson(
       startSeekPending: false,
       lastPlayingPosition: undefined,
     };
-    pendingRestore = { rate: snapshot?.rate ?? rate, zoom: snapshot?.zoom };
+    // Without a snapshot the zoom view is unknown: the whole picture, rather than whatever a view
+    // spot used before still holds in its webview state.
+    pendingRestore = { rate: snapshot?.rate ?? rate, zoom: snapshot?.zoom ?? wholePicture };
     // The page that held this load is gone: nothing (a prepared sound) is sent for it, and nothing
     // it still posts is about the Lesson. The page in the new spot gets its own `load`.
     currentLoad = undefined;
@@ -864,9 +867,9 @@ export function createLoadedLesson(
     if (restore.rate !== rate) {
       setRate(restore.rate);
     }
-    if (restore.zoom !== undefined && restore.zoom.level > 1) {
-      player.send({ type: 'restore', zoom: restore.zoom });
-    }
+    // Also at the whole picture: a view spot keeps the webview state of the page it held before,
+    // and that page's zoom must not come back.
+    player.send({ type: 'restore', zoom: restore.zoom });
   }
 
   /**

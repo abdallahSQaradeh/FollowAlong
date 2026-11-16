@@ -6,12 +6,15 @@
  * when the player is resized or moved to another spot (#49), and can be stored as it is.
  */
 
-import { maxZoomLevel, shownZoomLevel, type ZoomView } from '../protocol/player-messages.js';
+import {
+  maxZoomLevel,
+  shownZoomLevel,
+  wholePicture,
+  type ZoomView,
+} from '../protocol/player-messages.js';
 
 export type { ZoomView } from '../protocol/player-messages.js';
-export { isZoomView } from '../protocol/player-messages.js';
-
-export const wholePicture: ZoomView = { level: 1, left: 0, top: 0 };
+export { isZoomView, wholePicture } from '../protocol/player-messages.js';
 
 /** How much one press of ＋ or − zooms in or out (from the prototype). */
 export const zoomStep = 1.25;

@@ -123,3 +123,21 @@ test.describe('restore', () => {
     await expect(page.getByLabel('Zoom level')).toHaveText('4×');
   });
 });
+
+test.describe('restore at the whole picture', () => {
+  test('undoes a zoom the page kept from the page it held before in this spot', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await player.post({ type: 'restore', zoom: { level: 4, left: 0.25, top: 0.5 } });
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+    // A view spot used before: its new page starts with that page's zoom in its webview state.
+    await page.reload();
+    await expect(page.getByLabel('Zoom level')).toHaveText('4×');
+
+    await player.post({ type: 'restore', zoom: { level: 1, left: 0, top: 0 } });
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    expect((await shownArea(page)).width).toBeCloseTo(1, 2);
+  });
+});

@@ -110,6 +110,7 @@ describe('Move video to… when the page cannot say what it shows', () => {
     expect(h.player.sent).toEqual([
       expect.objectContaining({ type: 'load', lessonId, startAt: 42, autoplay: true }),
       { type: 'setRate', rate: 1.5 },
+      { type: 'restore', zoom: { level: 1, left: 0, top: 0 } },
     ]);
   });
 
@@ -124,6 +125,7 @@ describe('Move video to… when the page cannot say what it shows', () => {
     h.player.ready();
     expect(h.player.sent).toEqual([
       expect.objectContaining({ type: 'load', lessonId, startAt: 0, autoplay: true }),
+      { type: 'restore', zoom: { level: 1, left: 0, top: 0 } },
     ]);
   });
 });
@@ -264,6 +266,33 @@ describe('sound for an MP4 Lesson across a move', () => {
 
     h.player.ready(false);
     await h.settle();
-    expect(h.player.sent.map((command) => command.type)).toEqual(['load', 'soundReady']);
+    expect(h.player.sent.map((command) => command.type)).toEqual(['load', 'restore', 'soundReady']);
+  });
+});
+
+describe('zoom across a move', () => {
+  it('is restored at the whole picture too, so a view spot used before never shows its old zoom', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.ready();
+    h.player.clearSent();
+
+    const moving = h.core.moveVideo('bottomPanel');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1,
+        zoom: { level: 1, left: 0, top: 0 },
+        lesson: { lessonId, position: 0, playing: false },
+      },
+    });
+    await moving;
+    h.player.clearSent();
+    h.player.ready();
+
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId }),
+      { type: 'restore', zoom: { level: 1, left: 0, top: 0 } },
+    ]);
   });
 });

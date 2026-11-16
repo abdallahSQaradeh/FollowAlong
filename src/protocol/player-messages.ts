@@ -106,6 +106,14 @@ export interface ZoomView {
   readonly top: number;
 }
 
+/** The view of the whole picture: what a page shows until the learner zooms. */
+export const wholePicture: ZoomView = { level: 1, left: 0, top: 0 };
+
+/** A copy of `view` with only its own fields, so nothing else a message carried passes on. */
+function zoomViewOf(view: ZoomView): ZoomView {
+  return { level: view.level, left: view.left, top: view.top };
+}
+
 /**
  * What a player page shows and plays (its answer to `takeSnapshot`), so a page in another spot
  * can carry on from it (ADR 0049).
@@ -231,7 +239,7 @@ function parseSnapshot(raw: unknown): PlayerSnapshot | undefined {
   }
   const { rate, zoom, lesson } = raw;
   if (lesson === undefined) {
-    return { rate, zoom };
+    return { rate, zoom: zoomViewOf(zoom) };
   }
   if (!isFields(lesson)) {
     return undefined;
@@ -247,7 +255,7 @@ function parseSnapshot(raw: unknown): PlayerSnapshot | undefined {
   }
   return {
     rate,
-    zoom: { level: zoom.level, left: zoom.left, top: zoom.top },
+    zoom: zoomViewOf(zoom),
     lesson: { lessonId, ...(loadId === undefined ? {} : { loadId }), position, playing },
   };
 }
@@ -305,9 +313,7 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return { type: 'takeSnapshot' };
     case 'restore': {
       const { zoom } = raw;
-      return isZoomView(zoom)
-        ? { type: 'restore', zoom: { level: zoom.level, left: zoom.left, top: zoom.top } }
-        : undefined;
+      return isZoomView(zoom) ? { type: 'restore', zoom: zoomViewOf(zoom) } : undefined;
     }
     default:
       return undefined;
