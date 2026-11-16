@@ -56,7 +56,7 @@ Q1–Q4 on it, which accepted each default below.
   third click lands on the whole picture, so it plays or pauses at once, as any click at 1× does
   (kept, gate round 1: it is a fresh click after the reset, and to swallow it the player would
   have to delay clicks at 1× too).
-- **A plain drag draws a box at any zoom, for now** (Q3). While zoomed it zooms further into the
+- **A plain drag draws a box at any zoom, for now** (Q3). _Changed by ADR 0087: while zoomed a plain drag pans, and Shift+drag draws the box; the wheel zooms (ADR 0088)._ While zoomed it zooms further into the
   shown area. #47 changes this: a plain drag while zoomed pans, and Shift+drag draws a new box.
   **Area mode** (the toolbar's area button, `aria-pressed`) means the next drag draws a box,
   whatever the zoom. It ends on a second press, with that drag (whether its box zooms or is too

@@ -195,6 +195,29 @@ async function shiftDrag(
   await page.keyboard.up('Shift');
 }
 
+test.describe('the cursor over the picture', () => {
+  async function cursor(page: Page): Promise<string> {
+    return page.locator('.overlay').evaluate((overlay) => getComputedStyle(overlay).cursor);
+  }
+
+  test('is a hand while zoomed, which closes during a pan, and a crosshair in area mode', async ({
+    page,
+  }) => {
+    await zoomedPaused(page);
+    expect(await cursor(page)).toBe('grab');
+
+    await page.mouse.move(600, 300);
+    await page.mouse.down();
+    await page.mouse.move(500, 250, { steps: 4 });
+    expect(await cursor(page)).toBe('grabbing');
+    await page.mouse.up();
+    expect(await cursor(page)).toBe('grab');
+
+    await page.getByRole('button', { name: 'Zoom to an area' }).click();
+    expect(await cursor(page)).toBe('crosshair');
+  });
+});
+
 test.describe('a Shift+drag while zoomed', () => {
   test('draws a box and zooms to the area in it, instead of panning', async ({ page }) => {
     const player = await zoomedPaused(page);
@@ -699,6 +722,25 @@ test.describe('a box drag that does not end normally', () => {
     expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
     await expect(page.locator('.zoom-box')).toBeHidden();
     expect((await player.video()).paused).toBe(true);
+  });
+});
+
+test.describe('a pan that a reset interrupts', () => {
+  test('ends: the release that follows moves nothing and does not play', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    await page.mouse.move(600, 300);
+    await page.mouse.down();
+    await page.mouse.move(400, 200, { steps: 8 });
+
+    await player.post({ type: 'zoom', action: 'reset' });
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    await page.mouse.move(100, 100, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    expect((await player.video()).paused).toBe(true);
+    await expect(page.locator('body')).not.toHaveClass(/panning/);
   });
 });
 

@@ -180,6 +180,10 @@ _Avoid_: Location, dock, layout, position
 Showing an area of the Lesson's picture enlarged to fill the player, so the learner can read the instructor's code. It belongs to the player, not to a Lesson: it stays while the Lesson plays and when the next one loads, until the learner resets it.
 _Avoid_: Magnify, crop, close-up
 
+**Pan**:
+Moving what a zoomed picture shows to another part of it by dragging, without changing the zoom level. It never goes past the edges of the picture.
+_Avoid_: Scroll, move, drag the video
+
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.
 _Avoid_: Context switch, tab switch, window switch

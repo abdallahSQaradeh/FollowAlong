@@ -1,8 +1,8 @@
 /**
- * The player's zoom controls (ADR 0037): the box the learner drags over the picture, the zoom
- * toolbar, and what the page shows and keeps in its webview state. What a click on the picture
- * does stays with playback in `main.ts`; it asks these controls whether the page is zoomed, and
- * whether the click ends a drag.
+ * The player's zoom controls (ADR 0037, 0087, 0088): the box the learner drags over the picture,
+ * the pan, the wheel, the zoom toolbar, and what the page shows and keeps in its webview state. What
+ * a click on the picture does stays with playback in `main.ts`; it asks these controls whether the
+ * page is zoomed, and whether the click ends a drag.
  */
 import { zoomLabel } from '../protocol/player-messages.js';
 import type { Interactions } from './interactions.js';
@@ -186,8 +186,9 @@ export class ZoomControls {
   }
 
   /**
-   * A drag on the picture draws a box, and the player zooms to the area in it. The drag is one
-   * gesture for Focus return (ADR 0009): focus is handed back once it ends, not during it.
+   * A drag on the picture either draws a box, and the player zooms to the area in it, or pans the
+   * zoomed picture (ADR 0087). Which, is fixed when the press begins. The drag is one gesture for
+   * Focus return (ADR 0009): focus is handed back once it ends, not during it.
    */
   private listenToDrags(): void {
     const { overlay, box, interactions } = this.options;
@@ -224,6 +225,7 @@ export class ZoomControls {
         interactions.beginGesture(event.pointerId);
       }
       if (press.kind === 'pan') {
+        document.body.classList.add('panning');
         const stage = this.stage();
         this.render(
           panBy(
@@ -310,6 +312,7 @@ export class ZoomControls {
       return;
     }
     this.press = undefined;
+    document.body.classList.remove('panning');
     this.options.box.setAttribute('hidden', '');
     if (!press.dragging) {
       return;
