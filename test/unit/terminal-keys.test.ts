@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+
+import { createFollowAlong } from '../../src/core/follow-along.js';
 import { createHarness, type Harness } from './harness.js';
 
 const lessonId = '01 Intro.webm';
@@ -104,5 +107,63 @@ describe('the one-time terminal prompt', () => {
     expect(h.terminalSettings.writes).toEqual([]);
     expect(h.terminalSettings.value).toBe('workbench.action.quickOpen');
     expect(h.ui.messages.map((message) => message.severity)).toEqual(['warning']);
+  });
+
+  it('remembers a decline for good: a restarted core does not ask again, and writes nothing', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    await answer(h, 'decline');
+    const restarted = createFollowAlong(h.ports);
+    await restarted.openCourse(await h.folder('second', { 'a.webm': 'video' }));
+    await flush();
+    restarted.dispose();
+
+    expect(h.ui.questions).toHaveLength(1);
+    expect(h.terminalSettings.writes).toEqual([]);
+  });
+
+  it('asks again at the next Lesson when the learner closed the question without answering', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    await answer(h, undefined);
+    h.core.nextLesson();
+    await flush();
+
+    expect(h.ui.questions).toHaveLength(2);
+  });
+
+  it('keeps one question open when more Lessons open before it is answered', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    h.core.nextLesson();
+    h.core.previousLesson();
+    await flush();
+
+    expect(h.ui.questions).toHaveLength(1);
+  });
+
+  it('tells the learner when the setting could not be saved, and does not ask again', async () => {
+    const h = await createHarness();
+    h.terminalSettings.writeFailure = 'settings.json is read-only';
+    await openLesson(h);
+    await answer(h, 'accept');
+    h.core.nextLesson();
+    await flush();
+
+    expect(h.ui.messages.map((message) => message.severity)).toEqual(['error']);
+    expect(h.ui.questions).toHaveLength(1);
+  });
+});
+
+describe('the keys the prompt is about', () => {
+  it('are exactly the commands the manifest binds to a one-press key, not a chord', () => {
+    const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      contributes: { keybindings: { command: string; key: string }[] };
+    };
+    const onePress = manifest.contributes.keybindings
+      .filter(({ key }) => !key.includes(' '))
+      .map(({ command }) => command);
+
+    expect([...new Set(onePress)].sort()).toEqual([...onePressCommands].sort());
   });
 });

@@ -64,6 +64,10 @@ _Avoid_: Skip, jump, scrub
 The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
 _Avoid_: Speed slider, rate list
 
+**One-press key**:
+A FollowAlong key that is a single keypress, not a `Ctrl+'` chord: play/pause, and the short step back and forward. The integrated terminal sends it to the shell unless the learner has VS Code keep it. A chord works in the terminal as it is.
+_Avoid_: Hotkey, shortcut, single key
+
 **Loaded Lesson**:
 The Lesson the player holds: it is set when the learner picks a Lesson or opens a Course, and gone when the learner closes the player. Controls that only make sense with a Lesson, such as the status bar items, show only while one is loaded.
 _Avoid_: Active Lesson, current video

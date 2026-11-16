@@ -295,15 +295,25 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
   let attaching: Promise<unknown> = Promise.resolve();
 
+  /** Whether the terminal question is open: more Lessons opening do not stack questions. */
+  let askingTerminalKeys = false;
+
   /** Offers once to add the one-press commands to the terminal's skip-shell setting. */
   async function offerTerminalKeys(): Promise<void> {
-    if (storage.global.get(terminalAnswerKey) !== undefined) {
+    if (askingTerminalKeys || storage.global.get(terminalAnswerKey) !== undefined) {
       return;
     }
-    const answer = await ui.ask(terminalQuestion);
+    askingTerminalKeys = true;
+    let answer;
+    try {
+      answer = await ui.ask(terminalQuestion);
+    } finally {
+      askingTerminalKeys = false;
+    }
     if (answer === undefined) {
       return;
     }
+    // Remembered before the setting is written: a failed write is told once, not at every Lesson.
     await storage.global.set(terminalAnswerKey, answer);
     if (answer === 'accept') {
       const change = addOnePressCommands(terminalSettings.skipShellCommands());
@@ -349,7 +359,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     void offerTerminalKeys().catch((error: unknown) => {
       logger.log({
         level: 'warn',
-        message: `Could not offer the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not add the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      ui.showMessage({
+        severity: 'error',
+        text: 'FollowAlong could not save your terminal.integrated.commandsToSkipShell setting. Nothing was changed.',
       });
     });
   }
