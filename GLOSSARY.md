@@ -60,6 +60,10 @@ _Avoid_: Attachment view, Resource panel
 What FollowAlong keeps about a Course for itself (its Progress, its Resources, prepared sound), stored with the Course and never mixed into the Course's own files.
 _Avoid_: Metadata, cache, settings
 
+**Audio sidecar**:
+An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the muted video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
+_Avoid_: Soundtrack, audio copy, audio cache
+
 **Practice area**:
 Where the learner types and runs code while following a Lesson.
 _Avoid_: Sandbox, playground, workspace

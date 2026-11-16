@@ -66,3 +66,7 @@ about the Lesson (`timeUpdate`, `played`, `paused`, `ended`, `seeked`, `rateChan
 enough when one player page started to outlive a Course (ADR 0022): two Courses can both hold
 `01.mp4`, and a late `timeUpdate` or `ended` from the first one would count for the second. It is
 optional on both sides, so a `load` without it gets events without it.
+
+Ticket #41 added `soundReady {audioUri}` and `soundFailed {message}` (extension → player), for the
+audio sidecar of an MP4 Lesson when the page cannot decode AAC; see ADR 0034. `load` has no
+`audioUri`: the sound always comes with `soundReady`, after the `load` it belongs to.
