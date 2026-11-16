@@ -27,8 +27,10 @@ are the choices the spec leaves open.
   learner who pressed play in between must not find the overlay over a playing picture.
 - **Focus return.** A click on the button is a player interaction. The mechanism of ADR 0009
   (#23) reports the end of an interaction from a `pointerup` on the page, which the button's click
-  does not stop, so it hands focus back without a line of its own here. This holds once #23 is on
-  the branch; until then the button does not return focus, as nothing in the player does.
+  does not stop, so it hands focus back without a line of its own here. This was checked on a
+  throwaway merge with #23's branch: a click on the button posts `userInteracted`, then
+  `nextClicked`, and no `played`. On this branch alone nothing returns focus, as nothing else in
+  the player does.
 - **Autoplay.** The click is a user gesture, so the Lesson it loads is not refused autoplay (ADR 0008).
 
 ## Considered options
