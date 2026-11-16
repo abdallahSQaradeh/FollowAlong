@@ -5,6 +5,7 @@
 import { extname, join } from 'node:path';
 
 import type { Container } from '../protocol/player-messages.js';
+import { cleanFileName } from './lesson-titles.js';
 
 /** What the model reads of a folder: its file names and its subfolders. */
 export interface FolderListing {
@@ -78,7 +79,7 @@ function withoutWrappers({ lessons, sections }: Outline): Outline {
     : { lessons, sections };
 }
 
-function outlineOf(listing: FolderListing, idPrefix: string): Outline {
+function outlineOf(listing: FolderListing, idPrefix: string, courseName: string): Outline {
   const lessons = listing.files
     .flatMap((file): Lesson[] => {
       const container = containerOf(file);
@@ -88,7 +89,7 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
             {
               id: `${idPrefix}${file}`,
               path: join(listing.path, file),
-              title: file,
+              title: cleanFileName(file, courseName),
               container,
             },
           ];
@@ -99,7 +100,7 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
     .sort((a, b) => naturalOrder(a.name, b.name))
     .flatMap((folder): Section[] => {
       const id = `${idPrefix}${folder.name}/`;
-      const inside = outlineOf(folder, id);
+      const inside = outlineOf(folder, id, courseName);
       return inside.lessons.length === 0 && inside.sections.length === 0
         ? []
         : [{ id, name: folder.name, ...withoutWrappers(inside) }];
@@ -108,7 +109,7 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
 }
 
 export function buildCourse(listing: FolderListing): Course {
-  return { folder: listing.path, ...withoutWrappers(outlineOf(listing, '')) };
+  return { folder: listing.path, ...withoutWrappers(outlineOf(listing, '', listing.name)) };
 }
 
 /** Every Lesson of the Course in play order: a folder's own Lessons, then its Sections'. */
