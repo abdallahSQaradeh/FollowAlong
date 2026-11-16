@@ -8,6 +8,7 @@ import { zoomLabel } from '../protocol/player-messages.js';
 import type { Interactions } from './interactions.js';
 import {
   isZoomView,
+  panBy,
   wholePicture,
   zoomBy,
   zoomStep,
@@ -56,6 +57,10 @@ interface Press {
   readonly pointerId: number;
   readonly x: number;
   readonly y: number;
+  /** What a drag of this press does: set when it began, and kept until it ends. */
+  readonly kind: 'box' | 'pan';
+  /** What the page showed when the press began: a pan moves it from there. */
+  readonly view: ZoomView;
   dragging: boolean;
 }
 
@@ -139,11 +144,21 @@ export class ZoomControls {
 
   /** Shows `view`, keeps it in the webview state, and reports a new level. */
   private show(view: ZoomView): void {
-    const { media, state, zoomChanged } = this.options;
+    this.keep(view);
+    this.render(view);
+  }
+
+  /** Keeps `view` in the webview state. */
+  private keep(view: ZoomView): void {
+    // View state, not the Lesson's: it stays for the next Lesson and a reloaded page.
+    this.options.state.setState({ zoom: view } satisfies PageState);
+  }
+
+  /** Shows `view`, and reports a new level. */
+  private render(view: ZoomView): void {
+    const { media, zoomChanged } = this.options;
     const before = this.view.level;
     this.view = view;
-    // View state, not the Lesson's: it stays for the next Lesson and a reloaded page.
-    state.setState({ zoom: view } satisfies PageState);
     media.style.transform = zoomTransform(view);
     // The native control bar would be enlarged with the picture: it is off while zoomed, and the
     // overlay then covers the whole player, so the strip along the bottom is picture too.
@@ -173,10 +188,14 @@ export class ZoomControls {
       }
       // A drag whose `click` never came must not swallow this press's click.
       this.dragEnded = false;
+      // A drag pans only while zoomed, where there is more picture to move to.
+      const draws = !this.zoomed || this.areaMode;
       this.press = {
         pointerId: event.pointerId,
         x: event.clientX,
         y: event.clientY,
+        kind: draws ? 'box' : 'pan',
+        view: this.view,
         dragging: false,
       };
       overlay.setPointerCapture(event.pointerId);
@@ -194,6 +213,17 @@ export class ZoomControls {
         press.dragging = true;
         interactions.beginGesture(event.pointerId);
       }
+      if (press.kind === 'pan') {
+        const stage = this.stage();
+        this.render(
+          panBy(
+            press.view,
+            (event.clientX - press.x) / stage.width,
+            (event.clientY - press.y) / stage.height,
+          ),
+        );
+        return;
+      }
       box.style.left = `${String(area.x)}px`;
       box.style.top = `${String(area.y)}px`;
       box.style.width = `${String(area.width)}px`;
@@ -202,9 +232,12 @@ export class ZoomControls {
     });
     overlay.addEventListener('pointerup', (event) => {
       if (this.press?.pointerId === event.pointerId) {
+        const { kind } = this.press;
         const area = rectangle(this.press, event.clientX, event.clientY);
         this.endPress(this.press.dragging);
-        this.zoomTo(area);
+        if (kind === 'box') {
+          this.zoomTo(area);
+        }
       }
     });
     // The browser took the pointer away (`pointercancel`), or the press lost its capture without
@@ -232,9 +265,18 @@ export class ZoomControls {
     if (!press.dragging) {
       return;
     }
+    if (press.kind === 'pan') {
+      // The pan moved the view without keeping it: it is kept once, where the pan ended.
+      this.keep(this.view);
+    }
     this.dragEnded = clickFollows;
     this.setAreaMode(false);
     this.options.interactions.endGesture(press.pointerId);
+  }
+
+  /** The player's box, in px of the page: at 1× the overlay stops above the native control bar. */
+  private stage(): DOMRect {
+    return (this.options.overlay.parentElement ?? this.options.overlay).getBoundingClientRect();
   }
 
   /** Zooms to the area of a box drawn over the picture, when it is big enough to mean one. */
@@ -242,11 +284,7 @@ export class ZoomControls {
     if (area.width < smallestBox || area.height < smallestBox) {
       return;
     }
-    // Until #47 a plain drag also draws a box: at 1×, while zoomed and in area mode alike.
-    // The player's box: at 1× the overlay stops above the native control bar.
-    const stage = (
-      this.options.overlay.parentElement ?? this.options.overlay
-    ).getBoundingClientRect();
+    const stage = this.stage();
     this.show(
       zoomToBox(this.view, {
         x: (area.x - stage.x) / stage.width,

@@ -121,6 +121,26 @@ test.describe('a zoom drag', () => {
   });
 });
 
+test.describe('a plain drag while zoomed', () => {
+  test('pans: the picture follows the pointer, and the level stays', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    // 200 px left and 100 px up: the picture moves with the pointer, so the shown area moves right
+    // and down by that much of the player (1/4 of the picture is shown, 4× from 1/4 in).
+    await drag(page, { x: 600, y: 300 }, { x: 400, y: 200 });
+
+    expectArea(await shownArea(page), {
+      left: 0.25 + (200 / 1280) * 0.25,
+      top: 0.25 + (100 / 720) * 0.25,
+      width: 0.25,
+      height: 0.25,
+    });
+    await expect(page.getByLabel('Zoom level')).toHaveText('4×');
+    await page.waitForTimeout(300);
+    expect((await player.events()).filter((event) => event.type === 'zoomChanged')).toHaveLength(1);
+  });
+});
+
 test.describe('while zoomed', () => {
   test('the native control bar is off, since it would be enlarged with the picture', async ({
     page,

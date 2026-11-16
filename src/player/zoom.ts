@@ -62,6 +62,20 @@ export function zoomBy(view: ZoomView, factor: number): ZoomView {
   return centredView(view.level * factor, view.left + span / 2, view.top + span / 2);
 }
 
+/**
+ * The view after the picture was dragged by (`dx`, `dy`), as fractions of the player's width and
+ * height: the picture follows the pointer, so the area shown moves the other way. It stays inside
+ * the picture.
+ */
+export function panBy(view: ZoomView, dx: number, dy: number): ZoomView {
+  const span = 1 / view.level;
+  return {
+    level: view.level,
+    left: clamp(view.left - dx * span, 0, 1 - span),
+    top: clamp(view.top - dy * span, 0, 1 - span),
+  };
+}
+
 /** The CSS transform of the video that shows `view` (its transform origin is its top left). */
 export function zoomTransform(view: ZoomView): string {
   // A translate percentage is of the video's own box, which is the player's size.
