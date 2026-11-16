@@ -12,16 +12,16 @@ import { basename, extname, join } from 'node:path';
 
 import type { CourseData } from './course-data.js';
 import type { Lesson } from './course-model.js';
-import { FileSystemError, type Ports } from './ports.js';
+import { FileSystemError, type FileStat, type Ports } from './ports.js';
 
 /** The Course data subfolder that holds prepared sound. */
-export const soundFolderName = 'sound';
+const soundFolderName = 'sound';
 
 /** The ffmpeg used when `followalong.ffmpegPath` is not set: the one on PATH. */
 const defaultProgram = 'ffmpeg';
 
 /** `<Lesson file name>-<hash of relative path, size, last change>.mp3`: readable, and unique. */
-function soundFileName(lesson: Lesson, size: number, modifiedMs: number): string {
+function soundFileName(lesson: Lesson, { size, modifiedMs }: FileStat): string {
   const key = `${lesson.id}\n${String(size)}\n${String(Math.trunc(modifiedMs))}`;
   const hash = createHash('sha256').update(key).digest('hex').slice(0, 16);
   const name = basename(lesson.id, extname(lesson.id))
@@ -60,8 +60,7 @@ export async function prepareSound(
   signal: AbortSignal,
 ): Promise<string> {
   const { fileSystem, converter, config, logger } = ports;
-  const { size, modifiedMs } = await fileSystem.stat(lesson.path);
-  const name = soundFileName(lesson, size, modifiedMs);
+  const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
   for (const folder of data.folders(soundFolderName)) {
     const path = join(folder, name);
     if (await exists(fileSystem, path)) {

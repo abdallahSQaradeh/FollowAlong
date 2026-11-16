@@ -112,8 +112,6 @@ let pauseBy: 'extension' | 'picture' | undefined;
 let playRequested = false;
 /** The playback rate last reported, so a `ratechange` that changes nothing is not. */
 let reportedRate = 1;
-/** Set while the video is muted because its sound plays from the sidecar instead. */
-let mutedForSound = false;
 /** The seconds a click that resumes a paused Lesson steps back first (Rewind, ADR 0016). */
 let resumeRewind = 0;
 
@@ -138,6 +136,8 @@ function dropSound(): void {
 }
 
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
+  // The Lesson before had its video muted by the player when it had no sound of its own to play.
+  const mutedForSound = current !== undefined && current.sound !== 'own';
   current?.stop.abort();
   hideNext();
   dropSound();
@@ -150,7 +150,6 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
     // Only the player's own mute is undone: a mute the learner chose stays.
     media.muted = false;
   }
-  mutedForSound = awaitsSound;
   media.controls = !awaitsSound;
   // A pause or play whose event the new load cancels must not mark the next one.
   pauseBy = undefined;
@@ -204,32 +203,33 @@ function alignSound(media: HTMLVideoElement): void {
   }
 }
 
-/** The sound of the Lesson arrived: it plays beside the muted video from now on. */
-function soundReady(audioUri: string, media: HTMLVideoElement): void {
+/**
+ * The wait for the Lesson's sound is over: it arrived (`audioUri`), and plays beside the muted
+ * video from now on, or it could not be prepared, and the Lesson plays muted (ticket #42 adds a
+ * choice there). A play asked for meanwhile goes ahead.
+ */
+function soundSettled(audioUri: string | undefined, media: HTMLVideoElement): void {
   const lesson = current;
   if (lesson?.sound !== 'awaited') {
     return;
   }
-  lesson.sound = 'sidecar';
-  sidecar.src = audioUri;
-  alignSound(media);
+  if (audioUri === undefined) {
+    lesson.sound = 'none';
+  } else {
+    lesson.sound = 'sidecar';
+    sidecar.src = audioUri;
+    alignSound(media);
+  }
   media.controls = true;
   if (lesson.playWhenSound) {
     play(media);
   }
 }
 
-/** The sound could not be prepared: the Lesson plays muted (ticket #42 adds a choice here). */
-function soundFailed(media: HTMLVideoElement): void {
-  const lesson = current;
-  if (lesson?.sound !== 'awaited') {
-    return;
-  }
-  lesson.sound = 'none';
-  media.controls = true;
-  if (lesson.playWhenSound) {
-    play(media);
-  }
+/** Starts the sidecar at the video's playhead and rate. */
+function startSound(media: HTMLVideoElement): Promise<void> {
+  alignSound(media);
+  return sidecar.play();
 }
 
 /** Starts the video, and its sidecar first when it has one. */
@@ -243,8 +243,7 @@ function play(media: HTMLVideoElement): void {
   if (lesson?.sound === 'sidecar' && media.paused) {
     // The sound first: VS Code refuses sound until the learner has clicked in the page (#12 D3),
     // and the muted picture alone would start where the sound cannot.
-    alignSound(media);
-    sidecar.play().then(
+    startSound(media).then(
       () => {
         // A pause or another Lesson since then (a pause stops the sidecar again).
         if (lesson === current && !sidecar.paused) {
@@ -350,10 +349,10 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       resumeRewind = command.seconds;
       break;
     case 'soundReady':
-      soundReady(command.audioUri, media);
+      soundSettled(command.audioUri, media);
       break;
     case 'soundFailed':
-      soundFailed(media);
+      soundSettled(undefined, media);
       break;
   }
 }
@@ -442,8 +441,7 @@ function followWithSound(media: HTMLVideoElement): void {
   media.addEventListener('play', () => {
     // The native control bar's play button, a gesture in the page: the sound joins in.
     if (following() && sidecar.paused) {
-      alignSound(media);
-      sidecar.play().catch(() => undefined);
+      startSound(media).catch(() => undefined);
     }
   });
   media.addEventListener('pause', () => {

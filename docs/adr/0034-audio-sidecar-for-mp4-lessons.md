@@ -10,7 +10,7 @@ a future VS Code that ships AAC turns this off with no code change (spec #12, ti
   AAC), prepares it, and sends `soundReady {audioUri}` after the `load` it belongs to, and only
   while that `load` is the current one. The player makes the same decision for itself from its own
   `canPlayType`: it mutes the video and waits for the sound. `load` never carries the sound, not even a
-  prepared one from the cache, so `load` stays synchronous and the player has one path.
+  sidecar prepared before, so `load` stays synchronous and the player has one path.
 - **Where it is kept.** It lives in Course data: `.followalong/sound/`, or `<storage>/courses/<name>-<hash>/sound/`
   when the Course folder is read-only (ADR 0005). The player can read both without a page reload (ADR 0025).
   The file is named `<Lesson file name>-<16 hex of sha256(Lesson path relative to the Course, size, mtime)>.mp3`.

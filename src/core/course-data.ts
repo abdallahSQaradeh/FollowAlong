@@ -171,7 +171,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
   }
 
   /** Makes `location` once per store: hidden in the Course, with its parents in the fallback. */
-  async function prepare(location: string): Promise<void> {
+  async function makeFolderOnce(location: string): Promise<void> {
     if (!prepared.has(location)) {
       // Only `.followalong` itself is made in the Course: were the Course folder gone (moved while
       // open), making its parents would bring back an empty Course at the old path.
@@ -205,13 +205,21 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     if (unreadable.has(path)) {
       throw new UnreadableCourseDataError(path);
     }
-    await prepare(location);
+    await makeFolderOnce(location);
     const data = merged ?? value;
     await fileSystem.writeText(
       path,
       `${JSON.stringify({ version: file.version, data }, null, 2)}\n`,
     );
     return merged;
+  }
+
+  /**
+   * Where reads look, in order. After a fall back the fallback copy is the newer one, and
+   * `.followalong` may still hold the rest.
+   */
+  function readOrder(): readonly string[] {
+    return target === fallback ? [fallback, inCourse] : [inCourse, fallback];
   }
 
   function useFallback(): void {
@@ -231,9 +239,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
           ? (inCourseCopy ?? fallbackCopy)
           : file.merge(inCourseCopy, fallbackCopy);
       }
-      // After a fall back, the fallback copy is the newer one; .followalong may still hold the rest.
-      const locations = target === fallback ? [fallback, inCourse] : [inCourse, fallback];
-      for (const location of locations) {
+      for (const location of readOrder()) {
         const value = await readFrom(location, file);
         if (value !== undefined) {
           return value;
@@ -267,14 +273,13 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     },
 
     folders(name) {
-      const locations = target === fallback ? [fallback, inCourse] : [inCourse, fallback];
-      return locations.map((location) => join(location, name));
+      return readOrder().map((location) => join(location, name));
     },
 
     async prepareFolder(name) {
       if (target !== fallback) {
         try {
-          await prepare(inCourse);
+          await makeFolderOnce(inCourse);
           const folder = join(inCourse, name);
           await fileSystem.makeDirectory(folder, { hidden: false, parents: false });
           target = inCourse;

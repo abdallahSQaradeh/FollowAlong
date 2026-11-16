@@ -18,8 +18,9 @@
  * - sidecar.mp4: 8 s, 160x90, with its index (the moov atom) at the end, as many downloaded Lessons
  *   have it, so seeking needs Range requests (ticket #41). Its name sorts last, so the smoke test's
  *   Course keeps lesson.webm and long.webm as its first two Lessons.
- * - sidecar.mp3: sidecar.mp4's sound as the audio sidecar makes it (the ffmpeg arguments of
- *   src/adapters/node/converter.ts), for the muted-video-plus-sidecar tests (ADR 0034).
+ * - sidecar.mp3: sidecar.mp4's sound encoded as the audio sidecar encodes it (the `-map`, codec and
+ *   quality arguments of src/adapters/node/converter.ts, plus bitexact output), for the
+ *   muted-video-plus-sidecar tests (ADR 0034).
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';

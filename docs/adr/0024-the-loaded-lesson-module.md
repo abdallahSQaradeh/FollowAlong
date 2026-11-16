@@ -17,7 +17,9 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   dispatch, `loadId` gating, rate reconciliation, autoplay refusal, the save timer and the status
   bar. It needs three things from the Course side, passed in as an `OpenCourseView`: the open Course's
   Progress, the Lesson after a given Lesson in Course order, and what to do when the Next overlay is
-  clicked.
+  clicked. Ticket #41 added a fourth: `prepareSound(lesson, signal)`, the Loaded Lesson's audio
+  sidecar from the open Course's Course data (ADR 0034). The Loaded Lesson decides when a Lesson
+  needs one and sends it to the player; the Course side knows where its Course data is.
 - **The seam is internal.** The split leaves `createFollowAlong(ports)` and its `FollowAlong`
   interface as they were; the one change to that interface at CP1 is the optional `absolutePath`
   of `attachResource` (below), which every existing caller satisfies. `ports.ts` and the player

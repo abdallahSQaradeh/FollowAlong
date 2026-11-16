@@ -19,7 +19,7 @@ function seconds(hours: string, minutes: string, rest: string): number {
 }
 
 /** The ffmpeg arguments that write `input`'s first sound track to `output` as MP3. */
-export function soundArguments(input: string, output: string): string[] {
+function soundArguments(input: string, output: string): string[] {
   return [
     ['-hide_banner', '-nostdin', '-y', '-i', input],
     // Sound only: the first audio track, VBR MP3 at about 165 kb/s (`-q:a 4`), metadata dropped.
@@ -45,13 +45,15 @@ function run(request: ConversionRequest, temporary: string): Promise<void> {
       const lines = (pending + chunk).split(/\r\n|\r|\n/);
       pending = lines.pop() ?? '';
       for (const line of lines) {
-        const length = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
-        if (length !== null && duration === 0) {
-          duration = seconds(length[1] ?? '0', length[2] ?? '0', length[3] ?? '0');
+        const durationMatch = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
+        if (durationMatch !== null && duration === 0) {
+          const [, hours = '0', minutes = '0', rest = '0'] = durationMatch;
+          duration = seconds(hours, minutes, rest);
         }
-        const done = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
-        if (done !== null && duration > 0) {
-          const at = seconds(done[1] ?? '0', done[2] ?? '0', done[3] ?? '0');
+        const timeMatch = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
+        if (timeMatch !== null && duration > 0) {
+          const [, hours = '0', minutes = '0', rest = '0'] = timeMatch;
+          const at = seconds(hours, minutes, rest);
           onProgress(Math.min(100, Math.floor((at / duration) * 100)));
         }
         if (line.trim() !== '') {
