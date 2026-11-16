@@ -227,6 +227,52 @@ describe('auto-pause while typing', () => {
       expect(edit(h)).toEqual([]);
     });
 
+    it('plays through typing until the next pause of any kind, then pauses for typing again', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+      expect(edit(h)).toEqual([]);
+
+      // Any pause: here the learner's own, then they play again.
+      h.core.playPause();
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
+    it('pauses for typing after the learner plays from a pause of their own', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+      h.core.playPause();
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.core.playPause();
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
+    it('re-arms when a pause the player reports ends the play-through', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      h.player.emit({ type: 'played', lessonId });
+      // The learner's click on the picture pauses it, and a click plays it again.
+      h.player.emit({ type: 'paused', lessonId, byUser: true });
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([{ type: 'pause' }]);
+    });
+
     it('acts from the moment the learner turns it on, mid-Lesson', async () => {
       const h = await createHarness();
       await openLesson(h, 'off');
