@@ -27,6 +27,7 @@ import {
   type ResourcesData,
 } from './resources.js';
 import { readFolderListing } from './folder-listing.js';
+import { terminalAnswerKey, terminalQuestion, withOnePressCommands } from './terminal-keys.js';
 
 export interface FollowAlong {
   /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
@@ -135,7 +136,7 @@ function pressPlayText(lesson: Lesson): string {
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, storage, ui, logger, config } = ports;
+  const { player, storage, ui, logger, config, terminalSettings } = ports;
 
   /** The Lesson the player should show. */
   let current: Lesson | undefined;
@@ -294,6 +295,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
   let attaching: Promise<unknown> = Promise.resolve();
 
+  /** Offers once to add the one-press commands to the terminal's skip-shell setting. */
+  async function offerTerminalKeys(): Promise<void> {
+    if (storage.global.get(terminalAnswerKey) !== undefined) {
+      return;
+    }
+    const answer = await ui.ask(terminalQuestion);
+    if (answer === undefined) {
+      return;
+    }
+    await storage.global.set(terminalAnswerKey, answer);
+    if (answer === 'accept') {
+      const existing = terminalSettings.skipShellCommands();
+      await terminalSettings.setSkipShellCommands(
+        withOnePressCommands(Array.isArray(existing) ? (existing as string[]) : []),
+      );
+    }
+  }
+
   /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
   function play(course: Course, lesson: Lesson): void {
     current = lesson;
@@ -314,6 +333,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       loadCurrent();
     }
     refreshStatusBar();
+    void offerTerminalKeys().catch((error: unknown) => {
+      logger.log({
+        level: 'warn',
+        message: `Could not offer the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
   }
 
   /** The Course's Resources; a Course whose file cannot be read still opens, without them. */

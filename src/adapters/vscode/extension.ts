@@ -15,7 +15,13 @@ import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson
 import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
-import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
+import {
+  createConfig,
+  createOutputLogger,
+  createStorage,
+  createTerminalSettings,
+  createUiSink,
+} from './ports.js';
 
 export const commands = {
   /** Temporary: opens a folder as the Course. The Course picker replaces the folder dialog. */
@@ -80,6 +86,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       createResourcePlacement(() => player.viewColumn),
     ),
     logger,
+    terminalSettings: createTerminalSettings(),
   });
 
   /** Runs a command, so an unexpected failure is logged and shown instead of lost. */
