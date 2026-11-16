@@ -8,6 +8,7 @@ import type { LessonTreeModel } from './lesson-tree.js';
 import type { Logger } from './logger.js';
 import type { QuickPickModel } from './quick-pick.js';
 import type { StatusBarModel } from './status-bar.js';
+import type { VideoSpot } from './video-placement.js';
 
 export interface Disposable {
   dispose(): void;
@@ -23,6 +24,11 @@ export interface PlayerShowOptions {
    * outside them, and the fallback root of Course data (ADR 0022, ADR 0025).
    */
   readonly resourceRoots: readonly string[];
+  /**
+   * Where the player sits. A player open in another spot moves there: the adapter makes a new
+   * player page in the new spot and drops the old one, which is not a close (ADR 0049).
+   */
+  readonly spot: VideoSpot;
 }
 
 /**

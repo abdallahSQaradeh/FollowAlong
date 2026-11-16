@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 
 import { createFollowAlong } from '../../core/follow-along.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
+import { isVideoSpot } from '../../core/video-placement.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { bundledFfmpegPath } from '../node/bundled-ffmpeg.js';
@@ -16,7 +17,7 @@ import { courseNodeId, type LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { watchDocumentEdits } from './document-edits.js';
 import { FocusReturn } from './focus-return.js';
-import { PlayerPanel } from './player-panel.js';
+import { PlayerPanel, type PlayerPlace } from './player-panel.js';
 import { quickPickStats } from './quick-pick.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
@@ -74,6 +75,8 @@ export const commands = {
   previousLesson: 'followalong.previousLesson',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
+  /** _Move video to…_: asks for a spot; run with a spot's name, moves the video there. */
+  moveVideo: 'followalong.moveVideo',
   /** `Ctrl+'` `D`: marks the Lesson that is playing done, or not done when it already is. */
   toggleLessonDone: 'followalong.toggleLessonDone',
   /** The tree's context menu on a Lesson: Mark done, Mark not done; run with its tree node. */
@@ -106,6 +109,8 @@ export interface TestHooks {
   quickPicksShown(): number;
   /** The label of the active (highlighted) item of the quick pick shown last, once it has one. */
   activeQuickPickItem(): string | undefined;
+  /** The spot the player is in, and whether VS Code shows it; none while no player is open. */
+  playerSpot(): PlayerPlace | undefined;
   /** Whether the quick pick shown last still shows its busy indicator: the core is still scanning. */
   quickPickBusy(): boolean;
 }
@@ -116,11 +121,11 @@ let closeCore: (() => Promise<void>) | undefined;
 export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
-  const player = new PlayerPanel(context.extensionPath, logger);
+  const focus = new FocusReturn();
+  const player = new PlayerPanel(context.extensionPath, logger, () => focus.returnFocus());
   const lessonTree = new LessonTreeView(logger);
   const viewers = new ResourceViewers(context.extensionPath, logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
-  const focus = new FocusReturn();
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -176,6 +181,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       selectedLesson: () => lessonTree.selectedLesson(),
       quickPicksShown: () => quickPickStats.shown,
       activeQuickPickItem: () => quickPickStats.active,
+      playerSpot: () => player.place,
       quickPickBusy: () => quickPickStats.busy,
     };
   }
@@ -271,6 +277,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       core.previousLesson();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
+    register(commands.moveVideo, (spot) => core.moveVideo(isVideoSpot(spot) ? spot : undefined)),
     register(commands.toggleLessonDone, () => core.toggleLessonDone()),
     register(commands.markLessonDone, async (node) => {
       const lessonId = nodeId(node);

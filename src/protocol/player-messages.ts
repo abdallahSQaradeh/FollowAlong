@@ -71,7 +71,18 @@ export type PlayerCommand =
    * Changes the picture's zoom (ADR 0037). The player reports `zoomChanged` when the level changes:
    * a reset at 1× reports nothing.
    */
-  | { readonly type: 'zoom'; readonly action: ZoomAction };
+  | { readonly type: 'zoom'; readonly action: ZoomAction }
+  /**
+   * Asks the page what it shows and plays, for a move of the player to another spot (ADR 0049).
+   * The page answers with one `snapshot`.
+   */
+  | { readonly type: 'takeSnapshot' }
+  /**
+   * The page takes over the zoom of the page it replaces in another spot (ADR 0049). Sent after
+   * the `load` that brings the Lesson back; the playhead and play state travel in that `load`
+   * (`startAt`, `autoplay`), the speed in a `setRate`.
+   */
+  | { readonly type: 'restore'; readonly zoom: ZoomView };
 
 /**
  * What a `zoom` command does. `reset` shows the whole picture (the status bar item); #48 adds
@@ -86,6 +97,43 @@ export type ZoomAction = 'reset';
 export interface AboutLesson {
   readonly lessonId: string;
   readonly loadId?: number;
+}
+
+/**
+ * What part of the whole picture the player shows (ADR 0037). Fractions, not pixels, so the same
+ * area shows in a player of any size, and in another spot (ADR 0049).
+ */
+export interface ZoomView {
+  /** 1 shows the whole picture; 2 shows half its width and half its height. */
+  readonly level: number;
+  /** The left edge of the shown area, as a fraction of the picture's width. */
+  readonly left: number;
+  /** The top edge of the shown area, as a fraction of the picture's height. */
+  readonly top: number;
+}
+
+/** The view of the whole picture: what a page shows until the learner zooms. */
+export const wholePicture: ZoomView = { level: 1, left: 0, top: 0 };
+
+/** A copy of `view` with only its own fields, so nothing else a message carried passes on. */
+function zoomViewOf(view: ZoomView): ZoomView {
+  return { level: view.level, left: view.left, top: view.top };
+}
+
+/**
+ * What a player page shows and plays (its answer to `takeSnapshot`), so a page in another spot
+ * can carry on from it (ADR 0049).
+ */
+export interface PlayerSnapshot {
+  /** The playback rate. */
+  readonly rate: number;
+  readonly zoom: ZoomView;
+  /**
+   * The Lesson the page holds: where its playhead is (where it will be, while the start position
+   * is still being applied) and whether it plays. None when the page holds no Lesson, or only one
+   * that failed.
+   */
+  readonly lesson?: AboutLesson & { readonly position: number; readonly playing: boolean };
 }
 
 /** Player → extension. */
@@ -135,7 +183,9 @@ export type PlayerEvent =
    * The picture's zoom level changed (1 is the whole picture), whoever changed it. Zoom belongs to
    * the player page, not to a Lesson (ADR 0037): it carries no `lessonId`.
    */
-  | { readonly type: 'zoomChanged'; readonly level: number };
+  | { readonly type: 'zoomChanged'; readonly level: number }
+  /** The answer to `takeSnapshot`. Not about a Lesson as such: the Lesson, if any, is inside. */
+  | { readonly type: 'snapshot'; readonly snapshot: PlayerSnapshot };
 
 /**
  * How a zoom level reads wherever it is shown (the player's toolbar, the status bar item): to one
@@ -192,6 +242,54 @@ function isZoomLevel(value: unknown): value is number {
   return typeof value === 'number' && value >= 1 && value <= maxZoomLevel;
 }
 
+/** Whether `value` is a view the player can show; it crosses the protocol as plain data. */
+export function isZoomView(value: unknown): value is ZoomView {
+  if (!isFields(value)) {
+    return false;
+  }
+  const { level, left, top } = value;
+  return (
+    typeof level === 'number' &&
+    typeof left === 'number' &&
+    typeof top === 'number' &&
+    // 1, or a level that reads above 1×: the player never makes a view between them.
+    (level === 1 || shownZoomLevel(level) > 1) &&
+    level <= maxZoomLevel &&
+    left >= 0 &&
+    top >= 0 &&
+    left <= 1 - 1 / level &&
+    top <= 1 - 1 / level
+  );
+}
+
+/** Returns the snapshot, or `undefined` when `raw` is not a well-formed one. */
+function parseSnapshot(raw: unknown): PlayerSnapshot | undefined {
+  if (!isFields(raw) || !isRate(raw.rate) || !isZoomView(raw.zoom)) {
+    return undefined;
+  }
+  const { rate, zoom, lesson } = raw;
+  if (lesson === undefined) {
+    return { rate, zoom: zoomViewOf(zoom) };
+  }
+  if (!isFields(lesson)) {
+    return undefined;
+  }
+  const { lessonId, loadId, position, playing } = lesson;
+  if (
+    !isText(lessonId) ||
+    !(loadId === undefined || isLoadId(loadId)) ||
+    !isSeconds(position) ||
+    typeof playing !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return {
+    rate,
+    zoom: zoomViewOf(zoom),
+    lesson: { lessonId, ...(loadId === undefined ? {} : { loadId }), position, playing },
+  };
+}
+
 /** Returns the command, or `undefined` when `raw` is not a well-formed player command. */
 export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
   if (!isFields(raw)) {
@@ -245,6 +343,12 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return { type: 'noSidecar' };
     case 'zoom':
       return raw.action === 'reset' ? { type: 'zoom', action: raw.action } : undefined;
+    case 'takeSnapshot':
+      return { type: 'takeSnapshot' };
+    case 'restore': {
+      const { zoom } = raw;
+      return isZoomView(zoom) ? { type: 'restore', zoom: zoomViewOf(zoom) } : undefined;
+    }
     default:
       return undefined;
   }
@@ -273,6 +377,10 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
   }
   if (type === 'zoomChanged') {
     return isZoomLevel(raw.level) ? { type, level: raw.level } : undefined;
+  }
+  if (type === 'snapshot') {
+    const snapshot = parseSnapshot(raw.snapshot);
+    return snapshot === undefined ? undefined : { type, snapshot };
   }
   const { loadId } = raw;
   if (!isText(lessonId) || !(loadId === undefined || isLoadId(loadId))) {

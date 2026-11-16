@@ -45,6 +45,7 @@ import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
 import { leavePendingCourse, readPendingCourse, withdrawPendingCourse } from './pending-course.js';
 import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
+import { buildSpotPicker, type VideoSpot } from './video-placement.js';
 
 /** Workspace storage key: the folder of the Course open in this workspace (story 21). */
 const openCourseKey = 'openCourse';
@@ -121,6 +122,11 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * _Move video to…_: moves the player to another spot (ADR 0049), keeping the Lesson's time,
+   * speed, play or pause, and zoom. Without `to` it asks which spot with a quick pick.
+   */
+  moveVideo(to?: VideoSpot): Promise<void>;
   /**
    * `FollowAlong: Unhide a Course…`: lists the Courses hidden from the Course picker and shows the
    * one the learner picks in it again (ADR 0072).
@@ -497,10 +503,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // the Lesson is not reloaded and the learner does not land on Lesson 1 (ADR 0041).
       logger.log({ level: 'info', message: `Not opening ${folder}: it is the open Course.` });
       ui.selectLesson(playing.id);
-      ports.player.show({
-        title: playing.title,
-        resourceRoots: resourceRootsOf(openedCourse),
-      });
+      loaded.reveal(resourceRootsOf(openedCourse));
       return;
     }
     let course: Course;
@@ -1140,6 +1143,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     statusBarClick(command) {
       loaded.statusBarClick(command);
+    },
+    async moveVideo(to) {
+      const from = loaded.spot();
+      if (from === undefined) {
+        ui.showMessage({ severity: 'info', text: noLessonText });
+        return;
+      }
+      const target = to ?? (await ui.pick(buildSpotPicker(from)));
+      if (target !== undefined) {
+        await loaded.move(target);
+      }
     },
     documentEdited(edit) {
       if (isTyping(edit, storage.folder)) {

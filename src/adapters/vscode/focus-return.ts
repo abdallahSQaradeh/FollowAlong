@@ -22,6 +22,9 @@ function isCode(editor: vscode.TextEditor): boolean {
   return scheme === 'file' || scheme === 'untitled';
 }
 
+/** What a focus return handed the focus to: an editor, a terminal, or nothing (none in sight). */
+export type FocusedPart = 'editor' | 'terminal' | 'none';
+
 export class FocusReturn implements vscode.Disposable {
   private target: FocusTarget | undefined;
   private readonly subscriptions: vscode.Disposable[];
@@ -71,12 +74,13 @@ export class FocusReturn implements vscode.Disposable {
    * Focuses the editor or terminal used last. An editor only while it is still visible, so a tab
    * behind the player is never brought in front of it; otherwise any visible code editor, so focus
    * does not stay in the player. With no code editor in sight, focus stays where it is.
+   * Resolves with what got the focus.
    */
-  async returnFocus(): Promise<void> {
+  async returnFocus(): Promise<FocusedPart> {
     const target = this.target;
     if (target?.kind === 'terminal') {
       target.terminal.show(false);
-      return;
+      return 'terminal';
     }
     const visible = vscode.window.visibleTextEditors.filter(isCode);
     const editor =
@@ -91,7 +95,9 @@ export class FocusReturn implements vscode.Disposable {
         ...(editor.viewColumn === undefined ? {} : { viewColumn: editor.viewColumn }),
         preserveFocus: false,
       });
+      return 'editor';
     }
+    return 'none';
   }
 
   dispose(): void {
