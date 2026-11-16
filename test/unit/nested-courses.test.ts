@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -254,6 +254,22 @@ describe('Courses under category and wrapper folders', () => {
     expect(await listed(h, join(learning, 'Web'), learning)).toEqual([
       'React Basics',
       'Vue Basics',
+    ]);
+  });
+
+  it('lists a Course once when an overlapping root names its folder in other letter case', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'Web/React Basics/01 Hello.webm': 'v',
+      'Web/Vue Basics/01 Hello.webm': 'v',
+    });
+    // On Windows `learning` is the same folder as `Learning`, so the second root lies inside the
+    // first. Elsewhere it is another folder, which is not there.
+    const otherCase = join(dirname(learning), 'learning', 'Web');
+
+    expect(await listed(h, learning, otherCase)).toEqual([
+      'React Basics — Web',
+      'Vue Basics — Web',
     ]);
   });
 
