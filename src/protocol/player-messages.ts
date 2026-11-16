@@ -77,7 +77,12 @@ export type PlayerEvent =
    * the release of a seek-bar drag), so the extension hands keyboard focus back to the Practice
    * area (Focus return, ADR 0009). Not about a Lesson: it carries no `lessonId`.
    */
-  | { readonly type: 'userInteracted' };
+  | { readonly type: 'userInteracted' }
+  /**
+   * The picture's zoom level changed (1 is the whole picture), whoever changed it. Zoom belongs to
+   * the player page, not to a Lesson (ADR 0037): it carries no `lessonId`.
+   */
+  | { readonly type: 'zoomChanged'; readonly level: number };
 
 type Fields = Readonly<Record<string, unknown>>;
 
@@ -101,6 +106,11 @@ function isLoadId(value: unknown): value is number {
 /** A playback rate a media element accepts in practice: finite and above 0. */
 function isRate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+/** A zoom level: finite, and 1 (the whole picture) or more. */
+function isZoomLevel(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1;
 }
 
 /** Returns the command, or `undefined` when `raw` is not a well-formed player command. */
@@ -162,6 +172,9 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
   }
   if (type === 'userInteracted') {
     return { type };
+  }
+  if (type === 'zoomChanged') {
+    return isZoomLevel(raw.level) ? { type, level: raw.level } : undefined;
   }
   const { loadId } = raw;
   if (!isText(lessonId) || !(loadId === undefined || isLoadId(loadId))) {

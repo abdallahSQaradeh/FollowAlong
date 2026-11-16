@@ -8,6 +8,7 @@ body {
 
 .stage {
   position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -20,6 +21,8 @@ video {
   height: 100%;
   object-fit: contain;
   background: #000;
+  /* Zoom scales the video from its top left (ADR 0037). */
+  transform-origin: 0 0;
 }
 
 /*
@@ -65,4 +68,18 @@ video {
 .next:hover,
 .next:focus-visible {
   background: rgba(0, 0, 0, 0.75);
+}
+
+/* The box the learner drags over the picture to zoom to that area (ADR 0037). */
+.zoom-box {
+  position: fixed;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 2px solid #2aa198;
+  background: rgba(42, 161, 152, 0.15);
+  pointer-events: none;
+}
+
+.zoom-box[hidden] {
+  display: none;
 }

@@ -10,6 +10,7 @@ import {
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
+import { wholePicture, zoomToBox, zoomTransform, type ZoomView } from './zoom.js';
 
 declare global {
   /** Provided by VS Code inside a webview (and by the Seam 2 harness in Playwright). */
@@ -337,6 +338,10 @@ function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
     interactions.ended();
   };
   overlay.addEventListener('click', () => {
+    if (dragEnded) {
+      dragEnded = false;
+      return;
+    }
     togglePlayback(media);
   });
   // The overlay takes the pointer moves that would show the native control bar: pass them on.
@@ -382,9 +387,109 @@ function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
   media.addEventListener('volumechange', ended);
 }
 
-const overlay = document.querySelector('.overlay');
+/** How far the pointer moves, in px, before a press on the picture is a drag and not a click. */
+const dragThreshold = 6;
+/** A box smaller than this, in px either way, zooms to nothing. */
+const smallestBox = 12;
+
+/** What part of the picture the player shows now (ADR 0037). */
+let zoom: ZoomView = wholePicture;
+/** Set when a drag on the picture ended: the `click` the browser fires after it is not a click. */
+let dragEnded = false;
+
+/** Shows `view`, and reports a new zoom level. */
+function showZoom(view: ZoomView, media: HTMLVideoElement): void {
+  const before = zoom.level;
+  zoom = view;
+  media.style.transform = zoomTransform(view);
+  if (view.level !== before) {
+    post({ type: 'zoomChanged', level: view.level });
+  }
+}
+
+/**
+ * A drag on the picture draws a box, and the player zooms to the area in it. The drag is one
+ * gesture for Focus return (ADR 0009): focus is handed back once it ends, not during it.
+ */
+function zoomGestures(media: HTMLVideoElement, overlay: HTMLElement, box: HTMLElement): void {
+  let drag:
+    | { readonly pointerId: number; readonly x: number; readonly y: number; moved: boolean }
+    | undefined;
+  /** The rectangle from where the drag began to (`x`, `y`), in px of the page. */
+  const rectangle = (start: { readonly x: number; readonly y: number }, x: number, y: number) => ({
+    x: Math.min(start.x, x),
+    y: Math.min(start.y, y),
+    width: Math.abs(x - start.x),
+    height: Math.abs(y - start.y),
+  });
+  overlay.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !event.isPrimary) {
+      return;
+    }
+    // A drag whose `click` never came (it was cancelled) must not swallow this press's click.
+    dragEnded = false;
+    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    overlay.setPointerCapture(event.pointerId);
+  });
+  overlay.addEventListener('pointermove', (event) => {
+    if (drag?.pointerId !== event.pointerId) {
+      return;
+    }
+    const area = rectangle(drag, event.clientX, event.clientY);
+    if (!drag.moved && area.width + area.height <= dragThreshold) {
+      return;
+    }
+    if (!drag.moved) {
+      drag.moved = true;
+      interactions.beginGesture(event.pointerId);
+    }
+    box.style.left = `${String(area.x)}px`;
+    box.style.top = `${String(area.y)}px`;
+    box.style.width = `${String(area.width)}px`;
+    box.style.height = `${String(area.height)}px`;
+    box.removeAttribute('hidden');
+  });
+  const finish = (event: PointerEvent, zoomIn: boolean) => {
+    if (drag?.pointerId !== event.pointerId) {
+      return;
+    }
+    const start = drag;
+    drag = undefined;
+    box.setAttribute('hidden', '');
+    if (!start.moved) {
+      return;
+    }
+    dragEnded = zoomIn;
+    const area = rectangle(start, event.clientX, event.clientY);
+    const stage = overlay.parentElement?.getBoundingClientRect();
+    if (zoomIn && stage !== undefined && area.width >= smallestBox && area.height >= smallestBox) {
+      showZoom(
+        zoomToBox(zoom, {
+          x: (area.x - stage.x) / stage.width,
+          y: (area.y - stage.y) / stage.height,
+          width: area.width / stage.width,
+          height: area.height / stage.height,
+        }),
+        media,
+      );
+    }
+    interactions.endGesture(event.pointerId);
+  };
+  overlay.addEventListener('pointerup', (event) => {
+    finish(event, true);
+  });
+  overlay.addEventListener('pointercancel', (event) => {
+    finish(event, false);
+  });
+}
+
+const overlay = document.querySelector<HTMLElement>('.overlay');
 if (overlay === null) {
   throw new Error('The player page has no overlay.');
+}
+const zoomBox = document.querySelector<HTMLElement>('.zoom-box');
+if (zoomBox === null) {
+  throw new Error('The player page has no zoom box.');
 }
 
 nextOverlay.addEventListener('click', () => {
@@ -395,6 +500,7 @@ nextOverlay.addEventListener('click', () => {
 const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
 reportMediaEvents(video);
 reportInteractions(video, overlay);
+zoomGestures(video, overlay, zoomBox);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   const command = parsePlayerCommand(event.data);
   if (command !== undefined) {
