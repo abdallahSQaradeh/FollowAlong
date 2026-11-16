@@ -5,11 +5,15 @@ code (`editorSplit`, the default), the bottom panel (`bottomPanel`) or the secon
 (`secondarySidebar`). `followalong.videoLocation` names the spot a new player opens in, and
 _Move video to…_ moves an open player live, keeping its time, speed, play or pause, and zoom. These
 are the choices the spec left open. Source: #49, the routed note from #46 on it, #12 D3/D4/D9, and
-the orchestrator's answers to the #49 consult (Q1–Q4).
+the orchestrator's answer to the #49 consult (2026-11-16, 11:59Z), which accepted the defaults
+below (Q1–Q4) and added three conditions on Q4: (a) the new page really tries to play, (b) the
+snapshot wait runs on the Clock port and never blocks the move, (c) an ended Lesson never
+autoplays after a move.
 
 ## Where the video opens
 
-- **The setting names where a new player opens** (Q1, Q2). The core reads `videoLocation` when it
+- **The setting names where a new player opens** (Q1, Q2: the spec calls it the "default spot",
+  and story 55 makes a move a live switch, not a preference). The core reads `videoLocation` when it
   shows a player that is not open (`settingSpot`, `src/core/video-placement.ts`); an unknown value
   is `editorSplit`. While a player is open, every Lesson (next, previous, the pickers, another
   Course) plays in the spot it is in. _Move video to…_ never writes the setting, and a changed
@@ -37,10 +41,16 @@ additively (Q4):
 - **The new page takes over** once it posts `ready`: a `load` at the snapshot's position, with
   `autoplay` if it played (the path a reloaded page already takes, ADR 0030: the start seek is
   FollowAlong's own and saves nothing), a `setRate` when the speed is not 1×, and a new command
-  `restore {zoom}` when it was zoomed. The page shows that view, keeps it in its own webview state
-  and reports `zoomChanged`, as for a zoom the learner made.
-- **A page that does not answer** within 1 s (Clock port) is moved with what the core knows: the
-  last reported playhead, play state and speed; the zoom then starts at the whole picture. A page
+  `restore {zoom}`. The page shows that view, keeps it in its own webview state and reports
+  `zoomChanged`, as for a zoom the learner made. **`restore` is sent at the whole picture too**
+  (review of #49): a view spot keeps the webview state of the page it held before, and that page's
+  zoom must not come back.
+- **An ended Lesson lands paused at its end** (condition c). A page at the end of a Lesson is
+  paused, so its snapshot says it does not play, and so does the core's own record when the page
+  does not answer: the new page loads it at its end without `autoplay`. The Next overlay is not
+  shown again; the learner's next press restarts the Lesson or `Next Lesson` moves on.
+- **A page that does not answer** within 1 s (Clock port, condition b) is moved with what the core
+  knows: the last reported playhead, play state and speed; the zoom resets to the whole picture. A page
   still starting is moved at once, the Lesson starting where it was going to.
 - **Progress is saved at the snapshot's playhead** before the move, for a Lesson the learner has
   played or moved, so a crash during the move loses nothing.
@@ -50,13 +60,21 @@ additively (Q4):
 
 ## The cost in activation (#12 D3, D9)
 
-The new page has not had the learner's click, so VS Code refuses its autoplay. **Moving a playing
-Lesson lands it paused at its position**, and the core tells the learner once to press play in the
-player (the D3 message); one click in the new page unlocks keyboard play again, as for any new
-page. Moving a paused Lesson costs nothing visible until the learner next plays it from the keys.
+The new page has not had the learner's click. It really asks to play a Lesson that played
+(condition a), and plays on if VS Code lets it; VS Code 1.146 refuses autoplay on a page without a
+click (#12 D3, measured by #16 and #23), so in practice **moving a playing Lesson lands it paused at
+its position**, and the core tells the learner once to press play in the player (the D3 message).
+One click in the new page unlocks keyboard play again, as for any new page. Seam 1 covers both
+outcomes. Moving a paused Lesson costs nothing visible until the learner next plays it from the keys.
 The spec's "keeping paused state" therefore holds for a paused Lesson; a playing one keeps its time,
 speed and zoom and needs that one click. The alternative, moving a view between containers with
 VS Code's own drag, keeps the page but has no API, and an editor tab cannot become a view at all.
+
+**Measured, for #50 and #51:** every move in the smoke test (bottom panel → secondary sidebar →
+editor group → bottom panel again, on VS Code 1.146, Windows and Ubuntu) is followed by a new
+`ready`: a new page. The API has no way to hand a page from a webview panel to a webview view or
+back, and a view hidden by its `when` clause gets a new page when it shows again. Moving an editor
+tab into an auxiliary window (#51) was not measured here.
 
 ## In VS Code
 
@@ -65,8 +83,11 @@ VS Code's own drag, keeps the page but has no API, and an editor tab cannot beco
   clauses read the context key `followalong.videoSpot`, so only the spot the video is in shows a
   container; the editor split is the webview panel of before (`followalong.player`). The views
   retain their page while hidden, so the Lesson plays on while the panel or sidebar is closed.
-- **Opening a view spot** runs `workbench.view.extension.<container>`, which focuses the view; the
-  adapter hands focus back to the code at once (ADR 0009). The view's description is the Lesson's
+- **Opening a view spot** first sets the context key (awaited, so the view's `when` clause holds),
+  then runs `workbench.view.extension.<container>`, which focuses the view; the adapter hands focus
+  back to the code at once (ADR 0009), as `preserveFocus` does for the panel. If VS Code cannot
+  open the view, the adapter reports the player closed, so the core does not wait for a page that
+  will not come. The view's description is the Lesson's
   title. The learner resizes every spot with VS Code's own sashes (story 56).
 - **Closing.** Closing the player tab, or a view VS Code disposes, is a close as before; the page
   dropped for a move is not.
