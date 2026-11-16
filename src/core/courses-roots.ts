@@ -12,8 +12,11 @@ const coursesRootsSetting = 'coursesRoots';
 /** On Windows, two spellings that differ only in letter case name the same folder. */
 const caseInsensitive = process.platform === 'win32';
 
-/** The path rules a Courses root follows: those of the OS VS Code runs on. */
-const hostFlavour = process.platform === 'win32' ? 'win32' : 'posix';
+/** The two sets of path rules; a Courses root follows those of the OS VS Code runs on. */
+export type PathFlavour = 'win32' | 'posix';
+
+/** The path rules of the OS VS Code runs on. */
+export const hostFlavour: PathFlavour = process.platform === 'win32' ? 'win32' : 'posix';
 
 /** What the setting holds, as the core uses it. */
 export interface CoursesRoots {
@@ -38,11 +41,14 @@ function normalisedRoot(path: string): string | undefined {
 /**
  * Whether `path` names one folder wherever VS Code runs. On Windows that takes a drive (`D:\`) or
  * a share (`\\server\share`): `\Learning` counts as absolute there, but on whichever drive
- * VS Code happens to run from. `flavour` is the host's; tests give each one on every OS.
+ * VS Code happens to run from. The verbatim (`\\?\D:\Learning`) and device (`\\.\…`) prefixes
+ * are not full paths: they name a folder another way, which would count as a second root and
+ * skip the drive-letter normalisation (ADR 0032). `flavour` is the host's; tests give each one
+ * on every OS.
  */
-export function isFullPath(path: string, flavour: 'win32' | 'posix' = hostFlavour): boolean {
+export function isFullPath(path: string, flavour: PathFlavour = hostFlavour): boolean {
   return flavour === 'win32'
-    ? /^([a-zA-Z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)/.test(path)
+    ? /^([a-zA-Z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)/.test(path) && !/^[\\/]{2}[?.][\\/]/.test(path)
     : posix.isAbsolute(path);
 }
 

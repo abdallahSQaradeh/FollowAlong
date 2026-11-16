@@ -330,8 +330,12 @@ describe('the Course picker', () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', { 'Some Course/intro.webm': 'v' });
     // On Windows a rooted path without a drive (`\Learning`) is not a full path either: it would
-    // name a folder on whatever drive VS Code runs from.
-    const driveless = process.platform === 'win32' ? ['\\Learning', '/Learning'] : [];
+    // name a folder on whatever drive VS Code runs from. Nor is a verbatim or device path, which
+    // would spell a root a second way (ADR 0032).
+    const driveless =
+      process.platform === 'win32'
+        ? ['\\Learning', '/Learning', '\\\\?\\d:\\Learning', '\\\\.\\d:\\Learning']
+        : [];
     h.config.set('coursesRoots', ['.', '~', `relative${sep}folder`, ...driveless, learning]);
 
     const first = h.core.pickCourse();
