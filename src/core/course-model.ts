@@ -2,9 +2,9 @@
  * The Course model (spec #12, Core modules → Course model): a pure function from a folder
  * listing to the Course's Lessons and Sections. It never touches the file system.
  */
-import { extname } from 'node:path';
+import { extname, join } from 'node:path';
 
-export type Container = 'mp4' | 'webm';
+import type { Container } from '../protocol/player-messages.js';
 
 /** What the model reads of a folder: its file names and its subfolders. */
 export interface FolderListing {
@@ -59,6 +59,25 @@ function naturalOrder(a: string, b: string): number {
   return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
 }
 
+/**
+ * Folders that never hold Lessons: FollowAlong's own `.followalong` and every other hidden
+ * folder (`.git`), and `node_modules`.
+ */
+export function isSkippedFolder(name: string): boolean {
+  return name.startsWith('.') || name === 'node_modules';
+}
+
+/**
+ * A wrapper folder holds no Lessons and exactly one Section: it collapses into that Section's
+ * content, and keeps its own (outermost) name.
+ */
+function withoutWrappers({ lessons, sections }: Outline): Outline {
+  const [only, ...others] = sections;
+  return lessons.length === 0 && only !== undefined && others.length === 0
+    ? withoutWrappers(only)
+    : { lessons, sections };
+}
+
 function outlineOf(listing: FolderListing, idPrefix: string): Outline {
   const lessons = listing.files
     .flatMap((file): Lesson[] => {
@@ -68,27 +87,28 @@ function outlineOf(listing: FolderListing, idPrefix: string): Outline {
         : [
             {
               id: `${idPrefix}${file}`,
-              path: `${listing.path}/${file}`,
+              path: join(listing.path, file),
               title: file.slice(0, file.length - extname(file).length),
               container,
             },
           ];
     })
     .sort((a, b) => naturalOrder(a.id, b.id));
-  const sections = [...listing.folders]
+  const sections = listing.folders
+    .filter((folder) => !isSkippedFolder(folder.name))
     .sort((a, b) => naturalOrder(a.name, b.name))
     .flatMap((folder): Section[] => {
       const id = `${idPrefix}${folder.name}/`;
       const inside = outlineOf(folder, id);
       return inside.lessons.length === 0 && inside.sections.length === 0
         ? []
-        : [{ id, name: folder.name, ...inside }];
+        : [{ id, name: folder.name, ...withoutWrappers(inside) }];
     });
   return { lessons, sections };
 }
 
 export function buildCourse(listing: FolderListing): Course {
-  return { folder: listing.path, ...outlineOf(listing, '') };
+  return { folder: listing.path, ...withoutWrappers(outlineOf(listing, '')) };
 }
 
 /** Every Lesson of the Course in play order: a folder's own Lessons, then its Sections'. */

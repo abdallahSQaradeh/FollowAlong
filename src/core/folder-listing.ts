@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 
-import type { FolderListing } from './course-model.js';
+import { isSkippedFolder, type FolderListing } from './course-model.js';
 import type { FileSystem } from './ports.js';
 
 export async function readFolderListing(
@@ -15,7 +15,7 @@ export async function readFolderListing(
   const entries = await fileSystem.readDirectory(path);
   const folders: FolderListing[] = [];
   for (const entry of entries) {
-    if (entry.kind === 'directory') {
+    if (entry.kind === 'directory' && !isSkippedFolder(entry.name)) {
       folders.push(await readFolderListing(fileSystem, join(path, entry.name), entry.name));
     }
   }
