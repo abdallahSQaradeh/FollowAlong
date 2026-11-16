@@ -15,8 +15,8 @@ import { openCourseData, type CourseData } from './course-data.js';
 import { isFullPath } from './courses-roots.js';
 import type { Lesson } from './course-model.js';
 import {
-  aheadCount,
   createSoundQueue,
+  lessonsAhead,
   type PreparedSound,
   type SoundRequest,
 } from './sound-queue.js';
@@ -261,6 +261,7 @@ export function openSidecarSound(
   /** The Lesson that is loaded and the ones after it that get their sound ahead of time. */
   let loaded: Lesson | undefined;
   let ahead: readonly Lesson[] = [];
+  let pruned = false;
   const release = cache.follow(() => inUse(ports, data, loaded, ahead));
   return {
     async prepare(lesson, request) {
@@ -273,10 +274,14 @@ export function openSidecarSound(
     },
     prepareAhead(opened, lessonsInOrder, pageDecodes) {
       loaded = opened;
-      const here =
-        opened === undefined ? -1 : lessonsInOrder.findIndex((lesson) => lesson.id === opened.id);
-      ahead = here === -1 ? [] : lessonsInOrder.slice(here + 1, here + 1 + aheadCount);
+      ahead = lessonsAhead(opened, lessonsInOrder);
       queue.prepareAhead(opened, lessonsInOrder, pageDecodes);
+      if (!pruned) {
+        // The Lesson that is loaded is known now: a limit lowered while the window was closed takes
+        // effect, and the sound this Course reopens on stays.
+        pruned = true;
+        cache.prune();
+      }
     },
     stop() {
       release();
@@ -299,8 +304,12 @@ async function inUse(
       try {
         const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
         paths.push(...soundFolders.map((folder) => join(folder, name)));
-      } catch {
-        // A Lesson file that is gone has no sound to keep.
+      } catch (error) {
+        // A Lesson file that is gone has no sound to keep. Any other failure (a file another program
+        // locks for a moment) means what is in use is not known: the cache then deletes nothing.
+        if (!FileSystemError.is(error, 'notFound')) {
+          throw error;
+        }
       }
     }
     return paths;

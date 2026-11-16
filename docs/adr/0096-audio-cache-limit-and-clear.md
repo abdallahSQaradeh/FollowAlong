@@ -11,8 +11,9 @@ the File system port, which gained `remove(path)`; adapters only delete the file
   versioned record that another version ignores). Each time the cache looks, it also reads the
   fallback storage's sound folders and the open Course's, and adds the `.mp3` files it did not know
   (made by an earlier FollowAlong, or inside a copy of a Course), as opened on the day they were
-  made. A file gone from disk (`notFound`) leaves the record; any other failure to look at one only
-  skips it. Sound in a Course never opened since the record was lost, on a drive that is away, is
+  made. A file gone from disk (`notFound`) leaves the record, so a Course on a drive that is away
+  comes back with its sound dated by when it was made, not by when it was opened; any other
+  failure to look at a file skips it and is logged. Sound in a Course never opened since the record was lost, on a drive that is away, is
   found again when that Course is opened. Nothing else is looked at: other files in those folders,
   and the folders themselves, are never touched.
 - **"Opened longest ago".** The record's time is when the learner last opened the Lesson (its
@@ -21,22 +22,29 @@ the File system port, which gained `remove(path)`; adapters only delete the file
   by path. Eviction deletes until the total is at most the limit.
 - **Never what is in use.** The Lesson that is loaded and the next 3 (the queue's _ahead_, ADR 0081)
   are never chosen, so a tiny or zero limit leaves up to 4 files, and eviction cannot make the
-  queue re-convert a sound it just made. Only this window knows its loaded Lesson: another window's
-  loaded Lesson is protected only by being the newest, so it is the last to go.
+  queue re-convert a sound it just made. What is in use is asked again before each deletion, not
+  once at the start of a run: a Lesson the learner opens while a run is under way keeps the sound
+  it was just handed. Only the moment between that look and the deleting is left open. If a Lesson
+  file cannot be looked at (anything but `notFound`: a file another program locks), what is in use
+  is not known, and the run deletes nothing and logs one line. Only this window knows its loaded
+  Lesson: another window's loaded Lesson is protected only by being the newest, so it is the last
+  to go.
 - **The limit** is `followalong.audioCacheLimit`, in GB (1 GB = 1024³ bytes), default 5, minimum 0.
   Anything that is not a number of at least 0 means 5. It is read at each look, and a change to it
   prunes at once.
 - **When it runs.** In the background, one run at a time with the record's own writes, after each
-  sound file is made, when a Course opens, and when the setting changes. Playback never waits for it
+  sound file is made, when the first Lesson of a Course is loaded (not when the Course opens: only
+  then is the sound the Course reopens on known), and when the setting changes. Playback never waits for it
   (the sound resolves before the deleting starts), and the learner is shown nothing. Whatever goes
   wrong in one run (a file another program holds open, a folder that cannot be read) is one `warn`
   line in the log, naming the first problem and how many more; the files that could not go stay,
   and the next run tries again.
 - **`FollowAlong: Clear audio cache`** deletes every sound file it knows, in both stores and in every
   Course, with no confirmation (it is a cache that is made again when a Lesson is opened, unlike
-  Progress, which asks first), and says how many files and how much it freed. It keeps the loaded
-  Lesson's sound: the player is reading it, and deleting it would cut the sound mid-Lesson (on
-  Windows the delete would be refused anyway). The message says so. It does not stop a conversion
+  Progress, which asks first), and says how many files and how much it freed, counting only the
+  files it deleted itself. It keeps the loaded Lesson's sound: the player is reading it, and
+  deleting it would cut the sound mid-Lesson (on Windows the delete would be refused anyway). The
+  message says so when there was such a file. It does not stop a conversion
   under way; that file appears when it is done, as the Lesson being prepared is in use.
 
 ## Considered options

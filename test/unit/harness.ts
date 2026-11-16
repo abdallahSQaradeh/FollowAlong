@@ -779,6 +779,10 @@ export interface Harness {
   holdRemovals(): { readonly reached: Promise<void>; release(): void };
   /** Makes every deletion of a file fail, as a file another program holds open does on Windows. */
   failRemovals(reason: string): void;
+  /** Makes looking at the file at `path` fail, as a file another program locks does on Windows. */
+  failStat(path: string, reason: string): void;
+  /** Undoes {@link Harness.failStat}. */
+  restoreStat(path: string): void;
   /**
    * Holds the next write of the file at `path` until `release` is called; writes after it go
    * through. `reached` settles once that write has started: the core has read what it needed and
@@ -877,6 +881,7 @@ export async function createHarness(): Promise<Harness> {
     call.then(done, done);
     return call;
   };
+  const failingStats = new Map<string, string>();
   let removalFailure: string | undefined;
   let removalGate: { readonly reach: () => void; readonly released: Promise<void> } | undefined;
   const fileSystem: FileSystem = {
@@ -916,7 +921,12 @@ export async function createHarness(): Promise<Harness> {
           : hold.released.then(() => nodeFileSystem.readText(path)),
       );
     },
-    stat: (path) => track(nodeFileSystem.stat(path)),
+    stat: (path) => {
+      const failure = failingStats.get(path);
+      return failure === undefined
+        ? track(nodeFileSystem.stat(path))
+        : Promise.reject(new FileSystemError('other', path, failure));
+    },
     startingFolders: () => Promise.resolve(startFolders),
     exists: (path) => track(nodeFileSystem.exists(path)),
     writeText(path, content) {
@@ -1063,6 +1073,12 @@ export async function createHarness(): Promise<Harness> {
       });
       removalGate = { reach, released };
       return { reached, release };
+    },
+    failStat(path, reason) {
+      failingStats.set(path, reason);
+    },
+    restoreStat(path) {
+      failingStats.delete(path);
     },
     failRemovals(reason) {
       removalFailure = reason;

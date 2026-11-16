@@ -46,6 +46,7 @@ export const commands = {
   openCourse: 'followalong.openCourse',
   /** `FollowAlong: Unhide a Course…`: gives a Course hidden from the Course picker back to it. */
   unhideCourse: 'followalong.unhideCourse',
+  /** `FollowAlong: Clear audio cache`: deletes the prepared sound of every Course. */
   clearAudioCache: 'followalong.clearAudioCache',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */
   playLesson: playLessonCommand,

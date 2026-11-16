@@ -200,7 +200,6 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   function openSoundOf(folder: string): void {
     sidecarSound?.stop();
     sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths, audioCache);
-    audioCache.prune();
   }
 
   /** What the Lesson tree shows now (as JSON), so a redraw that would change nothing is skipped. */

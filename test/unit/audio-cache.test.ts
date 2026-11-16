@@ -3,7 +3,7 @@
  * files are capped (5 GB by default), and the Lessons opened longest ago are deleted first. The fake
  * converter writes 13-byte MP3s, so a limit of a few dozen bytes stands for a small disk.
  */
-import { readdir, utimes } from 'node:fs/promises';
+import { readdir, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -38,15 +38,28 @@ async function openCourse(h: Harness, name: string, count: number): Promise<stri
   return course;
 }
 
+type Conversion = Harness['converter']['requests'][number];
+
+/** The conversions already finished: finishing one again would write its file again. */
+const finished = new WeakSet<Conversion>();
+
+/** Succeeds `conversion` once, as ffmpeg finishing it does. */
+async function finish(conversion: Conversion | undefined): Promise<void> {
+  if (conversion !== undefined && !finished.has(conversion)) {
+    finished.add(conversion);
+    await conversion.succeed();
+  }
+}
+
 /** Succeeds every conversion that is waiting, and those the queue starts after them. */
 async function finishAll(h: Harness): Promise<void> {
-  for (let done = 0; ; done += 1) {
+  for (let index = 0; ; index += 1) {
     await h.settle();
-    const next = h.converter.requests[done];
+    const next = h.converter.requests[index];
     if (next === undefined) {
       return;
     }
-    await next.succeed();
+    await finish(next);
   }
 }
 
@@ -261,7 +274,7 @@ describe('keeping the audio cache under its limit in the background', () => {
 
     h.core.playLesson('06 Lesson.mp4');
     await h.settle();
-    await h.converter.requests[4]?.succeed();
+    await finish(h.converter.requests[4]);
     await held.reached;
     await h.settle();
 
@@ -293,6 +306,81 @@ describe('keeping the audio cache under its limit in the background', () => {
     expect(lines[0]).toMatchObject({ level: 'warn' });
     expect(lines[0]?.message).toContain('EBUSY');
     expect(lines[0]?.message).toContain('3 more');
+  });
+});
+
+describe('sound in use while the audio cache is being pruned', () => {
+  it('keeps the sound of the Lesson a Course reopens on, even when the limit leaves no room', async () => {
+    const h = await createHarness();
+    h.config.set('audioCacheLimit', 0);
+    const course = await openCourse(h, 'course', 3);
+    await finishAll(h);
+    const conversions = h.converter.requests.length;
+    await h.core.close();
+
+    h.restart();
+    await h.core.restoreCourse();
+    h.player.ready(false);
+    await h.settle();
+
+    // Reopening on the same Lesson finds its sound, and the next Lessons' sound, still there.
+    expect(await kept(course)).toEqual(['01', '02', '03']);
+    expect(h.converter.requests).toHaveLength(conversions);
+  });
+
+  it('keeps the sound of a Lesson the learner opens while the deleting is under way', async () => {
+    const h = await createHarness();
+    h.config.set('audioCacheLimit', 0);
+    const course = await openCourse(h, 'course', 6);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    const held = h.holdRemovals();
+    h.core.playLesson('06 Lesson.mp4');
+    await h.settle();
+    await finish(h.converter.requests[4]);
+    await held.reached;
+
+    // The deleting of 01 to 04 is held on a slow disk, and the learner goes back to Lesson 02.
+    h.core.playLesson('02 Lesson.mp4');
+    await h.settle();
+    held.release();
+    await h.settle();
+    await finishAll(h);
+
+    // Its sound was there when it was opened, and is not made again because it was deleted after.
+    const conversionsOf02 = h.converter.requests.filter(({ request }) =>
+      request.input.endsWith('02 Lesson.mp4'),
+    );
+    expect(conversionsOf02).toHaveLength(1);
+    expect(await kept(course)).toContain('02');
+  });
+
+  it('deletes nothing, and logs one line, when it cannot tell which Lesson is in use', async () => {
+    const h = await createHarness();
+    const first = await openCourse(h, 'first', 1);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    const second = await openCourse(h, 'second', 1);
+    await finishAll(h);
+    // The loaded Lesson's file is locked by another program for a moment.
+    const lock = join(second, '01 Lesson.mp4');
+    h.failStat(lock, 'EBUSY: resource busy or locked');
+
+    h.config.set('audioCacheLimit', 0);
+    await h.settle();
+
+    expect(await kept(first)).toEqual(['01']);
+    const lines = h.logger.entries.filter((entry) => entry.message.includes('audio cache'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 'warn' });
+    expect(lines[0]?.message).toContain('EBUSY');
+
+    // Once it can be looked at again, the older Course's sound goes and the loaded one stays.
+    h.restoreStat(lock);
+    h.config.set('audioCacheLimit', 0);
+    await h.settle();
+    expect(await kept(first)).toEqual([]);
+    expect(await kept(second)).toEqual(['01']);
   });
 });
 
@@ -332,7 +420,39 @@ describe('Clear audio cache', () => {
     );
     expect(h.ui.messages.at(-1)).toEqual({
       severity: 'info',
-      text: 'FollowAlong deleted 4 prepared sound files (52 bytes). The open Lesson’s sound stays.',
+      text: 'FollowAlong deleted 4 prepared sound files (52 bytes). The loaded Lesson’s sound stays.',
     });
+  });
+
+  it('counts only the files it deleted itself', async () => {
+    const h = await createHarness();
+    const first = await openCourse(h, 'first', 1);
+    await finishAll(h);
+    h.clock.advance(60_000);
+    await openCourse(h, 'second', 1);
+    await finishAll(h);
+    const held = h.holdRemovals();
+
+    const clearing = h.core.clearAudioCache();
+    await held.reached;
+    // Another window deletes the older Course's sound while this one is about to.
+    await rm(join(first, '.followalong', 'sound', await soundOf(first, '01')));
+    held.release();
+    await clearing;
+
+    expect(h.ui.messages.at(-1)).toEqual({
+      severity: 'info',
+      text: 'FollowAlong has no other prepared sound to delete. The loaded Lesson’s sound stays.',
+    });
+  });
+
+  it('says so when there is no prepared sound at all', async () => {
+    const h = await createHarness();
+
+    await h.core.clearAudioCache();
+
+    expect(h.ui.messages).toEqual([
+      { severity: 'info', text: 'The audio cache is empty: there is no prepared sound to delete.' },
+    ]);
   });
 });
