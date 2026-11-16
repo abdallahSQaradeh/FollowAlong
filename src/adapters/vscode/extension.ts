@@ -28,6 +28,9 @@ export const commands = {
   /** `Ctrl+'` `↑` / `↓`: one rung up or down the speed ladder. */
   speedUp: 'followalong.speedUp',
   speedDown: 'followalong.speedDown',
+  /** `Ctrl+'` `N` / `P`: the next or previous Lesson in Course order. */
+  nextLesson: 'followalong.nextLesson',
+  previousLesson: 'followalong.previousLesson',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
 } as const;
@@ -130,6 +133,12 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.speedDown, () => {
       core.speedStep('down');
+    }),
+    register(commands.nextLesson, () => {
+      core.nextLesson();
+    }),
+    register(commands.previousLesson, () => {
+      core.previousLesson();
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );

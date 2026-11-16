@@ -25,6 +25,10 @@ export interface FollowAlong {
   seekStep(size: StepSize, direction: StepDirection): void;
   /** The speed commands: moves the playback rate one rung up or down the speed ladder. */
   speedStep(direction: SpeedDirection): void;
+  /** The next Lesson in Course order, across Sections. */
+  nextLesson(): void;
+  /** The previous Lesson in Course order, across Sections. */
+  previousLesson(): void;
   /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
   goToLesson(): Promise<void>;
   dispose(): void;
@@ -197,6 +201,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   function play(course: Course, lesson: Lesson): void {
     current = lesson;
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
+    ui.selectLesson(lesson.id);
     const shown = player.show({
       title: lesson.title,
       resourceRoots: [course.folder, storage.folder],
@@ -248,6 +253,23 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return;
     }
     play(course, lesson);
+  }
+
+  /** Plays the Lesson `offset` places from the current one in Course order, if there is one. */
+  function moveToLesson(offset: number): void {
+    const course = openedCourse;
+    if (current === undefined || course === undefined) {
+      ui.showMessage({
+        severity: 'info',
+        text: 'FollowAlong: no Lesson is open. Open a Course first.',
+      });
+      return;
+    }
+    const lessons = lessonsInOrder(course);
+    const target = lessons[lessons.findIndex((lesson) => lesson.id === current?.id) + offset];
+    if (target !== undefined) {
+      play(course, target);
+    }
   }
 
   return {
@@ -325,6 +347,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       rate = next;
       player.send({ type: 'setRate', rate });
+    },
+    nextLesson() {
+      moveToLesson(1);
+    },
+    previousLesson() {
+      moveToLesson(-1);
     },
     dispose() {
       for (const subscription of subscriptions) {

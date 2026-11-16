@@ -138,6 +138,8 @@ export interface UiSink {
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined>;
   /** Replaces the Lesson tree in the activity bar. */
   showLessonTree(model: LessonTreeModel): void;
+  /** Selects the Lesson in the Lesson tree, and scrolls it into view without taking focus. */
+  selectLesson(lessonId: string): void;
 }
 
 // --- All of them --------------------------------------------------------------------------------

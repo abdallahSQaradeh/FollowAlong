@@ -9,6 +9,38 @@ import type { LessonTreeModel, LessonTreeNode } from '../../core/lesson-tree.js'
 export const lessonTreeViewId = 'followalong.lessons';
 export const playLessonCommand = 'followalong.playLesson';
 
+/** The node with this id, anywhere in the tree. */
+function findNode(nodes: readonly LessonTreeNode[], id: string): LessonTreeNode | undefined {
+  for (const node of nodes) {
+    if (node.id === id) {
+      return node;
+    }
+    const inside = node.kind === 'section' ? findNode(node.children, id) : undefined;
+    if (inside !== undefined) {
+      return inside;
+    }
+  }
+  return undefined;
+}
+
+/** The Section that holds `target`, or undefined for a node at the top. */
+function findParent(
+  nodes: readonly LessonTreeNode[],
+  target: LessonTreeNode,
+  parent?: LessonTreeNode,
+): LessonTreeNode | undefined {
+  for (const node of nodes) {
+    if (node.id === target.id) {
+      return parent;
+    }
+    const inside = node.kind === 'section' ? findParent(node.children, target, node) : undefined;
+    if (inside !== undefined) {
+      return inside;
+    }
+  }
+  return undefined;
+}
+
 export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, vscode.Disposable {
   private model: LessonTreeModel = { nodes: [] };
   private readonly changed = new vscode.EventEmitter<undefined>();
@@ -23,6 +55,18 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
     this.model = model;
     this.view.message = model.message ?? '';
     this.changed.fire(undefined);
+  }
+
+  /** Selects the Lesson and scrolls it into view, without taking focus from the code. */
+  select(lessonId: string): void {
+    const node = findNode(this.model.nodes, lessonId);
+    if (node !== undefined) {
+      void this.view.reveal(node, { select: true, focus: false, expand: true });
+    }
+  }
+
+  getParent(node: LessonTreeNode): LessonTreeNode | undefined {
+    return findParent(this.model.nodes, node);
   }
 
   getChildren(node?: LessonTreeNode): LessonTreeNode[] {

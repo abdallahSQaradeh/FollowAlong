@@ -172,6 +172,8 @@ export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
   /** The Lesson tree the learner sees in the activity bar now. */
   lessonTree: LessonTreeModel | undefined;
+  /** The id of the Lesson the tree shows as selected. */
+  selectedLesson: string | undefined;
   /** Every quick pick the core opened, in order. */
   readonly pickers: QuickPickModel<unknown>[] = [];
   private answer: ((intent: unknown) => void) | undefined;
@@ -216,6 +218,10 @@ export class RecordingUi implements UiSink {
 
   showLessonTree(model: LessonTreeModel): void {
     this.lessonTree = model;
+  }
+
+  selectLesson(lessonId: string): void {
+    this.selectedLesson = lessonId;
   }
 }
 

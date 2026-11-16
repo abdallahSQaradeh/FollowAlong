@@ -49,6 +49,9 @@ export function createUiSink(tree: LessonTreeView): UiSink {
     showLessonTree(model) {
       tree.show(model);
     },
+    selectLesson(lessonId) {
+      tree.select(lessonId);
+    },
   };
 }
 

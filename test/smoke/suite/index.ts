@@ -55,6 +55,8 @@ export async function run(): Promise<void> {
     'followalong.seekForwardLong',
     'followalong.speedUp',
     'followalong.speedDown',
+    'followalong.nextLesson',
+    'followalong.previousLesson',
     'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
@@ -74,6 +76,11 @@ export async function run(): Promise<void> {
 
   speedIsBoundToItsKeys(extension.packageJSON);
   say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
+
+  lessonMovesAreBoundToTheirKeys(extension.packageJSON);
+  say(
+    "FollowAlong: Next Lesson / Previous Lesson are in the Command Palette, bound to Ctrl+' N / P",
+  );
 
   stepsAreBoundToTheirKeys(extension.packageJSON);
   say(
@@ -157,11 +164,27 @@ function stepsAreBoundToTheirKeys(packageJson: unknown): void {
 
 /** The speed commands' Palette entries and chord keys. */
 function speedIsBoundToItsKeys(packageJson: unknown): void {
-  const { contributes } = packageJson as { contributes?: Contributes };
-  for (const [name, title, key] of [
+  chordCommandsAreBound(packageJson, [
     ['speedUp', 'Speed up', "ctrl+' up"],
     ['speedDown', 'Speed down', "ctrl+' down"],
-  ] as const) {
+  ]);
+}
+
+/** The Next / Previous Lesson commands' Palette entries and chord keys. */
+function lessonMovesAreBoundToTheirKeys(packageJson: unknown): void {
+  chordCommandsAreBound(packageJson, [
+    ['nextLesson', 'Next Lesson', "ctrl+' n"],
+    ['previousLesson', 'Previous Lesson', "ctrl+' p"],
+  ]);
+}
+
+/** Each command has its `FollowAlong: <title>` Palette entry and exactly one chord key. */
+function chordCommandsAreBound(
+  packageJson: unknown,
+  expected: readonly (readonly [name: string, title: string, key: string])[],
+): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  for (const [name, title, key] of expected) {
     const id = `followalong.${name}`;
     const command = contributes?.commands?.find((entry) => entry.command === id);
     assert.deepEqual(

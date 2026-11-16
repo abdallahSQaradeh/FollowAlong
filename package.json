@@ -78,6 +78,16 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.nextLesson",
+        "title": "Next Lesson",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.previousLesson",
+        "title": "Previous Lesson",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.goToLesson",
         "title": "Go to Lesson…",
         "category": "FollowAlong"
@@ -142,6 +152,18 @@
         "command": "followalong.speedDown",
         "key": "ctrl+' down",
         "mac": "cmd+' down",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.nextLesson",
+        "key": "ctrl+' n",
+        "mac": "cmd+' n",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.previousLesson",
+        "key": "ctrl+' p",
+        "mac": "cmd+' p",
         "when": "editorTextFocus || terminalFocus"
       },
       {
