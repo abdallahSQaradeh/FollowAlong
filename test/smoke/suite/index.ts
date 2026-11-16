@@ -28,6 +28,12 @@ interface SeenEvent {
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
   lessonTree(): { readonly nodes: readonly TreeNode[] };
+  /** The status bar items VS Code shows, with the command each one runs. */
+  statusBar(): readonly {
+    readonly id: string;
+    readonly text: string;
+    readonly command?: { readonly id: string; readonly argument: unknown };
+  }[];
   selectedLesson(): string | undefined;
 }
 
@@ -68,6 +74,7 @@ export async function run(): Promise<void> {
     'followalong.seekForwardLong',
     'followalong.speedUp',
     'followalong.speedDown',
+    'followalong.statusBarClick',
     'followalong.nextLesson',
     'followalong.previousLesson',
     'followalong.goToLesson',
@@ -112,6 +119,8 @@ export async function run(): Promise<void> {
   say(await theLessonStarts(hooks.playerEvents, 'lesson.webm'));
   say(await playFromTheEditor(hooks.playerEvents));
 
+  say(await theStatusBarRunsTheCommands(hooks));
+
   // A click on a Lesson in the tree runs this command with the Lesson's id.
   await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
   say(await theLessonStarts(hooks.playerEvents, 'long.webm'));
@@ -130,6 +139,40 @@ export async function run(): Promise<void> {
 
   await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
   say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+}
+
+/**
+ * While a Lesson is loaded the status bar has its four items, and each clickable one runs the
+ * click command with the name of a core command. A click is what VS Code runs through the command
+ * service, so the test runs the same command. What the items say at each state, and what each
+ * core command does, is covered at Seam 1.
+ */
+async function theStatusBarRunsTheCommands(hooks: TestHooks): Promise<string> {
+  const click = 'followalong.statusBarClick';
+  const items = hooks.statusBar();
+  assert.deepEqual(
+    items.map(({ id, command }) => ({ id, command })),
+    [
+      { id: 'playPause', command: { id: click, argument: 'playPause' } },
+      { id: 'time', command: undefined },
+      { id: 'speed', command: { id: click, argument: 'speedCycle' } },
+      { id: 'back', command: { id: click, argument: 'seekBackShort' } },
+    ],
+    'the status bar items of a loaded Lesson',
+  );
+  assert.ok(
+    (await vscode.commands.getCommands(true)).includes(click),
+    `${click} is not registered`,
+  );
+
+  // A click runs its command through VS Code. What the click does to the items is covered at
+  // Seam 1; that the click really leaves the keyboard in the code needs a mouse (Manual QA).
+  const code = vscode.window.activeTextEditor?.document;
+  assert.ok(code, 'the code editor is not active');
+  await vscode.commands.executeCommand(click, 'speedCycle');
+  await vscode.commands.executeCommand('followalong.speedDown');
+  assert.equal(vscode.window.activeTextEditor?.document, code, 'a click moved the focus');
+  return 'the status bar shows play/pause, time, speed and back, each wired to the click command';
 }
 
 /** Attaches a text file to a Lesson of a scratch Course, then opens it from the tree. */
@@ -151,6 +194,9 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
     });
     await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+    // Another Course gets a new player panel; letting go of the old one is not a close, so the
+    // status bar items stay (what the panel adapter must not fire `onDidClose` for).
+    assert.equal(hooks.statusBar().length, 4, 'the status bar items went when the Course changed');
 
     // The "+" on the Lesson runs this command with the Lesson's tree node.
     const lesson = hooks.lessonTree().nodes.find((node) => node.id === 'lesson.webm');

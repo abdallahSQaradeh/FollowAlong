@@ -68,6 +68,10 @@ _Avoid_: Skip, jump, scrub
 The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
 _Avoid_: Speed slider, rate list
 
+**Loaded Lesson**:
+The Lesson the player holds: it is set when the learner picks a Lesson or opens a Course, and gone when the learner closes the player. Controls that only make sense with a Lesson, such as the status bar items, show only while one is loaded.
+_Avoid_: Active Lesson, current video
+
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.
 _Avoid_: Context switch, tab switch, window switch
