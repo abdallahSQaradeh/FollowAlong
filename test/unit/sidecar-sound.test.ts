@@ -342,6 +342,73 @@ describe('sound for MP4 Lessons', () => {
     expect(h.player.sent.filter((command) => command.type === 'noSidecar')).toEqual([]);
   });
 
+  it('converts the sound the page says it cannot decode, and plays what it says it can', async () => {
+    const h = await createHarness();
+    h.converter.audioCodec = 'opus';
+    const course = await h.folder('course', { [lessonId]: 'mp4 video with Opus sound' });
+    await h.core.openCourse(course);
+    // A page that decodes MP3 in an MP4, but not Opus.
+    h.player.ready(false, ['mp3']);
+    await h.settle();
+    expect(h.converter.requests).toHaveLength(1);
+    expect(h.player.sent.filter((command) => command.type === 'noSidecar')).toEqual([]);
+
+    // The same Lesson on a page that decodes Opus: it plays its own sound.
+    h.converter.requests[0]?.fail('The operation was aborted');
+    await h.core.close();
+    h.restart();
+    await h.core.openCourse(course);
+    h.player.ready(false, ['opus']);
+    await h.settle();
+    expect(h.converter.requests).toHaveLength(1);
+    expect(h.player.sent.filter((command) => command.type === 'noSidecar')).toHaveLength(1);
+  });
+
+  it('converts every sound when the page reports no decodable codecs, so none plays twice', async () => {
+    const h = await createHarness();
+    h.converter.audioCodec = 'mp3';
+    const course = await h.folder('course', { [lessonId]: 'mp4 video with MP3 sound' });
+    await h.core.openCourse(course);
+    h.player.emit({ type: 'ready', aacSupported: false });
+    await h.settle();
+
+    expect(h.converter.requests).toHaveLength(1);
+  });
+
+  it('fails the sound, without waiting for ffmpeg, when it cannot read the Lesson within 30 seconds', async () => {
+    const h = await createHarness();
+    h.converter.stallProbes = true;
+    await openMp4Lesson(h, false);
+
+    h.clock.advance(29_999);
+    await h.settle();
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([]);
+    expect(h.converter.probes[0]?.signal.aborted).toBe(false);
+
+    h.clock.advance(1);
+    await h.settle();
+
+    expect(h.converter.probes[0]?.signal.aborted).toBe(true);
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([
+      {
+        type: 'soundFailed',
+        message:
+          'ffmpeg did not finish reading “01 Intro.mp4” within 30 seconds. Is its drive or network folder still there?',
+      },
+    ]);
+    expect(h.converter.requests).toEqual([]);
+  });
+
+  it('does not time out a probe that answers in time', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    h.clock.advance(60_000);
+    await h.settle();
+
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([]);
+    expect(h.converter.probes[0]?.signal.aborted).toBe(false);
+  });
+
   it('keeps the sound in its own storage when the Course already has a sound folder it cannot write', async () => {
     const h = await createHarness();
     // Written by FollowAlong before the Course went read-only (a share mounted read-only, say).

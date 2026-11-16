@@ -235,6 +235,8 @@ export function createLoadedLesson(
   let playerReady = false;
   /** Whether the open player page can decode AAC, the sound of MP4 Lessons (its `ready`). */
   let aacSupported = false;
+  /** The other sound codecs the open player page decodes in an MP4 (its `ready`, ADR 0056). */
+  let pageDecodes: ReadonlySet<string> = new Set();
   /** The sound being prepared for the Loaded Lesson, or prepared for it. */
   let sound: SoundPreparation | undefined;
   /** The Rewind the open player page holds; 0 for a page that has just started. */
@@ -337,6 +339,7 @@ export function createLoadedLesson(
         stop,
         prepared: course.prepareSound(lesson, {
           signal: stop.signal,
+          pageDecodes,
           onProgress: (percent) => {
             soundProgressed(started, percent);
           },
@@ -522,6 +525,7 @@ export function createLoadedLesson(
         // A page that kept its zoom reports it right after `ready`.
         newPage(true);
         aacSupported = event.aacSupported;
+        pageDecodes = new Set(event.soundCodecs);
         playerResumeRewind = 0;
         logger.log({
           level: 'debug',

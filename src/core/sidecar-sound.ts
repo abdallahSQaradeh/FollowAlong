@@ -13,19 +13,10 @@ import { basename, extname, join } from 'node:path';
 import { openCourseData, type CourseData } from './course-data.js';
 import { isFullPath } from './courses-roots.js';
 import type { Lesson } from './course-model.js';
-import { FileSystemError, type FileStat, type Ports } from './ports.js';
+import { FileSystemError, type Disposable, type FileStat, type Ports } from './ports.js';
 
 /** The Course data subfolder that holds prepared sound. */
 const soundFolderName = 'sound';
-
-/**
- * The sound codecs the player page decodes in an MP4 itself, by ffmpeg's names: the ones Chromium
- * plays in MP4 without the proprietary codecs, as VS Code ships it (it leaves out AAC). A Lesson
- * with such sound plays its own track: a sidecar would play the sound twice (ADR 0034). Vorbis is
- * not one: Chromium plays it in WebM and Ogg only. Any other codec is converted, so a Lesson never
- * stays silent because of this list.
- */
-const pageDecodable = new Set(['mp3', 'opus', 'flac']);
 
 /** The ffmpeg used when `followalong.ffmpegPath` is not set: the one on PATH. */
 const defaultProgram = 'ffmpeg';
@@ -82,8 +73,61 @@ async function exists(fileSystem: Ports['fileSystem'], path: string): Promise<bo
 
 type SidecarSoundPorts = Pick<
   Ports,
-  'fileSystem' | 'storage' | 'converter' | 'config' | 'ui' | 'logger'
+  'fileSystem' | 'storage' | 'converter' | 'config' | 'ui' | 'logger' | 'clock'
 >;
+
+/**
+ * How long ffmpeg may take to read a Lesson's sound track before the sound is given up. A local
+ * file takes a fraction of a second; a stalled network mount or a disconnected drive never answers,
+ * and the Lesson's controls would stay hidden for ever (ADR 0056).
+ */
+const probeTimeoutMs = 30_000;
+
+/**
+ * The codec of `lesson`'s first sound track, or `undefined` for a silent video. Rejects when
+ * ffmpeg does not answer in time, even if it ignores being stopped, so nothing waits on it.
+ */
+async function probeSound(
+  { clock, converter }: SidecarSoundPorts,
+  lesson: Lesson,
+  program: string,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  const stalled = new AbortController();
+  let timer: Disposable | undefined;
+  let leave: (() => void) | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    // The learner left the Lesson: nothing waits for an ffmpeg that does not stop.
+    leave = () => {
+      reject(signal.reason instanceof Error ? signal.reason : new Error('The sound was stopped.'));
+    };
+    signal.addEventListener('abort', leave, { once: true });
+    timer = clock.schedule(probeTimeoutMs, () => {
+      stalled.abort();
+      reject(
+        new Error(
+          `ffmpeg did not finish reading “${basename(lesson.id)}” within ${String(probeTimeoutMs / 1000)} seconds. Is its drive or network folder still there?`,
+        ),
+      );
+    });
+  });
+  const probe = converter.soundCodec({
+    program,
+    input: lesson.path,
+    signal: AbortSignal.any([signal, stalled.signal]),
+  });
+  // Whichever loses the race must not become an unhandled rejection.
+  probe.catch(() => undefined);
+  timeout.catch(() => undefined);
+  try {
+    return await Promise.race([probe, timeout]);
+  } finally {
+    timer?.dispose();
+    if (leave !== undefined) {
+      signal.removeEventListener('abort', leave);
+    }
+  }
+}
 
 /**
  * What an MP4 Lesson's sound needs:
@@ -104,6 +148,13 @@ export interface SoundRequest {
    * called for a sound that was prepared before, or that needs no sidecar.
    */
   readonly onProgress: (percent: number) => void;
+  /**
+   * The sound codecs, by ffmpeg's names, the player page decodes in an MP4 besides AAC: what it
+   * reported in `ready` (ADR 0056). A Lesson with such sound plays its own track: a sidecar would
+   * play the sound twice (ADR 0034). Any other codec is converted, so a Lesson never stays silent
+   * because of a guess here.
+   */
+  readonly pageDecodes: ReadonlySet<string>;
 }
 
 /** The audio sidecars of one Course, kept in its Course data. */
@@ -135,7 +186,7 @@ async function prepareSound(
   ports: SidecarSoundPorts,
   data: CourseData,
   lesson: Lesson,
-  { signal, onProgress }: SoundRequest,
+  { signal, onProgress, pageDecodes }: SoundRequest,
   warnedPaths: Set<string>,
 ): Promise<PreparedSound> {
   const { fileSystem, converter, logger } = ports;
@@ -149,8 +200,8 @@ async function prepareSound(
   }
   signal.throwIfAborted();
   const program = ffmpegProgram(ports, warnedPaths);
-  const codec = await converter.soundCodec({ program, input: lesson.path, signal });
-  if (codec === undefined || pageDecodable.has(codec)) {
+  const codec = await probeSound(ports, lesson, program, signal);
+  if (codec === undefined || pageDecodes.has(codec)) {
     const why = codec === undefined ? 'silent' : 'ownSound';
     logger.log({
       level: 'info',
