@@ -20,8 +20,8 @@ import { createConfig, createOutputLogger, createStorage, createUiSink } from '.
 
 export const commands = {
   /**
-   * `Ctrl+'` `C`: the Course picker. Run with a folder's URI (the smoke test), it opens that folder
-   * as the Course.
+   * `Ctrl+'` `C`: the Course picker. Run with a folder's URI as its argument, it opens that folder
+   * as the Course without the picker.
    */
   openCourse: 'followalong.openCourse',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */

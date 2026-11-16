@@ -2,7 +2,7 @@
  * The FollowAlong core: the headless part of the extension, reached only through its ports
  * (ADR 0002). It decides which Lesson plays and drives the player through the message protocol.
  */
-import { basename, isAbsolute, relative, sep } from 'node:path';
+import { basename } from 'node:path';
 
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
@@ -10,6 +10,7 @@ import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
 import { buildCoursePicker } from './course-picker.js';
 import { scanCourses } from './course-scanner.js';
+import { addCoursesRoot, playerFolders, readCoursesRoots } from './courses-roots.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
 import {
@@ -93,8 +94,6 @@ function cycledRate(rate: number): number {
 /** The settings' defaults, in seconds (spec #12, Settings). */
 const defaultStepSeconds = { short: 5, long: 30 } as const;
 const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
-/** The learner's Courses roots: a user-level list of folders, empty by default (spec #12). */
-const coursesRootsSetting = 'coursesRoots';
 
 /** What the player reported about the current Lesson since its last `load`. */
 interface Playback {
@@ -141,13 +140,6 @@ function afterPause(
 
 function pressPlayText(lesson: Lesson): string {
   return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
-}
-
-/** Whether `path` is `folder` or inside it. */
-function isInside(path: string, folder: string): boolean {
-  const fromFolder = relative(folder, path);
-  const above = fromFolder === '..' || fromFolder.startsWith(`..${sep}`);
-  return !above && !isAbsolute(fromFolder);
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
@@ -364,7 +356,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     ui.selectLesson(lesson.id);
     const shown = player.show({
       title: lesson.title,
-      resourceRoots: playerRoots(course.folder),
+      resourceRoots: playerFolders(readCoursesRoots(config), course.folder, storage.folder),
     });
     if (shown === 'created') {
       // A new page is not ready and plays at normal speed.
@@ -543,29 +535,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     play(course, first);
   }
 
-  /**
-   * The folders the player may read media from: the Courses roots, the Course folder when it is
-   * outside them, and the extension storage. A change reloads the player page, which loses the
-   * click that lets it start playback (#12 D3), so Courses under the same roots share them
-   * (ADR 0022).
-   */
-  function playerRoots(courseFolder: string): string[] {
-    const roots = coursesRoots();
-    const underARoot = roots.some((root) => isInside(courseFolder, root));
-    return [...roots, ...(underARoot ? [] : [courseFolder]), storage.folder];
-  }
-
-  /** The Courses roots the learner named in `followalong.coursesRoots`, as written there. */
-  function coursesRoots(): string[] {
-    const value = config.get(coursesRootsSetting);
-    return Array.isArray(value)
-      ? value.filter((root): root is string => typeof root === 'string' && root !== '')
-      : [];
-  }
-
   /** The Course picker. */
   async function pickCourse(): Promise<void> {
-    const roots = coursesRoots();
+    const roots = readCoursesRoots(config);
     const scan = await scanCourses(ports, roots);
     for (const root of scan.unreadableRoots) {
       ui.showMessage({
@@ -582,7 +554,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       case 'addCoursesRoot':
         // The learner added a root to pick a Course from it: show the list again, with its Courses.
-        if (await addCoursesRoot()) {
+        if (await chooseCoursesRoot()) {
           await pickCourse();
         }
         break;
@@ -595,14 +567,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
    * Asks for a folder and adds it to the Courses roots, after the ones already there. Resolves
    * with whether the learner chose one (it may already have been a root).
    */
-  async function addCoursesRoot(): Promise<boolean> {
+  async function chooseCoursesRoot(): Promise<boolean> {
     const root = await ui.chooseFolder({ title: 'Add Courses root', openLabel: 'Add' });
     if (root === undefined) {
       return false;
     }
-    const roots = coursesRoots();
-    if (!roots.includes(root)) {
-      await config.update(coursesRootsSetting, [...roots, root]);
+    if (await addCoursesRoot(config, root)) {
       logger.log({ level: 'info', message: `Added the Courses root ${root}` });
     }
     return true;

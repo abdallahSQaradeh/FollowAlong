@@ -203,9 +203,6 @@ async function aPickedCourseKeepsThePlayer(
         ? 'MEASURED: after the player page reloaded for other folders, the Lesson autoplayed (the earlier click still counts)'
         : 'MEASURED: after the player page reloaded for other folders, autoplay was refused (paused {byUser: false}): a reload loses the click',
     );
-    if (reloaded !== 'played') {
-      await aClickOnThePicture(hooks.playerEvents, code, lessons.warmUp);
-    }
     const playerTabs = (): vscode.Tab[] =>
       vscode.window.tabGroups.all.flatMap((group) =>
         group.tabs.filter(
@@ -214,6 +211,14 @@ async function aPickedCourseKeepsThePlayer(
             tab.input.viewType.endsWith('followalong.player'),
         ),
       );
+    // The reload happened in the panel that was open, and was not a close (Player.onDidClose
+    // would have unloaded the Lesson and its status bar items).
+    assert.equal(playerTabs().length, 1, 'other folders opened a second player tab');
+    assert.equal(hooks.statusBar().length, 4, 'the status bar items went when the page reloaded');
+    say('other folders reload the page in the player panel that was open, without a close');
+    if (reloaded !== 'played') {
+      await aClickOnThePicture(hooks.playerEvents, code, lessons.warmUp);
+    }
     const [playerBefore] = playerTabs();
     assert.ok(playerBefore, 'no player is open before the Course picker');
 

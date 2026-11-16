@@ -10,9 +10,12 @@ the setting, the scanner and the picker model. These are the choices spec #12 le
 - An array of absolute folder paths, empty by default. Its `scope` is **`machine`**: it can only be
   set in user settings (the spec's "user-level") and Settings Sync does not carry it to another
   machine, where the same paths rarely exist (`D:\Learning` on one PC is not on the next).
-- The core reads it through the Config port when the picker opens, keeps only non-empty strings,
-  and writes it through a new `Config.update(name, value)`, which the VS Code adapter sends to the
-  user settings (`ConfigurationTarget.Global`).
+- `src/core/courses-roots.ts` reads it through the Config port when the picker opens, keeps only
+  non-empty strings, and writes it through a new `Config.update(name, value)`, which the VS Code
+  adapter sends to the user settings (`ConfigurationTarget.Global`). A root already in the list is
+  not added again. The folder dialog's answer gets an upper-case Windows drive letter (VS Code's
+  `fsPath` spells it `d:`), the way Windows and a learner write it, so the same root is not added
+  twice under two spellings.
 - Paths are used as written, never normalised: a Course's path is its root's spelling joined with
   folder names, so the same Course always has the same spelling, as ADR 0005 needs for the
   fallback-storage key.
