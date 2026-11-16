@@ -76,17 +76,48 @@ interface Lesson {
   failed: boolean;
   /** Whether `played` was posted since the last pause, so a recovered stall is not a new play. */
   playing: boolean;
-  /** Where the `load`'s `startAt` seek goes, until a seek lands; `undefined` once none is pending. */
-  startTarget: number | undefined;
-  /** Whether the seek under way is the one that applies `startTarget`. */
-  seekingToStart: boolean;
+  /** The last `currentTime` the player wrote itself, until a seek lands. */
+  lastWrite: { readonly time: number; readonly origin: SeekOrigin } | undefined;
+  /**
+   * Whether the seek under way began with the seek that applies the `load`'s `startAt` and since
+   * then only the player's own writes touched it: a seek bar seek or a step makes it false.
+   */
+  startChain: boolean;
 }
 
+/** Why the player writes `currentTime`: the start position, a step, or moving a seek onto media. */
+type SeekOrigin = 'start' | 'step' | 'adjust';
+
+/** How far a seek's target may be from what the player wrote and still be that write. */
+const ownWriteEpsilonSeconds = 0.001;
+
 /**
- * How far a seek's target may be from `startAt` and still be the seek that applies it: the WebM
- * stream moves a seek onto buffered media less than 0.1 s away (ADR 0006).
+ * Every `currentTime` the player writes goes through here, so `seeking` can tell its own seeks from
+ * the learner's (the seek bar writes `currentTime` natively): the media element reports the target
+ * of a seek in `currentTime` while it is under way.
  */
-const startSeekToleranceSeconds = 0.5;
+function writeTime(
+  lesson: Lesson | undefined,
+  media: HTMLVideoElement,
+  time: number,
+  origin: SeekOrigin,
+): void {
+  if (lesson !== undefined) {
+    lesson.lastWrite = { time, origin };
+  }
+  media.currentTime = time;
+}
+
+/** Whether the seek that just began is the one the player wrote last (a browser clamps to the end). */
+function isOwnSeek(lesson: Lesson, media: HTMLVideoElement): boolean {
+  const written = lesson.lastWrite?.time;
+  if (written === undefined) {
+    return false;
+  }
+  const target = media.currentTime;
+  const clamped = Number.isFinite(media.duration) && written > media.duration;
+  return Math.abs(target - (clamped ? media.duration : written)) <= ownWriteEpsilonSeconds;
+}
 
 /** The Lesson in the media element. */
 let current: Lesson | undefined;
@@ -128,16 +159,23 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
     stop: new AbortController(),
     failed: false,
     playing: false,
-    startTarget: command.startAt > 0 ? command.startAt : undefined,
-    seekingToStart: false,
+    lastWrite: undefined,
+    startChain: false,
   };
   current = lesson;
   const { signal } = lesson.stop;
   if (command.container === 'webm') {
     // `<video src>` cannot play WebM in VS Code, so it is streamed through MediaSource.
-    const source = new WebmSource(media, command.videoUri, (message) => {
-      fail(lesson, message, media);
-    });
+    const source = new WebmSource(
+      media,
+      command.videoUri,
+      (message) => {
+        fail(lesson, message, media);
+      },
+      (time) => {
+        writeTime(lesson, media, time, 'adjust');
+      },
+    );
     signal.addEventListener('abort', () => {
       source.dispose();
     });
@@ -150,7 +188,7 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
     media.addEventListener(
       'loadedmetadata',
       () => {
-        media.currentTime = command.startAt;
+        writeTime(lesson, media, command.startAt, 'start');
       },
       { once: true, signal },
     );
@@ -188,7 +226,7 @@ function play(media: HTMLVideoElement): void {
  */
 function seekBy(seconds: number, media: HTMLVideoElement): void {
   const end = Number.isFinite(media.duration) ? media.duration : Number.POSITIVE_INFINITY;
-  media.currentTime = Math.min(Math.max(media.currentTime + seconds, 0), end);
+  writeTime(current, media, Math.min(Math.max(media.currentTime + seconds, 0), end), 'step');
 }
 
 /**
@@ -296,19 +334,24 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   // Not through `on`: a Lesson that failed must lose the overlay too.
   media.addEventListener('playing', hideNext);
   media.addEventListener('seeking', hideNext);
-  // `currentTime` is the target of a seek while it is under way, wherever it lands. A seek to the
-  // start position is FollowAlong's own; any other, such as the learner's on the seek bar while the
-  // start seek is still pending (the browser drops that one for theirs), is not. The last wins.
+  // The seek whose target the player wrote for the start position is FollowAlong's own; a seek it
+  // did not write, such as the learner's on the seek bar while the start seek is still pending (the
+  // browser drops that one for theirs), is not. A step is the learner's. Moving a seek onto media
+  // (`adjust`) leaves the seek what it was.
   on('seeking', (lesson) => {
-    lesson.seekingToStart =
-      lesson.startTarget !== undefined &&
-      Math.abs(media.currentTime - lesson.startTarget) <= startSeekToleranceSeconds;
+    if (!isOwnSeek(lesson, media)) {
+      lesson.startChain = false;
+    } else if (lesson.lastWrite?.origin === 'start') {
+      lesson.startChain = true;
+    } else if (lesson.lastWrite?.origin === 'step') {
+      lesson.startChain = false;
+    }
   });
   on('seeked', (lesson) => {
-    post({ type: 'seeked', ...lesson.about, startSeek: lesson.seekingToStart });
-    // A seek has landed: the start seek is over, or was dropped for another.
-    lesson.startTarget = undefined;
-    lesson.seekingToStart = false;
+    post({ type: 'seeked', ...lesson.about, startSeek: lesson.startChain });
+    // A seek has landed: whatever began it is over.
+    lesson.startChain = false;
+    lesson.lastWrite = undefined;
   });
   // Every change is reported, whoever made it, so the extension never drifts. The video's own
   // speed menu is hidden (`noplaybackrate`, ADR 0009), so today only `setRate` changes it.

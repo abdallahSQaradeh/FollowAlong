@@ -54,13 +54,16 @@ WebM), Chromium dropped the start seek and fired one `seeked` at the learner's p
 swallowed it: nothing recorded, and a seek into the last 5 % did not mark the Lesson done (review of
 #25).
 
-The player now tells them apart. `seeked` carries `startSeek` (ADR 0003):
+The player now tells them apart by **origin**. `seeked` carries `startSeek` (ADR 0003):
 
-- During a seek, `currentTime` is its target. The seek whose target is within 0.5 s of `startAt` is
-  the start seek (the WebM stream moves a seek less than 0.1 s, ADR 0006); any other `seeking`,
-  the learner's included, is not. The last `seeking` before a `seeked` decides, so a learner's seek
-  that replaces the start seek is theirs, and a start seek that lands off its target is still the
-  start seek.
+- Every `currentTime` the player writes goes through one helper that records the value and why:
+  the start position (`start`), a step from `seekBy` (`step`), or `webm-source` moving a seek onto
+  media less than 0.1 s away after a re-stream (`adjust`, ADR 0006).
+- While a seek is under way, `currentTime` is its target. A `seeking` whose target is the value the
+  player wrote last is the player's; any other (the seek bar writes `currentTime` natively) is not.
+- `startSeek` is true when the seek began with the `start` write and nothing else touched it: a
+  seek bar seek, or a step, makes it false; an `adjust` leaves it as it was. The seek's landing
+  place never matters, so a start seek that lands off its target is still the start seek.
 - The core believes the flag: `startSeek: false` is recorded and saved like any seek, `true` is
   swallowed, wherever the playhead landed.
 - A `seeked` without the flag keeps the rule of ADR 0010 and gate review H1: the first `seeked`
@@ -68,8 +71,17 @@ The player now tells them apart. `seeked` carries `startSeek` (ADR 0003):
   omits the flag now; it is the safe reading for a player that does.
 
 This keeps #25's guard against saving a mis-landed start seek (its test is unchanged) and records the
-learner's seek. Source: the orchestrator, who asked for player-side tagging over a position
-tolerance in the core.
+learner's seek. Source: the orchestrator, who asked for player-side tagging by origin over a position
+tolerance in the core (a first version compared the target with `startAt` instead; origin does not
+depend on how close the learner's seek is to it).
+
+**Limit of the tests.** Seam 2 shows the start seek reported `startSeek: true` for WebM starts
+without a Duration (the cases of ADR 0006: a stream held before the target, a full buffer, metadata
+before any media) and a start position in the few ms before the first media, and `false` for a
+native seek made inside the start seek's own `seeking`, for `seekBy`, and for native seeks after a
+re-stream. The `adjust` write itself (a seek target in the gap before re-streamed media) could not
+be reproduced on demand; the code is a one-line pass-through of the same helper, and Manual QA
+covers a large WebM on Windows.
 
 ## Considered options
 
