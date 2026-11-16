@@ -129,4 +129,53 @@ describe('the Course picker', () => {
     expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
     expect(h.ui.messages).toEqual([]);
   });
+
+  it('opens the Course the learner picks, in place of the open one, without asking', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'First Course/a.webm': 'v',
+      'Second Course/b.webm': 'v',
+      'Second Course/Section 1/c.webm': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    await h.core.openCourse(join(learning, 'First Course'));
+    h.player.ready();
+    h.player.clearSent();
+
+    const picking = h.core.pickCourse();
+    await settle();
+    h.ui.choose('Second Course');
+    await picking;
+    h.player.ready();
+
+    const second = join(learning, 'Second Course');
+    expect(h.player.shown.at(-1)).toEqual({
+      title: 'b',
+      resourceRoots: [second, h.storage.folder],
+    });
+    expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: 'b.webm' }]);
+    expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['b', 'Section 1']);
+    // No confirmation: nothing else was asked or said.
+    expect(h.ui.pickers).toHaveLength(1);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('changes nothing in the Courses roots when it lists and opens a Course', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'First Course/a.webm': 'v',
+      'Second Course/b.webm': 'v',
+      'code.zip': 'zip',
+    });
+    const before = await h.listFiles(learning);
+    h.config.set('coursesRoots', [learning]);
+
+    const picking = h.core.pickCourse();
+    await settle();
+    h.ui.choose('Second Course');
+    await picking;
+    h.player.ready();
+
+    expect(await h.listFiles(learning)).toEqual(before);
+  });
 });

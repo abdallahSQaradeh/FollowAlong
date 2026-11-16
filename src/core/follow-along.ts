@@ -469,6 +469,46 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /** Opens a Course folder in place of the open Course. */
+  async function openCourse(folder: string): Promise<void> {
+    let course: Course;
+    try {
+      course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
+    } catch (error) {
+      if (FileSystemError.is(error, 'notFound')) {
+        ui.showMessage({
+          severity: 'error',
+          text: `FollowAlong cannot open “${basename(folder)}”: the folder is missing.`,
+        });
+        return;
+      }
+      throw error;
+    }
+    // Read first, then switch, so no click sees one Course's Resources next to another's folder.
+    const data = openCourseData(folder, ports);
+    const stored = await readResources(data, folder);
+    openedCourse = course;
+    courseData = data;
+    resources = stored;
+    const first = lessonsInOrder(course)[0];
+    if (first === undefined) {
+      const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
+      ui.showLessonTree({ message: text, nodes: [] });
+      ui.showMessage({ severity: 'warning', text });
+      // The player still shows the Lesson it had, but this Course has none to offer: the
+      // commands and the status bar items follow the Course the learner opened.
+      // The video would play on with every control gone, so it is stopped first.
+      if (current !== undefined && playerReady) {
+        player.send({ type: 'pause' });
+      }
+      unloadLesson();
+      return;
+    }
+    ui.showLessonTree(buildLessonTree(course, resources));
+    logger.log({ level: 'info', message: `Opened Course ${folder}` });
+    play(course, first);
+  }
+
   /** The Courses roots the learner named in `followalong.coursesRoots`, as written there. */
   function coursesRoots(): string[] {
     const value = config.get(coursesRootsSetting);
@@ -490,8 +530,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     const intent = await ui.pick(
       buildCoursePicker({ hasRoots: roots.length > 0, courses: scan.courses }),
     );
-    if (intent?.type === 'addCoursesRoot') {
-      await addCoursesRoot();
+    switch (intent?.type) {
+      case 'openCourse':
+        await openCourse(intent.folder);
+        break;
+      case 'addCoursesRoot':
+        await addCoursesRoot();
+        break;
+      case undefined:
+        break;
     }
   }
 
@@ -508,44 +555,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   return {
-    async openCourse(folder) {
-      let course: Course;
-      try {
-        course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
-      } catch (error) {
-        if (FileSystemError.is(error, 'notFound')) {
-          ui.showMessage({
-            severity: 'error',
-            text: `FollowAlong cannot open “${basename(folder)}”: the folder is missing.`,
-          });
-          return;
-        }
-        throw error;
-      }
-      // Read first, then switch, so no click sees one Course's Resources next to another's folder.
-      const data = openCourseData(folder, ports);
-      const stored = await readResources(data, folder);
-      openedCourse = course;
-      courseData = data;
-      resources = stored;
-      const first = lessonsInOrder(course)[0];
-      if (first === undefined) {
-        const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
-        ui.showLessonTree({ message: text, nodes: [] });
-        ui.showMessage({ severity: 'warning', text });
-        // The player still shows the Lesson it had, but this Course has none to offer: the
-        // commands and the status bar items follow the Course the learner opened.
-        // The video would play on with every control gone, so it is stopped first.
-        if (current !== undefined && playerReady) {
-          player.send({ type: 'pause' });
-        }
-        unloadLesson();
-        return;
-      }
-      ui.showLessonTree(buildLessonTree(course, resources));
-      logger.log({ level: 'info', message: `Opened Course ${folder}` });
-      play(course, first);
-    },
+    openCourse,
     playLesson,
     pickCourse,
     async goToLesson() {
