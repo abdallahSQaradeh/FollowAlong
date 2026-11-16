@@ -82,6 +82,12 @@ it with what this window recorded.
   `close()` and opening another Course wait for every save before them. `close()` also waits for
   an open under way, so the window can close at any step of opening a Course without losing the
   Lesson it left.
+- **A progress file FollowAlong cannot read is never written over** (spec #12, D5). When a copy
+  exists but is ignored (damaged, or from a newer FollowAlong), `openCourseData().load` names it
+  in `unreadable`, and every save for that open Course is skipped. The first skip logs the path and
+  tells the learner once: "FollowAlong can't update this Course's progress file: it is damaged or
+  from a newer FollowAlong. Nothing was changed." The Course then resumes nothing (the file gave
+  no Progress) and its Progress lives only for the session. Source: orchestrator, D5.
 - **A failed save** is logged and shown to the learner once per open Course. A Course moved away
   while open fails with `notFound` ("the Course folder is missing"): `.followalong` is now made
   without its parents (`makeDirectory(path, { parents: false })`), so a save never makes an empty

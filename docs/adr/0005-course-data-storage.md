@@ -43,5 +43,8 @@ readable.
   In a later session, reads prefer them over the newer fallback files until a write falls back
   again, unless the file defines a `merge`: then both copies are read and merged. Progress does
   (ADR 0010).
+- `load` returns the value together with the copies that exist but were ignored (`unreadable`), so
+  a writer can refuse to replace a file it cannot read (spec #12, D5; ADR 0010). `read` is `load`'s
+  value.
 - `.followalong` is created without its parents (ADR 0010), so a write never makes a Course folder
   that moved away while open; it fails with `notFound` instead.

@@ -131,12 +131,18 @@ export async function openProgress(
 ): Promise<ProgressRecorder> {
   const { clock, ui, logger } = ports;
   const data = openCourseData(course, ports);
-  let progress: CourseProgress = (await data.read(progressFile)) ?? { lessons: {} };
+  const loaded = await data.load(progressFile);
+  let progress: CourseProgress = loaded.value ?? { lessons: {} };
+  /**
+   * A copy FollowAlong cannot read (damaged, or from a newer FollowAlong) is never written over
+   * (spec #12, D5): this Course's Progress is then kept only for this session.
+   */
+  const unreadable = loaded.unreadable;
   /** Whether something was recorded since the last write. */
   let unsaved = false;
   /** Saves run one after another, so an older one never lands after a newer one. */
   let saving: Promise<void> = Promise.resolve();
-  /** The learner is told about a failing save once per open Course, not every 5 s. */
+  /** The learner is told about a failing or refused save once per open Course, not every 5 s. */
   let failureShown = false;
 
   async function write(): Promise<void> {
@@ -144,6 +150,20 @@ export async function openProgress(
       return;
     }
     unsaved = false;
+    if (unreadable.length > 0) {
+      if (!failureShown) {
+        failureShown = true;
+        logger.log({
+          level: 'warn',
+          message: `Not saving Progress: ${unreadable.join(', ')} cannot be read.`,
+        });
+        ui.showMessage({
+          severity: 'warning',
+          text: "FollowAlong can't update this Course's progress file: it is damaged or from a newer FollowAlong. Nothing was changed.",
+        });
+      }
+      return;
+    }
     try {
       await data.write(progressFile, progress);
     } catch (error) {

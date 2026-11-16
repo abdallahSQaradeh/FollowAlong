@@ -430,3 +430,44 @@ describe('Progress kept with the Course', () => {
     expect(h.ui.messages).toEqual([]);
   });
 });
+
+describe('a progress file FollowAlong cannot read', () => {
+  const cannotUpdate =
+    "FollowAlong can't update this Course's progress file: it is damaged or from a newer FollowAlong. Nothing was changed.";
+
+  for (const [what, content] of [
+    ['damaged', '{"version": 1, "data": '],
+    [
+      'from a newer FollowAlong',
+      JSON.stringify({ version: 99, data: { lessons: {}, chapters: [] } }),
+    ],
+  ] as const) {
+    it(`is never overwritten when it is ${what}, and the learner is told once`, async () => {
+      const h = await createHarness();
+      const course = await h.folder('course', {
+        ...lessons,
+        '.followalong/progress.json': content,
+      });
+      await h.core.openCourse(course);
+      h.player.ready();
+      playTo(h, '01 Intro.webm', 40);
+      pause(h, '01 Intro.webm');
+      playTo(h, '01 Intro.webm', 41);
+      h.clock.advance(5000);
+      pause(h, '01 Intro.webm');
+      await h.core.close();
+
+      expect(await readFile(join(course, '.followalong', 'progress.json'), 'utf8')).toBe(content);
+      expect(await h.listFiles(h.storage.folder).catch(() => [])).toEqual([]);
+      expect(h.ui.messages).toEqual([{ severity: 'warning', text: cannotUpdate }]);
+      expect(
+        h.logger.entries.filter((entry) => entry.message.includes('Not saving Progress')),
+      ).toEqual([
+        {
+          level: 'warn',
+          message: `Not saving Progress: ${join(course, '.followalong', 'progress.json')} cannot be read.`,
+        },
+      ]);
+    });
+  }
+});

@@ -31,8 +31,20 @@ export interface CourseDataFile<T> {
   merge?(inCourse: T, inFallback: T): T;
 }
 
+/** What `load` found for a file. */
+export interface LoadedCourseData<T> {
+  readonly value: T | undefined;
+  /**
+   * The copies that exist but were ignored (damaged, or from a newer FollowAlong). A writer must
+   * never replace one (spec #12, D5): a newer FollowAlong may still read it.
+   */
+  readonly unreadable: readonly string[];
+}
+
 export interface CourseData {
   read<T>(file: CourseDataFile<T>): Promise<T | undefined>;
+  /** Like `read`, and also says which copies exist but could not be read. */
+  load<T>(file: CourseDataFile<T>): Promise<LoadedCourseData<T>>;
   write<T>(file: CourseDataFile<T>, value: T): Promise<void>;
 }
 
@@ -57,7 +69,12 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
   /** Folders already created (and hidden) by this store, so later writes skip that step. */
   const prepared = new Set<string>();
 
-  async function readFrom(location: string, file: CourseDataFile<unknown>): Promise<unknown> {
+  /** The file's value in `location`; a file that exists but is ignored adds its path to `unreadable`. */
+  async function readFrom<T>(
+    location: string,
+    file: CourseDataFile<T>,
+    unreadable: string[],
+  ): Promise<T | undefined> {
     const path = join(location, file.name);
     let text: string;
     try {
@@ -69,6 +86,7 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
       throw error;
     }
     const ignore = (why: string): void => {
+      unreadable.push(path);
       logger.log({ level: 'warn', message: `Ignoring ${path}: ${why}` });
     };
     let stored: unknown;
@@ -121,25 +139,28 @@ export function openCourseData(course: string, ports: CourseDataPorts): CourseDa
     });
   }
 
+  async function load<T>(file: CourseDataFile<T>): Promise<LoadedCourseData<T>> {
+    const unreadable: string[] = [];
+    const inCourseCopy = await readFrom(inCourse, file, unreadable);
+    const fallbackCopy = await readFrom(fallback, file, unreadable);
+    let value: T | undefined;
+    if (inCourseCopy === undefined || fallbackCopy === undefined) {
+      value = inCourseCopy ?? fallbackCopy;
+    } else if (file.merge !== undefined) {
+      value = file.merge(inCourseCopy, fallbackCopy);
+    } else {
+      // After a fall back, the fallback copy is the newer one; .followalong may still hold the rest.
+      value = target === fallback ? fallbackCopy : inCourseCopy;
+    }
+    return { value, unreadable };
+  }
+
   return {
     async read<T>(file: CourseDataFile<T>): Promise<T | undefined> {
-      if (file.merge !== undefined) {
-        const inCourseCopy = (await readFrom(inCourse, file)) as T | undefined;
-        const fallbackCopy = (await readFrom(fallback, file)) as T | undefined;
-        return inCourseCopy === undefined || fallbackCopy === undefined
-          ? (inCourseCopy ?? fallbackCopy)
-          : file.merge(inCourseCopy, fallbackCopy);
-      }
-      // After a fall back, the fallback copy is the newer one; .followalong may still hold the rest.
-      const locations = target === fallback ? [fallback, inCourse] : [inCourse, fallback];
-      for (const location of locations) {
-        const value = await readFrom(location, file);
-        if (value !== undefined) {
-          return value as T;
-        }
-      }
-      return undefined;
+      return (await load(file)).value;
     },
+
+    load,
 
     async write<T>(file: CourseDataFile<T>, value: T): Promise<void> {
       const content = `${JSON.stringify({ version: file.version, data: value }, null, 2)}\n`;
