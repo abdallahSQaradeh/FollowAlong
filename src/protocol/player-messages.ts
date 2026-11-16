@@ -49,7 +49,12 @@ export type PlayerCommand =
    * The player plays it in a hidden `<audio>` that follows the muted video. Sent after the `load`
    * it belongs to, and only while that `load` is the current one.
    */
-  | { readonly type: 'soundReady'; readonly audioUri: string };
+  | { readonly type: 'soundReady'; readonly audioUri: string }
+  /**
+   * The loaded MP4 Lesson's sound could not be prepared: the player stops waiting for it and plays
+   * the video muted (ADR 0034). Ticket #42 puts an overlay and a "Play without sound" button here.
+   */
+  | { readonly type: 'soundFailed'; readonly message: string };
 
 /**
  * What every event about a Lesson carries, so late events are recognisable: the Lesson's id, and
@@ -152,6 +157,8 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       return isText(raw.title) ? { type: 'showNext', title: raw.title } : undefined;
     case 'soundReady':
       return isText(raw.audioUri) ? { type: 'soundReady', audioUri: raw.audioUri } : undefined;
+    case 'soundFailed':
+      return isText(raw.message) ? { type: 'soundFailed', message: raw.message } : undefined;
     default:
       return undefined;
   }

@@ -107,6 +107,8 @@ interface SoundPreparation {
   readonly lesson: Lesson;
   readonly stop: AbortController;
   readonly path: Promise<string>;
+  /** Set once the learner was told it failed: a page that reloads is told again, they are not. */
+  toldFailure: boolean;
 }
 
 /** The fixed speed ladder (spec #12, story 41), slowest first. */
@@ -280,7 +282,7 @@ export function createLoadedLesson(
     if (sound?.lesson !== lesson) {
       stopSound();
       const stop = new AbortController();
-      sound = { lesson, stop, path: course.prepareSound(lesson, stop.signal) };
+      sound = { lesson, stop, path: course.prepareSound(lesson, stop.signal), toldFailure: false };
     }
     const preparation = sound;
     preparation.path.then(
@@ -290,13 +292,27 @@ export function createLoadedLesson(
         }
       },
       (error: unknown) => {
-        if (preparation.stop.signal.aborted) {
+        // A Lesson left, or a page reloaded since: the current load reports it, or nobody needs to.
+        if (
+          preparation.stop.signal.aborted ||
+          currentLoad !== loadId ||
+          current?.lesson !== lesson
+        ) {
           return;
         }
-        logger.log({
-          level: 'error',
-          message: `Could not prepare the sound of ${lesson.id}: ${error instanceof Error ? error.message : String(error)}`,
-        });
+        const reason = error instanceof Error ? error.message : String(error);
+        if (!preparation.toldFailure) {
+          preparation.toldFailure = true;
+          logger.log({
+            level: 'error',
+            message: `Could not prepare the sound of ${lesson.id}: ${reason}`,
+          });
+          ui.showMessage({
+            severity: 'error',
+            text: `FollowAlong could not prepare the sound of “${lesson.title}”: ${reason}`,
+          });
+        }
+        player.send({ type: 'soundFailed', message: reason });
       },
     );
   }
@@ -517,7 +533,6 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
-    stopSound();
     resetPlayhead(false);
     refreshStatusBar();
   }

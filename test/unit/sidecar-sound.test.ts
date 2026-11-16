@@ -145,4 +145,122 @@ describe('sound for MP4 Lessons', () => {
     expect(file).toMatch(/^01 Intro-[0-9a-f]{16}\.mp3$/);
     expect(h.player.shown.at(-1)?.resourceRoots.some((root) => course.startsWith(root))).toBe(true);
   });
+
+  it('says once why the sound could not be prepared, and lets the player play the Lesson without it', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    h.converter.requests[0]?.fail('spawn ffmpeg ENOENT');
+    await h.settle();
+
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'error',
+        text: 'FollowAlong could not prepare the sound of “Intro”: spawn ffmpeg ENOENT',
+      },
+    ]);
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toEqual([
+      { type: 'soundFailed', message: 'spawn ffmpeg ENOENT' },
+    ]);
+    expect(soundCommands(h)).toEqual([]);
+  });
+
+  it('stops preparing the sound of a Lesson the learner left, and sends none for it', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      '01 Intro.mp4': 'first mp4',
+      '02 Setup.mp4': 'second mp4',
+    });
+    await h.core.openCourse(course);
+    h.player.ready(false);
+    await h.settle();
+    const left = h.converter.requests[0];
+
+    h.core.nextLesson();
+    await h.settle();
+
+    expect(left?.request.signal.aborted).toBe(true);
+    expect(h.converter.requests).toHaveLength(2);
+    expect(h.converter.requests[1]?.request.input).toBe(join(course, '02 Setup.mp4'));
+    left?.fail('The operation was aborted');
+    await h.converter.requests[1]?.succeed();
+    await h.settle();
+
+    expect(soundCommands(h)).toEqual([
+      {
+        type: 'soundReady',
+        audioUri: h.player.resourceUri(h.converter.requests[1]?.request.output ?? ''),
+      },
+    ]);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('keeps preparing the sound when the player page reloads, and sends it to the new page', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+
+    h.player.ready(false);
+    await h.settle();
+    expect(h.converter.requests).toHaveLength(1);
+    expect(h.converter.requests[0]?.request.signal.aborted).toBe(false);
+    await h.converter.requests[0]?.succeed();
+    await h.settle();
+
+    const loads = h.player.sent.filter((command) => command.type === 'load');
+    expect(loads).toHaveLength(2);
+    expect(h.player.sent.at(-1)).toEqual({
+      type: 'soundReady',
+      audioUri: h.player.resourceUri(h.converter.requests[0]?.request.output ?? ''),
+    });
+    expect(soundCommands(h)).toHaveLength(1);
+  });
+
+  it('loads the Lesson to play by itself, and sends its sound after the load', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    await h.converter.requests[0]?.succeed();
+    await h.settle();
+
+    const sent = h.player.sent.filter(
+      (command) => command.type === 'load' || command.type === 'soundReady',
+    );
+    expect(sent.map((command) => command.type)).toEqual(['load', 'soundReady']);
+    expect(sent[0]).toMatchObject({ type: 'load', autoplay: true, container: 'mp4' });
+  });
+
+  it('tells a reloaded player page the sound failed, without saying it to the learner again', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    h.converter.requests[0]?.fail('ffmpeg exited with code 1');
+    await h.settle();
+
+    h.player.ready(false);
+    await h.settle();
+
+    expect(h.ui.messages).toHaveLength(1);
+    expect(h.player.sent.filter((command) => command.type === 'soundFailed')).toHaveLength(2);
+    expect(h.player.sent.at(-1)).toEqual({
+      type: 'soundFailed',
+      message: 'ffmpeg exited with code 1',
+    });
+    expect(h.converter.requests).toHaveLength(1);
+  });
+
+  it('stops preparing the sound when the learner opens a Course with no Lessons', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+    const empty = await h.folder('empty', { 'notes.txt': 'no videos here' });
+
+    await h.core.openCourse(empty);
+
+    expect(h.converter.requests[0]?.request.signal.aborted).toBe(true);
+  });
+
+  it('stops preparing the sound when the learner closes the player', async () => {
+    const h = await createHarness();
+    await openMp4Lesson(h, false);
+
+    h.player.close();
+
+    expect(h.converter.requests[0]?.request.signal.aborted).toBe(true);
+  });
 });
