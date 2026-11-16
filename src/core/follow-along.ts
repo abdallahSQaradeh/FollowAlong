@@ -6,6 +6,7 @@ import { basename } from 'node:path';
 
 import { messageOf } from './logger.js';
 import { createAudioCache } from './audio-cache.js';
+import { toggleAutoPause } from './auto-pause-toggle.js';
 import { isTyping, type DocumentEdit } from './auto-pause.js';
 import { findSection, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
@@ -126,6 +127,11 @@ export interface FollowAlong {
   moveVideo(to?: VideoSpot): Promise<void>;
   /** Collapses the video where it is, or brings it back in the same spot (ADR 0092). */
   toggleVideo(): Promise<void>;
+  /**
+   * `Ctrl+'` `A` and `FollowAlong: Toggle Auto-pause`: switches `followalong.autoPause` off, or
+   * back to the last mode that was on (`pause` if none), and writes nothing else (ADR 0098).
+   */
+  toggleAutoPause(): Promise<void>;
   /**
    * `FollowAlong: Unhide a Course…`: lists the Courses hidden from the Course picker and shows the
    * one the learner picks in it again (ADR 0072).
@@ -1058,6 +1064,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       if (target !== undefined) {
         await loaded.move(target);
       }
+    },
+    toggleAutoPause() {
+      return toggleAutoPause(config, storage);
     },
     async toggleVideo() {
       if (loaded.spot() === undefined) {
