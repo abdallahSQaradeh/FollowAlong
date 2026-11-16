@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises';
+import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -52,9 +52,11 @@ describe('opening a Course in a new window', () => {
 
   it('offers no button on a missing Recent Course, which has Locate… and Remove', async () => {
     const h = await createHarness();
-    const { beta } = await windowWithAlphaOpen(h);
+    const { alpha, beta } = await windowWithAlphaOpen(h);
     await h.core.openCourse(beta);
-    await rm(beta, { recursive: true });
+    await h.core.openCourse(alpha);
+    await h.folder('Elsewhere', {});
+    await rename(beta, join(h.root, 'Elsewhere', 'Beta moved'));
 
     void h.core.pickCourse();
     await h.ui.pickerShown();
