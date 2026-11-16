@@ -103,6 +103,10 @@ export class WebmSource {
     private readonly uri: string,
     /** Called once if the Lesson cannot be played; nothing else is reported after it. */
     private readonly onFailure: (message: string) => void,
+    /** Moves the playhead; the player's own writes go through here so it can tell them apart. */
+    private readonly seekTo: (time: number) => void = (time) => {
+      video.currentTime = time;
+    },
   ) {}
 
   /** Attaches the MediaSource and streams the file from its start. */
@@ -316,7 +320,7 @@ export class WebmSource {
     }
     const start = rangesOf(buffer.buffered).find(([from]) => from > time && from - time < 0.1)?.[0];
     if (start !== undefined) {
-      this.video.currentTime = start;
+      this.seekTo(start);
     }
   }
 
