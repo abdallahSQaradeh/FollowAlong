@@ -98,6 +98,9 @@ export async function run(): Promise<void> {
     'followalong.previousLesson',
     'followalong.goToLesson',
     'followalong.attachToLoadedLesson',
+    'followalong.markSectionDone',
+    'followalong.resetSection',
+    'followalong.resetCourseProgress',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
