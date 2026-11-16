@@ -7,6 +7,7 @@ import {
   type PlayerCommand,
   type PlayerEvent,
 } from '../protocol/player-messages.js';
+import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
 
 declare global {
@@ -30,6 +31,41 @@ function post(event: PlayerEvent): void {
   host.postMessage(event);
 }
 
+/** Keys held down in the player page: a held key is an interaction that has not ended. */
+const keysDown = new Set<string>();
+/** Set when an interaction ended while the player was fullscreen: it is reported on exit. */
+let reportAfterFullscreen = false;
+
+/** Tells the extension the learner is done with the player, so it hands focus back. */
+function handFocusBack(): void {
+  post({ type: 'userInteracted' });
+  // Let go of the focus, so the next click on the native control bar focuses the video again:
+  // that `focus` is all the page sees of a click on an empty part of the bar.
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+}
+
+const interactions = new Interactions(
+  () => {
+    // Fullscreen covers the code: focus stays with the video, so Space still plays or pauses it
+    // rather than typing into hidden code. The interaction is reported once fullscreen ends.
+    if (document.fullscreenElement !== null) {
+      reportAfterFullscreen = true;
+      return;
+    }
+    handFocusBack();
+  },
+  // A press shows as `:active` on the video, also on its native control bar, until it is let go.
+  () => video.matches(':active') || keysDown.size > 0,
+);
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement === null && reportAfterFullscreen) {
+    reportAfterFullscreen = false;
+    handFocusBack();
+  }
+});
+
 interface Lesson {
   readonly lessonId: string;
   /** Stops streaming this Lesson. */
@@ -42,8 +78,14 @@ interface Lesson {
 
 /** The Lesson in the media element. */
 let current: Lesson | undefined;
-/** Set while a `pause` command is being carried out, so its pause is not reported as the learner's. */
-let pauseRequested = false;
+/**
+ * Who started the pause the media element is about to report: the extension (a `pause` command,
+ * not the learner's) or a click on the picture (the learner's, already reported as an
+ * interaction). Unset for a pause from the native control bar or the end of the Lesson.
+ */
+let pauseBy: 'extension' | 'picture' | undefined;
+/** Set while the player's own `play()` starts the media element, so its `play` is not the control bar's. */
+let playRequested = false;
 /** The playback rate last reported, so a `ratechange` that changes nothing is not. */
 let reportedRate = 1;
 
@@ -61,8 +103,9 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
   hideNext();
-  // A pause command whose `pause` event the new load cancels must not mark the next pause.
-  pauseRequested = false;
+  // A pause or play whose event the new load cancels must not mark the next one.
+  pauseBy = undefined;
+  playRequested = false;
   const lesson: Lesson = {
     lessonId: command.lessonId,
     stop: new AbortController(),
@@ -100,7 +143,10 @@ function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVide
 
 function play(media: HTMLVideoElement): void {
   const lesson = current;
+  // A media element that is already playing fires no `play` event to clear the flag.
+  playRequested = media.paused;
   media.play().catch((error: unknown) => {
+    playRequested = false;
     // Autoplay refused: the Lesson stays paused, and the extension is told. Other rejections
     // come from a new load (AbortError) or a failed Lesson, which reports its own `error`.
     if (
@@ -162,7 +208,7 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
       break;
     case 'pause':
       if (!media.paused) {
-        pauseRequested = true;
+        pauseBy = 'extension';
         media.pause();
       }
       break;
@@ -209,8 +255,20 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   });
   on('pause', (lesson) => {
     lesson.playing = false;
-    post({ type: 'paused', lessonId: lesson.lessonId, byUser: !pauseRequested && !media.ended });
-    pauseRequested = false;
+    const byUser = pauseBy !== 'extension' && !media.ended;
+    // The learner's, and not already reported by the click on the picture that asked for it.
+    const byControlBar = byUser && pauseBy !== 'picture';
+    post({ type: 'paused', lessonId: lesson.lessonId, byUser });
+    pauseBy = undefined;
+    if (byControlBar) {
+      interactions.ended();
+    }
+  });
+  on('play', () => {
+    if (!playRequested) {
+      interactions.ended();
+    }
+    playRequested = false;
   });
   // The learner plays the Lesson again, or steps back into it: it is not at its end any more.
   // Not through `on`: a Lesson that failed must lose the overlay too.
@@ -240,6 +298,79 @@ function reportMediaEvents(media: HTMLVideoElement): void {
   });
 }
 
+/** A click on the picture plays or pauses the Lesson. */
+function togglePlayback(media: HTMLVideoElement): void {
+  if (current === undefined || current.failed) {
+    return;
+  }
+  if (media.paused) {
+    play(media);
+  } else {
+    pauseBy = 'picture';
+    media.pause();
+  }
+}
+
+/**
+ * Reports the end of each learner interaction as `userInteracted` (ADR 0009). The native control
+ * bar keeps its pointer events to itself, so its buttons show only through what they change, and
+ * its sliders through their pointer capture, which ends when the learner lets go.
+ */
+function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
+  const ended = () => {
+    interactions.ended();
+  };
+  overlay.addEventListener('click', () => {
+    togglePlayback(media);
+  });
+  // The overlay takes the pointer moves that would show the native control bar: pass them on.
+  overlay.addEventListener('pointermove', (event) => {
+    const { clientX, clientY, pointerId, pointerType } = event as PointerEvent;
+    media.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX, clientY, pointerId, pointerType }),
+    );
+  });
+  // A click on the picture, or on the video under a hidden control bar.
+  window.addEventListener('pointerup', ended);
+  // A key on the native controls, after the learner tabbed to them: reported when let go.
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      keysDown.add(event.code);
+    },
+    true,
+  );
+  window.addEventListener(
+    'keyup',
+    (event) => {
+      keysDown.delete(event.code);
+      ended();
+    },
+    true,
+  );
+  // A key let go outside the page (focus moved away mid-press) never sends its keyup.
+  window.addEventListener('blur', () => {
+    keysDown.clear();
+  });
+  media.addEventListener('gotpointercapture', (event) => {
+    interactions.beginGesture(event.pointerId);
+  });
+  media.addEventListener('lostpointercapture', (event) => {
+    interactions.endGesture(event.pointerId);
+  });
+  // A click on the native control bar, including an empty part of it, focuses the video.
+  media.addEventListener('focus', () => {
+    interactions.focused();
+  });
+  // The mute button; the volume slider reports on release, as above.
+  media.addEventListener('volumechange', ended);
+}
+
+const overlay = document.querySelector('.overlay');
+if (overlay === null) {
+  throw new Error('The player page has no overlay.');
+}
+
 nextOverlay.addEventListener('click', () => {
   if (current !== undefined && !current.failed) {
     post({ type: 'nextClicked', lessonId: current.lessonId });
@@ -247,6 +378,7 @@ nextOverlay.addEventListener('click', () => {
 });
 const aac = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
 reportMediaEvents(video);
+reportInteractions(video, overlay);
 window.addEventListener('message', (event: MessageEvent<unknown>) => {
   const command = parsePlayerCommand(event.data);
   if (command !== undefined) {

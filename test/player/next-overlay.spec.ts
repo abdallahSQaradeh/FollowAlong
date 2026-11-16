@@ -88,9 +88,35 @@ test.describe('the Next overlay', () => {
 
     await nextOverlay(page).click();
 
-    await player.waitForEvent({ type: 'nextClicked', lessonId });
+    // Like any click in the player, it also hands focus back (ADR 0009).
+    await player.waitForEvent({ type: 'userInteracted' });
     expect((await player.events()).slice(eventsBefore)).toEqual([
       { type: 'nextClicked', lessonId },
+      { type: 'userInteracted' },
+    ]);
+    expect((await player.video()).ended).toBe(true);
+  });
+
+  test('sits above the click overlay: a click on the middle of the picture is a click on Next', async ({
+    page,
+  }) => {
+    const player = await endedLesson(page);
+    await player.post({ type: 'showNext', title: 'Welcome' });
+    await expect(nextOverlay(page)).toBeVisible();
+    const box = await page.locator('video').boundingBox();
+    if (box === null) {
+      throw new Error('the video is not on screen');
+    }
+
+    const eventsBefore = (await player.events()).length;
+
+    // Where the click overlay (#23) also lies: it must not take the click and play the Lesson.
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+    await player.waitForEvent({ type: 'userInteracted' });
+    expect((await player.events()).slice(eventsBefore)).toEqual([
+      { type: 'nextClicked', lessonId },
+      { type: 'userInteracted' },
     ]);
     expect((await player.video()).ended).toBe(true);
   });

@@ -75,3 +75,7 @@ _Avoid_: Active Lesson, current video
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.
 _Avoid_: Context switch, tab switch, window switch
+
+**Focus return**:
+Handing keyboard focus back to the editor or terminal the learner used last, once they finish an interaction with the player, so that controlling the Course with the mouse is not a Focus change.
+_Avoid_: Focus restore, refocus
