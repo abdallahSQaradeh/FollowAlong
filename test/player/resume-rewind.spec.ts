@@ -4,14 +4,14 @@ import { media, openPlayer, spots, type PlayerHarness } from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
 
-function load(startAt: number): PlayerCommand {
+function load(startAt: number, autoplay = false): PlayerCommand {
   return {
     type: 'load',
     lessonId,
     videoUri: media.long,
     container: 'webm',
     startAt,
-    autoplay: false,
+    autoplay,
   };
 }
 
@@ -69,7 +69,7 @@ test.describe('a click that resumes a paused Lesson', () => {
   test('does not step back when the click pauses a playing Lesson', async ({ page }) => {
     const player = await openPlayer(page);
     await player.post({ type: 'setResumeRewind', seconds: 1.5 });
-    await player.post({ ...load(0), autoplay: true } as PlayerCommand);
+    await player.post(load(0, true));
     await player.waitForEvent({ type: 'played', lessonId });
     await expect.poll(async () => (await player.video()).currentTime).toBeGreaterThan(0.6);
     const { picture } = await spots(page);
@@ -79,6 +79,7 @@ test.describe('a click that resumes a paused Lesson', () => {
     const stoppedAt = (await player.video()).currentTime;
 
     expect(stoppedAt).toBeGreaterThan(0.6);
+    expect((await player.events()).filter((event) => event.type === 'seeked')).toHaveLength(0);
   });
 
   test('reports one interaction, as a click without a Rewind does', async ({ page }) => {
@@ -92,5 +93,40 @@ test.describe('a click that resumes a paused Lesson', () => {
 
     const reported = (await player.events()).filter((event) => event.type === 'userInteracted');
     expect(reported).toHaveLength(1);
+  });
+
+  test('does not seek when the Lesson is at its start', async ({ page }) => {
+    const player = await openPlayer(page);
+    await pausedAt(player, 0, 3);
+    const { picture } = await spots(page);
+
+    await page.mouse.click(picture.x, picture.y);
+
+    await player.waitForEvent({ type: 'played', lessonId });
+    expect((await player.events()).filter((event) => event.type === 'seeked')).toHaveLength(0);
+  });
+
+  test('starts a Lesson that ended again from the top, with no step back first', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await player.post({ type: 'setResumeRewind', seconds: 1.5 });
+    await player.post({
+      type: 'load',
+      lessonId,
+      videoUri: media.webm,
+      container: 'webm',
+      startAt: 2.5,
+      autoplay: true,
+    });
+    await player.waitForEvent({ type: 'ended', lessonId });
+    const { picture } = await spots(page);
+
+    await page.mouse.click(picture.x, picture.y);
+
+    await expect.poll(async () => (await player.video()).ended).toBe(false);
+    await player.waitForEvent({ type: 'played', lessonId });
+    // From the top, not from 1.5 s (the end, 3 s, less the Rewind).
+    expect((await player.video()).currentTime).toBeLessThan(1);
   });
 });

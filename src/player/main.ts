@@ -310,7 +310,8 @@ function togglePlayback(media: HTMLVideoElement): void {
   }
   if (media.paused) {
     // A Lesson that ended starts again from the top, so there is nothing to rehear.
-    if (resumeRewind > 0 && !media.ended) {
+    // At the very start there is nothing to step back to; a seek to 0 would still report `seeked`.
+    if (resumeRewind > 0 && !media.ended && media.currentTime > 0) {
       seekBy(-resumeRewind, media);
     }
     play(media);

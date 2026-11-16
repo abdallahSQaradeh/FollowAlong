@@ -26,4 +26,8 @@ Lesson by hand (spec #12, story 51). The spec leaves the mechanics open; these a
   command and picture click do.
 - **A Lesson that ended does not rewind.** `play` after the end restarts the Lesson; a step back first
   would land it near the end instead.
-- **A Lesson paused at its start** (autoplay refused) needs no special case: the rewind clamps at 0.
+- **A Lesson paused at its start** (autoplay refused) is not rewound: the click path skips the seek
+  at 0, so the player reports no `seeked` for a seek that moved nothing. The keyboard path sends the
+  `seekBy` anyway, and the player clamps it.
+- **A Rewind adds to a seek still under way.** The player's `currentTime` already holds that seek's
+  target (ADR 0013), so a resume right after a step back rewinds from the new place.
