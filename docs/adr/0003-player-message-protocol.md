@@ -39,3 +39,6 @@ Two deliberate additions to the spec's shapes:
   length becomes known (`durationchange`). The extension therefore has the length before the
   Lesson plays, even when autoplay is refused. `timeUpdate.duration` is 0 while a MediaSource
   stream's length is not yet known, so both numbers are always finite.
+
+Ticket #17 added `seekBy {seconds}` (extension → player, signed) and `seeked` (player → extension, with
+`lessonId`); see ADR 0013.
