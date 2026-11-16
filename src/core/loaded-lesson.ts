@@ -91,11 +91,11 @@ export interface LoadedLesson {
   /** Resumes a paused Lesson with no rewind, for automatic resumes such as auto-resume. */
   resumeWithoutRewind(): void;
   /**
-   * Progress of these Lessons was cleared by hand. If the Loaded Lesson is one of them, the play
+   * Progress of these Lessons was reset by hand. If the Loaded Lesson is one of them, the play
    * counted so far goes: its 10 s towards "in progress" start again, so the Lesson that keeps
    * playing does not come straight back as in progress.
    */
-  progressCleared(lessonIds: readonly string[]): void;
+  progressReset(lessonIds: readonly string[]): void;
   /** Moves the playhead back or forward by the short or the long step setting. */
   seekStep(size: StepSize, direction: StepDirection): void;
   /** Moves the playback rate one rung up or down the speed ladder. */
@@ -824,7 +824,7 @@ export function createLoadedLesson(
       // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
       ui.returnFocus();
     },
-    progressCleared(lessonIds) {
+    progressReset(lessonIds) {
       if (current !== undefined && lessonIds.includes(current.lesson.id)) {
         current.playedSeconds = 0;
         current.lastPlayingPosition = undefined;

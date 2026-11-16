@@ -73,7 +73,7 @@ export const commands = {
   /** The tree's context menu on a Section: Mark all done, Reset Section; run with its tree node. */
   markSectionDone: 'followalong.markSectionDone',
   resetSection: 'followalong.resetSection',
-  /** The Command Palette and the tree's context menu on the Course node. */
+  /** `FollowAlong: Reset Course progress`, from the Command Palette. */
   resetCourseProgress: 'followalong.resetCourseProgress',
 } as const;
 

@@ -317,11 +317,6 @@
           "command": "followalong.resetSection",
           "when": "view == followalong.lessons && viewItem == section",
           "group": "2_progress@2"
-        },
-        {
-          "command": "followalong.resetCourseProgress",
-          "when": "view == followalong.lessons && viewItem == course",
-          "group": "2_progress"
         }
       ]
     },

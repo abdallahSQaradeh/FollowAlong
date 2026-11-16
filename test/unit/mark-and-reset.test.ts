@@ -139,7 +139,7 @@ describe('Mark all done', () => {
 });
 
 describe('Reset Section', () => {
-  it('clears the done marks and positions of the Section, and nothing outside it', async () => {
+  it('resets the done marks and positions of the Section, and nothing outside it', async () => {
     const h = await createHarness();
     const course = await openWithProgress(h);
     await h.core.markSectionDone('Basics/');
@@ -165,6 +165,19 @@ describe('Reset Section', () => {
     });
   });
 
+  it('leaves the Lesson the Course reopens on as it is, even inside the Section', async () => {
+    const h = await createHarness();
+    const course = await openWithProgress(h);
+
+    // The Lesson played last, 'Advanced/03', is in the Section that is reset.
+    await h.core.resetSection('Advanced/');
+
+    expect(await reopen(h, course)).toMatchObject({
+      lessonId: 'Advanced/03 Closures.webm',
+      startAt: 0,
+    });
+  });
+
   it('starts the Lesson that is playing again: its 10 s of play count from the reset', async () => {
     const h = await createHarness();
     const course = await h.folder('course', twoSections);
@@ -187,7 +200,7 @@ describe('Reset Section', () => {
 });
 
 describe('Reset Course progress', () => {
-  it('asks first, and clears the whole Course only once the learner agrees', async () => {
+  it('asks first, and resets the whole Course only once the learner agrees', async () => {
     const h = await createHarness();
     const course = await openWithProgress(h);
     await h.core.markSectionDone('Basics/');
@@ -243,7 +256,7 @@ describe('Reset Course progress', () => {
 });
 
 describe('marking and resetting leave the rest of the Course data alone', () => {
-  it('never touches the Resources or the sound files in .followalong, checked on disk', async () => {
+  it('never touches the Resources or the prepared sound in .followalong, checked on disk', async () => {
     const h = await createHarness();
     const sound = '.followalong/sound/01 Intro-0123456789abcdef.mp3';
     const course = await h.folder('course', {
@@ -294,6 +307,30 @@ describe('marking and resetting leave the rest of the Course data alone', () => 
     expect(glyphs(h)['Advanced/03 Closures.webm']).toBe('◐');
   });
 
+  it('resets the Lesson the Course reopens on too, over the older copy in .followalong', async () => {
+    const h = await createHarness();
+    const course = await openWithProgress(h);
+    h.core.playLesson('Basics/02 Setup.webm');
+    playUntil(h, 'Basics/02 Setup.webm', 30);
+    pause(h, 'Basics/02 Setup.webm');
+    await h.settle();
+    makeReadOnly(join(course, '.followalong'));
+
+    h.restart();
+    await h.core.openCourse(course);
+    h.player.ready();
+    const resetting = h.core.resetCourseProgress();
+    await h.settle();
+    h.ui.answerQuestion('accept');
+    await resetting;
+
+    // The first Lesson, as for a Course never played, not the Lesson the older copy names.
+    expect(await reopen(h, course)).toMatchObject({
+      lessonId: 'Advanced/03 Closures.webm',
+      startAt: 0,
+    });
+  });
+
   it('keeps a progress file it cannot read as it is, and saves the marks in the extension storage', async () => {
     const h = await createHarness();
     const damaged = '{"version": 1, "data": ';
@@ -339,7 +376,7 @@ describe('marking and resetting leave the rest of the Course data alone', () => 
     expect(glyphs(h)['Part/02 Two.webm']).toBe('✓');
   });
 
-  it('says so when no Course is open, and ignores a Section the Course does not have', async () => {
+  it('says so when no Course is open', async () => {
     const h = await createHarness();
 
     await h.core.resetCourseProgress();
@@ -348,7 +385,22 @@ describe('marking and resetting leave the rest of the Course data alone', () => 
 
     expect(h.ui.questions).toEqual([]);
     expect(h.ui.messages).toEqual([
-      { severity: 'info', text: 'Open a Course first, then reset its progress.' },
+      { severity: 'info', text: 'Open a Course first, then reset its Progress.' },
     ]);
+  });
+
+  it('ignores a Section the open Course does not have: nothing changes or is saved', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', twoSections);
+    await h.core.openCourse(course);
+    h.player.ready();
+    const before = glyphs(h);
+
+    await h.core.markSectionDone('Nowhere/');
+    await h.core.resetSection('Nowhere/');
+
+    expect(glyphs(h)).toEqual(before);
+    expect(h.ui.messages).toEqual([]);
+    expect(await h.listFiles(course)).toEqual(Object.keys(twoSections).sort());
   });
 });

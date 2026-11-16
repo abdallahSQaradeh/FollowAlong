@@ -124,13 +124,13 @@ export interface FollowAlong {
    */
   markSectionDone(sectionId: string): Promise<void>;
   /**
-   * Clears the done marks and positions of every Lesson of a Section of the open Course, nested
-   * Sections included, and nothing outside it: the Section's "Reset Section" in the tree.
+   * Resets every Lesson of a Section of the open Course, nested Sections included (done marks and
+   * positions go), and nothing outside it: the Section's "Reset Section" in the tree.
    * Resolves once the change is saved.
    */
   resetSection(sectionId: string): Promise<void>;
   /**
-   * `FollowAlong: Reset Course progress`: asks the learner to confirm, then clears the open
+   * `FollowAlong: Reset Course progress`: asks the learner to confirm, then resets the open
    * Course's Progress: every done mark and position, and the Lesson it reopens on. Resources and
    * prepared sound are untouched. Resolves once the change is saved, or when nothing was changed.
    */
@@ -632,16 +632,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /**
-   * The marking path (ADR 0061): every change the learner makes to Progress by hand goes through
-   * `markLessonsDone` or `clearLessons`, with the Lessons it applies to, so a command for one
-   * Lesson calls them with one id. The recorder is the Progress of the Course the command ran in.
-   * The tree shows the change at once; the returned promise resolves once it is saved.
+   * The marking path (ADR 0061). Every change the learner makes to Progress by hand is made on
+   * the recorder of the Course the command ran in (`markDone`, `reset`, `resetAll`), then shown in
+   * the tree at once and saved here. The promise resolves once it is saved.
    */
   async function showAndSave(recorder: ProgressRecorder): Promise<void> {
     refreshTree();
     await recorder.save();
   }
 
+  /** Marks Lessons done by id: a command for one Lesson calls this with one id (#29). */
   function markLessonsDone(
     recorder: ProgressRecorder,
     lessonIds: readonly string[],
@@ -650,9 +650,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return showAndSave(recorder);
   }
 
-  function clearLessons(recorder: ProgressRecorder, lessonIds: readonly string[]): Promise<void> {
-    recorder.clear(lessonIds);
-    loaded.progressCleared(lessonIds);
+  /** Resets Lessons by id, and restarts the play count of the Loaded Lesson if it is one. */
+  function resetLessons(recorder: ProgressRecorder, lessonIds: readonly string[]): Promise<void> {
+    recorder.reset(lessonIds);
+    loaded.progressReset(lessonIds);
     return showAndSave(recorder);
   }
 
@@ -786,7 +787,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return changeSection(sectionId, 'mark all done', markLessonsDone);
     },
     resetSection(sectionId) {
-      return changeSection(sectionId, 'reset', clearLessons);
+      return changeSection(sectionId, 'reset', resetLessons);
     },
     async resetCourseProgress() {
       if (refusedWhileOpening()) {
@@ -796,12 +797,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const course = openedCourse;
       const recorder = progress;
       if (course === undefined || recorder === undefined) {
-        ui.showMessage({ severity: 'info', text: 'Open a Course first, then reset its progress.' });
+        ui.showMessage({ severity: 'info', text: 'Open a Course first, then reset its Progress.' });
         return;
       }
       const name = basename(course.folder);
       const answer = await ui.ask({
-        text: `Reset all progress in “${name}”? Every Lesson's done mark and position is cleared. Resources and sound files are kept.`,
+        text: `Reset all Progress in “${name}”? Every Lesson's done mark and position goes. Resources and prepared sound are kept.`,
         accept: 'Reset progress',
         decline: 'Cancel',
       });
@@ -820,8 +821,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
         return;
       }
-      recorder.clearAll();
-      loaded.progressCleared(lessonsInOrder(course).map((lesson) => lesson.id));
+      recorder.resetAll();
+      loaded.progressReset(lessonsInOrder(course).map((lesson) => lesson.id));
       await showAndSave(recorder);
     },
     async attachResource(lessonId, absolutePath) {

@@ -128,13 +128,8 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
  * the change wins the per-Lesson merge of two copies even when the clock has not moved (or went
  * back).
  */
-function savedAfter(before: LessonProgress | undefined, now: number): number {
+function savedAfter(before: { readonly savedAt: number } | undefined, now: number): number {
   return before === undefined ? now : Math.max(now, before.savedAt + 1);
-}
-
-/** As {@link savedAfter}, for the Lesson played last. */
-function savedAfterLast(before: LastLesson, now: number): number {
-  return Math.max(now, before.savedAt + 1);
 }
 
 /** A Lesson's state: not started, in progress or done (ADR 0030). */
@@ -165,16 +160,17 @@ export interface ProgressRecorder {
    */
   markDone(lessonIds: readonly string[]): void;
   /**
-   * Clears these Lessons' done marks and positions, so each reads as never played. An entry is
-   * written rather than removed: the newest entry per Lesson wins when two copies are merged, and
-   * a removed one would come back from the other copy (ADR 0061). Written by the next `save`.
+   * Resets these Lessons: their done marks and positions go, so each reads as never played. An
+   * entry is written rather than removed: the newest entry per Lesson wins when two copies are
+   * merged, and a removed one would come back from the other copy (ADR 0061). Written by the next
+   * `save`.
    */
-  clear(lessonIds: readonly string[]): void;
+  reset(lessonIds: readonly string[]): void;
   /**
-   * Clears every Lesson's done mark and position, and the Lesson the Course reopens on, as if the
-   * Course had never been played. Written by the next `save`.
+   * Resets every Lesson, and the Lesson the Course reopens on, as if the Course had never been
+   * played. Written by the next `save`.
    */
-  clearAll(): void;
+  resetAll(): void;
   /** Writes what was recorded since the last save, after any save already under way. */
   save(): Promise<void>;
 }
@@ -260,18 +256,25 @@ export async function openProgress(
     }
   }
 
-  function clearLessons(lessonIds: readonly string[]): void {
+  /**
+   * Replaces each of these Lessons' entries by hand, in memory: `change` gives the entry's fields
+   * from what was there, and it is stamped after that entry (`savedAfter`).
+   */
+  function changeEntries(
+    lessonIds: readonly string[],
+    change: (before: LessonProgress | undefined) => Omit<LessonProgress, 'savedAt'>,
+  ): void {
     const lessons: Record<string, LessonProgress> = { ...progress.lessons };
     for (const lessonId of lessonIds) {
       const before = lessonEntry(lessons, lessonId);
-      lessons[lessonId] = {
-        position: 0,
-        duration: 0,
-        savedAt: savedAfter(before, clock.now()),
-      };
+      lessons[lessonId] = { ...change(before), savedAt: savedAfter(before, clock.now()) };
     }
     progress = { ...progress, lessons };
     unsaved = true;
+  }
+
+  function resetEntries(lessonIds: readonly string[]): void {
+    changeEntries(lessonIds, () => ({ position: 0, duration: 0 }));
   }
 
   return {
@@ -295,26 +298,19 @@ export async function openProgress(
       unsaved = true;
     },
     markDone(lessonIds) {
-      const lessons: Record<string, LessonProgress> = { ...progress.lessons };
-      for (const lessonId of lessonIds) {
-        const before = lessonEntry(lessons, lessonId);
-        lessons[lessonId] = {
-          position: before?.position ?? 0,
-          duration: before?.duration ?? 0,
-          savedAt: savedAfter(before, clock.now()),
-          status: 'done',
-        };
-      }
-      progress = { ...progress, lessons };
-      unsaved = true;
+      changeEntries(lessonIds, (before) => ({
+        position: before?.position ?? 0,
+        duration: before?.duration ?? 0,
+        status: 'done',
+      }));
     },
-    clear: clearLessons,
-    clearAll() {
-      clearLessons(Object.keys(progress.lessons));
+    reset: resetEntries,
+    resetAll() {
+      resetEntries(Object.keys(progress.lessons));
       if (progress.last !== undefined) {
         progress = {
           ...progress,
-          last: { lessonId: noLastLesson, savedAt: savedAfterLast(progress.last, clock.now()) },
+          last: { lessonId: noLastLesson, savedAt: savedAfter(progress.last, clock.now()) },
         };
       }
     },

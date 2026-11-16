@@ -34,7 +34,7 @@ same file in the fallback storage when the Course is read-only:
   #28 shows `12:30 / 40:05` for Lessons not opened in this session.
 - **`savedAt`** is the Clock port's time of the save, in ms since the epoch. It is what "newest
   wins" compares, per Lesson and for `last`.
-- **`last`** is the Lesson whose position was saved last: "the last Lesson played" (story 82).
+- **`last`** is the Lesson whose position was saved last: "the last Lesson played" (story 82). ADR 0061: after _Reset Course progress_ its `lessonId` is empty, which names no Lesson, so the Course reopens on its first Lesson.
 - A file that does not parse is ignored as a whole, with a log line (ADR 0005): a damaged entry
   means the file was not written by FollowAlong.
 - Later versions change the shape by raising `version` and migrating older data in
