@@ -30,6 +30,7 @@ export interface LessonProgress {
 
 /** The Lesson played last in the Course. */
 export interface LastLesson {
+  /** The Lesson's id, or {@link noLastLesson} after the Course's Progress was reset. */
   readonly lessonId: string;
   readonly savedAt: number;
 }

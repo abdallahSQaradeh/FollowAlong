@@ -632,16 +632,41 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /**
-   * Changes the Progress of the Lessons of a Section of the open Course, then saves it and lets
-   * the tree show it. The Course and its Progress are fixed when the command runs.
+   * The marking path (ADR 0061): every change the learner makes to Progress by hand goes through
+   * `markLessonsDone` or `clearLessons`, with the Lessons it applies to, so a command for one
+   * Lesson calls them with one id. The recorder is the Progress of the Course the command ran in.
+   * The tree shows the change at once; the returned promise resolves once it is saved.
    */
-  async function changeSection(
+  async function showAndSave(recorder: ProgressRecorder): Promise<void> {
+    refreshTree();
+    await recorder.save();
+  }
+
+  function markLessonsDone(
+    recorder: ProgressRecorder,
+    lessonIds: readonly string[],
+  ): Promise<void> {
+    recorder.markDone(lessonIds);
+    return showAndSave(recorder);
+  }
+
+  function clearLessons(recorder: ProgressRecorder, lessonIds: readonly string[]): Promise<void> {
+    recorder.clear(lessonIds);
+    loaded.progressCleared(lessonIds);
+    return showAndSave(recorder);
+  }
+
+  /**
+   * Runs `change` on the Lessons of a Section of the open Course, nested Sections included. The
+   * Course and its Progress are fixed when the command runs.
+   */
+  function changeSection(
     sectionId: string,
     what: string,
-    change: (recorder: ProgressRecorder, lessons: readonly Lesson[]) => void,
+    change: (recorder: ProgressRecorder, lessonIds: readonly string[]) => Promise<void>,
   ): Promise<void> {
     if (refusedWhileOpening()) {
-      return;
+      return Promise.resolve();
     }
     const section = openedCourse && findSection(openedCourse, sectionId);
     if (section === undefined || progress === undefined) {
@@ -649,12 +674,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         level: 'warn',
         message: `Cannot ${what} in ${sectionId}: it is not a Section of the open Course.`,
       });
-      return;
+      return Promise.resolve();
     }
-    const recorder = progress;
-    change(recorder, lessonsInOrder(section));
-    refreshTree();
-    await recorder.save();
+    return change(
+      progress,
+      lessonsInOrder(section).map((lesson) => lesson.id),
+    );
   }
 
   /** The Course picker. */
@@ -758,16 +783,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
     },
     markSectionDone(sectionId) {
-      return changeSection(sectionId, 'mark all done', (recorder, lessons) => {
-        recorder.markDone(lessons.map((lesson) => lesson.id));
-      });
+      return changeSection(sectionId, 'mark all done', markLessonsDone);
     },
     resetSection(sectionId) {
-      return changeSection(sectionId, 'reset', (recorder, lessons) => {
-        const lessonIds = lessons.map((lesson) => lesson.id);
-        recorder.clear(lessonIds);
-        loaded.progressCleared(lessonIds);
-      });
+      return changeSection(sectionId, 'reset', clearLessons);
     },
     async resetCourseProgress() {
       if (refusedWhileOpening()) {
@@ -803,8 +822,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       recorder.clearAll();
       loaded.progressCleared(lessonsInOrder(course).map((lesson) => lesson.id));
-      refreshTree();
-      await recorder.save();
+      await showAndSave(recorder);
     },
     async attachResource(lessonId, absolutePath) {
       const course = openedCourse;
