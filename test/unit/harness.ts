@@ -421,11 +421,11 @@ export class RecordingUi implements UiSink {
 
   openPicker<Intent>(
     model: QuickPickModel<Intent>,
-    onToolbarButton: (intent: Intent) => void,
+    onStayOpen: (intent: Intent) => void,
   ): LivePicker<Intent> {
     this.pickers.push(model);
     this.shownModel = model;
-    this.toolbarHandler = onToolbarButton as (intent: unknown) => void;
+    this.toolbarHandler = onStayOpen as (intent: unknown) => void;
     const scripted = this.scriptedChoices.shift();
     const answer = new Promise<Intent | undefined>((resolve, reject) => {
       this.answer = (intent) => {
@@ -441,6 +441,9 @@ export class RecordingUi implements UiSink {
       update: (next) => {
         this.shownModel = next;
         this.afterModel();
+        for (const waiter of this.updateWaiters.splice(0)) {
+          waiter();
+        }
       },
     };
   }
@@ -489,6 +492,15 @@ export class RecordingUi implements UiSink {
         });
   }
 
+  /** Resolves when the core next replaces what the open quick pick lists (even with a busy list). */
+  nextUpdate(): Promise<void> {
+    return new Promise((resolve) => {
+      this.updateWaiters.push(resolve);
+    });
+  }
+
+  private readonly updateWaiters: (() => void)[] = [];
+
   /** Resolves once a quick pick is open, even while it still lists only what it has so far. */
   pickerOpened(): Promise<void> {
     return this.answer === undefined
@@ -529,6 +541,11 @@ export class RecordingUi implements UiSink {
     );
     if (this.answer === undefined || item?.kind !== 'item') {
       throw new Error(`No item “${label}” in the open quick pick`);
+    }
+    if (item.keepsOpen === true) {
+      // As the adapter does: the quick pick stays open and the core is told, as for a title bar button.
+      this.toolbarHandler?.(item.intent);
+      return;
     }
     const answer = this.answer;
     this.answer = undefined;
@@ -703,6 +720,12 @@ export interface Harness {
    */
   makeUnreadable(folder: string): void;
   /**
+   * The folders the machine offers the Folder browser when no Courses root is set: its drives, or
+   * the home folder. None until a test sets them; the real adapter is not used here, because a
+   * test machine's own drives are no fixture.
+   */
+  setStartingFolders(...folders: string[]): void;
+  /**
    * Holds every read of `folder`'s listing until the returned function is called, as a slow disk
    * or network drive would, so a test can make reads finish in another order than they started.
    */
@@ -746,6 +769,13 @@ export interface Harness {
    * the workspace storage starts empty.
    */
   restart(options?: { readonly otherWorkspace: boolean }): void;
+  /**
+   * The extension is the Windows x64 build: it ships an ffmpeg at the returned path. `present`
+   * says whether the file is really there, as it is in a whole .vsix, or was removed (a virus
+   * scanner, a half-finished update). Without this call there is no bundled ffmpeg, as on Linux
+   * and macOS.
+   */
+  shipBundledFfmpeg(options: { readonly present: boolean }): Promise<string>;
 }
 
 export async function createHarness(): Promise<Harness> {
@@ -767,6 +797,8 @@ export async function createHarness(): Promise<Harness> {
     folder: join(root, 'extension-storage'),
   };
   const nodeFileSystem = createNodeFileSystem();
+  /** The drives or home folder of the fake machine: the test sets them, as the OS would have them. */
+  let startFolders: readonly string[] = [];
   const unreadable = new Set<string>();
   const broken = new Map<string, string>();
   const held = new Map<string, Promise<void>>();
@@ -824,10 +856,12 @@ export async function createHarness(): Promise<Harness> {
       );
     },
     stat: (path) => track(nodeFileSystem.stat(path)),
+    startingFolders: () => Promise.resolve(startFolders),
     exists: (path) => track(nodeFileSystem.exists(path)),
     writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
   };
+  let bundledFfmpeg: string | undefined;
   const portsFor = (windowPlayer: FakePlayer): Ports => ({
     player: windowPlayer,
     fileSystem,
@@ -838,6 +872,10 @@ export async function createHarness(): Promise<Harness> {
     ui,
     logger,
     terminalSettings,
+    // Read when asked, so a test can ship the ffmpeg after the core exists.
+    get bundledFfmpeg() {
+      return bundledFfmpeg;
+    },
   });
   const cores: FollowAlong[] = [];
   onTestFinished(async () => {
@@ -868,6 +906,9 @@ export async function createHarness(): Promise<Harness> {
     root,
     makeUnreadable(folder) {
       unreadable.add(folder);
+    },
+    setStartingFolders(...folders) {
+      startFolders = folders;
     },
     holdWorkspaceWrite() {
       return workspace.holdNextSet();
@@ -952,6 +993,15 @@ export async function createHarness(): Promise<Harness> {
         }
         await Promise.allSettled([...inFlight]);
       }
+    },
+    async shipBundledFfmpeg({ present }) {
+      const path = join(root, 'extension', 'bin', 'ffmpeg.exe');
+      if (present) {
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, 'ffmpeg');
+      }
+      bundledFfmpeg = path;
+      return path;
     },
     restart(options) {
       harness.core.dispose();

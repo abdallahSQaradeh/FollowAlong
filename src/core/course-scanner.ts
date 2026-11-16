@@ -113,7 +113,7 @@ export function folderLabel(folder: string, flavour: PathFlavour = hostFlavour):
 const driveFolders = new Set(['$recycle.bin', 'system volume information']);
 
 /** Whether the scan walks into a subfolder of this name. */
-function isWalked(name: string): boolean {
+export function isWalked(name: string): boolean {
   return !isSkippedFolder(name) && !driveFolders.has(name.toLowerCase());
 }
 

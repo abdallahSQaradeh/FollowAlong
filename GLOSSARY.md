@@ -17,8 +17,12 @@ One video inside a Course.
 _Avoid_: Episode, clip, lecture
 
 **Course picker**:
-The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, or add a Courses root. It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
+The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, add a Courses root, or _Browse…_ folders (the **Folder browser**). It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
 _Avoid_: Course list, library view
+
+**Folder browser**:
+The list behind _Browse…_ in the Course picker, shown inside the same quick pick. It walks folders from the Courses roots (or the drives or home folder when there is no root), with a way back up. A folder that holds videos can be opened as a Course; picking a video opens its folder as the Course and plays that video.
+_Avoid_: File explorer, folder dialog, tree
 
 **Course list cache**:
 The Courses the last scan of the Courses roots found, kept on this machine (not in any Course folder) so the Course picker can open from it before the rescan is done. It is used only for the same Courses roots, and a copy that cannot be read is ignored.
@@ -115,6 +119,10 @@ _Avoid_: Metadata, cache, settings
 **Audio sidecar**:
 An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
 _Avoid_: Soundtrack, audio copy, audio cache
+
+**Bundled ffmpeg**:
+The minimal LGPL ffmpeg that comes inside the Windows x64 `.vsix`, and makes the Audio sidecar of an MP4 Lesson with nothing for the learner to install. It is used unless the learner's own `followalong.ffmpegPath` names another; where there is none (Linux and macOS), ffmpeg on PATH is.
+_Avoid_: Embedded ffmpeg, default ffmpeg, ffmpeg binary
 
 **Sound notice**:
 The words over the first frame of an MP4 Lesson that waits for its Audio sidecar: "Preparing sound… N%" while the sound is converted (the status bar says the same), or the error and the _Play without sound_ button when preparing failed. The Lesson starts by itself when the sound is ready, or when the learner presses play if that is later.

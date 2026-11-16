@@ -1,0 +1,61 @@
+{
+  "description": "The exact sources and flags of the ffmpeg.exe in the Windows x64 .vsix (ADR 0070). scripts/build-ffmpeg.mjs builds from this file; CI keys its cache on it; the .vsix ships it as part of the written offer of source.",
+  "target": "x86_64-w64-mingw32",
+  "outputs": [
+    "ffmpeg.exe",
+    "FFMPEG-LICENSE-LGPL-2.1.txt",
+    "LAME-LICENSE-LGPL.txt",
+    "FFMPEG-BUILD.txt"
+  ],
+  "ffmpeg": {
+    "version": "7.1.1",
+    "archive": "ffmpeg-7.1.1.tar.xz",
+    "directory": "ffmpeg-7.1.1",
+    "sha256": "733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1",
+    "urls": [
+      "https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz",
+      "http://archive.ubuntu.com/ubuntu/pool/universe/f/ffmpeg/ffmpeg_7.1.1.orig.tar.xz"
+    ],
+    "licenseFile": "COPYING.LGPLv2.1",
+    "configure": [
+      "--arch=x86_64",
+      "--target-os=mingw32",
+      "--disable-everything",
+      "--disable-autodetect",
+      "--disable-debug",
+      "--disable-doc",
+      "--disable-network",
+      "--disable-ffplay",
+      "--disable-ffprobe",
+      "--disable-avdevice",
+      "--disable-swscale",
+      "--disable-shared",
+      "--enable-static",
+      "--enable-w32threads",
+      "--enable-libmp3lame",
+      "--enable-demuxer=mov,matroska",
+      "--enable-parser=aac,aac_latm,av1,h264,hevc,mpeg4video,mpegaudio,opus,vp8,vp9",
+      "--enable-decoder=aac",
+      "--enable-encoder=libmp3lame",
+      "--enable-muxer=mp3",
+      "--enable-protocol=file",
+      "--enable-filter=aresample,anull"
+    ]
+  },
+  "lame": {
+    "version": "3.100",
+    "archive": "lame-3.100.tar.gz",
+    "directory": "lame-3.100",
+    "sha256": "ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e",
+    "urls": ["https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz"],
+    "licenseFile": "COPYING",
+    "configure": [
+      "--disable-shared",
+      "--enable-static",
+      "--disable-frontend",
+      "--disable-decoder",
+      "--disable-gtktest",
+      "--disable-dependency-tracking"
+    ]
+  }
+}

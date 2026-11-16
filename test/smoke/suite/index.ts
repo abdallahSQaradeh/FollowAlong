@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { type Browser, chromium } from '@playwright/test';
 import * as vscode from 'vscode';
@@ -56,6 +56,34 @@ interface TestHooks {
   playerSpot(): { readonly spot: string; readonly visible: boolean } | undefined;
   /** Whether the quick pick shown last still shows its busy indicator. */
   quickPickBusy(): boolean;
+}
+
+/**
+ * Waits until `label` is the highlighted item of the quick pick shown last and it is not busy; a
+ * timeout says what the quick pick showed, so a failure on a real VS Code can be read from its log.
+ */
+async function waitForQuickPickItem(hooks: TestHooks, what: string, label: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (hooks.activeQuickPickItem() !== label || hooks.quickPickBusy()) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Timed out waiting for ${what}: the highlighted item is “${hooks.activeQuickPickItem() ?? 'none'}” (wanted “${label}”) and the quick pick is ${hooks.quickPickBusy() ? 'busy' : 'not busy'}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+/** Moves down the open quick pick until `label` is the highlighted item, then accepts it. */
+async function acceptQuickPickItem(hooks: TestHooks, label: string): Promise<void> {
+  await waitForAsync(`“${label}” to be the highlighted item`, async () => {
+    if (hooks.activeQuickPickItem() === label) {
+      return true;
+    }
+    await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
+    return undefined;
+  });
+  await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -745,6 +773,32 @@ async function aPickedCourseKeepsThePlayer(
     say(
       'a Course picked under the same Courses root starts by itself in the same player page: no close, no new click',
     );
+
+    // Browse… (#39): the real quick pick stays open while folders are walked, and a video picked
+    // in it opens its folder as the Course. What the lists hold is covered at Seam 1.
+    const browseFrom = hooks.quickPicksShown();
+    const browsing = vscode.commands.executeCommand('followalong.openCourse');
+    await waitFor('the Course picker to show for Browse…', () =>
+      hooks.quickPicksShown() > browseFrom && !hooks.quickPickBusy() ? true : undefined,
+    );
+    await acceptQuickPickItem(hooks, 'Browse…');
+    await waitForQuickPickItem(hooks, 'the Folder browser to list its start', 'Back to Courses');
+    await acceptQuickPickItem(hooks, basename(root));
+    await waitForQuickPickItem(hooks, 'the Courses root to be listed', 'Up');
+    await acceptQuickPickItem(hooks, 'Warm-up Course');
+    await waitForQuickPickItem(hooks, 'the Course folder to be listed', 'Up');
+    await acceptQuickPickItem(hooks, lessons.warmUp);
+    await browsing;
+    assert.equal(
+      hooks.quickPicksShown(),
+      browseFrom + 1,
+      'walking folders opened more than one quick pick',
+    );
+    // The tree follows the Lesson a moment later: it is selected once the open has played it.
+    await waitFor('the picked video to be the selected Lesson', () =>
+      hooks.selectedLesson() === lessons.warmUp ? true : undefined,
+    );
+    say('Browse… walks folders in one quick pick, and a picked video plays as the open Course');
   } finally {
     await settings.update('coursesRoots', undefined, vscode.ConfigurationTarget.Global);
   }
