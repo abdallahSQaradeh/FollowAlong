@@ -116,6 +116,9 @@ export async function run(): Promise<void> {
     'the four step commands are in the Command Palette, bound to their keys, with 5 s / 30 s steps',
   );
 
+  everyKeyWorksInTheTerminal(extension.packageJSON);
+  say("every FollowAlong key, the Ctrl+' chords included, is bound while the terminal has focus");
+
   const code = await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
 
@@ -283,6 +286,19 @@ interface Contributes {
     mac?: string;
     when?: string;
   }[];
+}
+
+/** Story 44: the learner controls the Lesson from the integrated terminal, so no key is editor-only. */
+function everyKeyWorksInTheTerminal(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  const bindings = contributes?.keybindings ?? [];
+  assert.ok(bindings.length > 0, 'the manifest has no keybindings');
+  for (const { command, key, when } of bindings) {
+    assert.ok(
+      when?.includes('terminalFocus'),
+      `${command ?? '?'} (${key ?? '?'}) is not bound while the terminal has focus`,
+    );
+  }
 }
 
 /** The manifest's commands and keybindings: what VS Code reads to fill the Command Palette and the keys. */
