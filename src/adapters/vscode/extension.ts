@@ -11,7 +11,7 @@ import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
-import type { LessonTreeModel } from '../../core/lesson-tree.js';
+import { courseNodeId, type LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
@@ -171,12 +171,15 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       folder instanceof vscode.Uri ? core.openCourse(folderPath(folder)) : core.pickCourse(),
     ),
     register(commands.attachResource, async (node, file) => {
-      const lessonId = nodeId(node);
-      if (lessonId === undefined) {
+      const nodeKey = nodeId(node);
+      if (nodeKey === undefined) {
         return;
       }
-      // Without a file the core asks for one, so it fixes the Lesson's Course first (ADR 0024).
-      await core.attachResource(lessonId, file instanceof vscode.Uri ? file.fsPath : undefined);
+      const path = file instanceof vscode.Uri ? file.fsPath : undefined;
+      // Without a file the core asks for one, so it fixes the Course (and Lesson) first (ADR 0024).
+      await (nodeKey === courseNodeId
+        ? core.attachCourseResource(path)
+        : core.attachResource(nodeKey, path));
     }),
     register(commands.attachToLoadedLesson, async () => {
       await core.attachToLoadedLesson();
