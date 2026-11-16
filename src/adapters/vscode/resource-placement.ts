@@ -3,7 +3,8 @@
  * editor group, so the video stays visible while the learner reads the file.
  *
  * In order:
- * 1. the group that already holds a Resource this window opened, so Resources collect in one place
+ * 1. the group that already holds a Resource this window opened (a text, image or PDF tab, or one
+ *    of FollowAlong's own Resource tabs), so Resources collect in one place
  *    (also when the learner's focus is in that group);
  * 2. else a group that is not the player's, not the active group and not the active editor's;
  * 3. else a new group at the end, which is to the right of the player in the usual
@@ -11,6 +12,8 @@
  * If the player is not in an editor group (other spots come later), VS Code's own `Beside`.
  */
 import * as vscode from 'vscode';
+
+import { isResourceViewType } from './resource-viewers.js';
 
 export interface ResourcePlacement {
   /** The editor group column to open the next Resource in. */
@@ -33,10 +36,12 @@ export function createResourcePlacement(
       }
       const groups = vscode.window.tabGroups.all;
       const holdsResource = (group: vscode.TabGroup): boolean =>
-        group.tabs.some(
-          (tab) =>
-            tab.input instanceof vscode.TabInputText && openedPaths.has(tab.input.uri.fsPath),
-        );
+        group.tabs.some(({ input }) => {
+          if (input instanceof vscode.TabInputText || input instanceof vscode.TabInputCustom) {
+            return openedPaths.has(input.uri.fsPath);
+          }
+          return input instanceof vscode.TabInputWebview && isResourceViewType(input.viewType);
+        });
       const withResources = groups.find(
         (group) => group.viewColumn !== player && holdsResource(group),
       );

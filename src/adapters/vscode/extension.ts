@@ -15,6 +15,7 @@ import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson
 import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
+import { ResourceViewers } from './resource-viewers.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
 
 export const commands = {
@@ -66,6 +67,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
   const lessonTree = new LessonTreeView(logger);
+  const viewers = new ResourceViewers(logger);
   const statusBar = new StatusBarView(commands.statusBarClick);
   const core = createFollowAlong({
     player,
@@ -78,6 +80,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       lessonTree,
       statusBar,
       createResourcePlacement(() => player.viewColumn),
+      viewers,
     ),
     logger,
   });
@@ -111,6 +114,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   context.subscriptions.push(
     channel,
     player,
+    viewers,
     lessonTree,
     statusBar,
     {
