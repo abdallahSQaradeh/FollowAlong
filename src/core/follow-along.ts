@@ -128,6 +128,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           awaitingAutoplay = false;
         }
         break;
+      case 'userInteracted':
+        ui.returnFocus();
+        break;
       case 'timeUpdate':
         break;
     }

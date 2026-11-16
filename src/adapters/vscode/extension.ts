@@ -9,6 +9,7 @@ import type { PlayerEvent } from '../../protocol/player-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
+import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
 
@@ -30,6 +31,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
+  const focus = new FocusReturn();
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -37,7 +39,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     clock: createSystemClock(),
     converter: createUnavailableConverter(),
     config: createConfig(),
-    ui: createUiSink(),
+    ui: createUiSink(focus, logger),
     logger,
   });
 
@@ -65,6 +67,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   context.subscriptions.push(
     channel,
     player,
+    focus,
     {
       dispose: () => {
         core.dispose();

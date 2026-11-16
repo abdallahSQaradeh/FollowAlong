@@ -36,7 +36,12 @@ export type PlayerEvent =
   | { readonly type: 'played'; readonly lessonId: string }
   | { readonly type: 'paused'; readonly lessonId: string; readonly byUser: boolean }
   | { readonly type: 'ended'; readonly lessonId: string }
-  | { readonly type: 'error'; readonly lessonId: string; readonly message: string };
+  | { readonly type: 'error'; readonly lessonId: string; readonly message: string }
+  /**
+   * The learner finished a click or a drag anywhere in the player page, so the extension hands
+   * keyboard focus back to the code (ADR 0007). Not about a Lesson: it carries no `lessonId`.
+   */
+  | { readonly type: 'userInteracted' };
 
 type Fields = Readonly<Record<string, unknown>>;
 
@@ -89,6 +94,9 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
     return typeof raw.aacSupported === 'boolean'
       ? { type, aacSupported: raw.aacSupported }
       : undefined;
+  }
+  if (type === 'userInteracted') {
+    return { type };
   }
   if (!isText(lessonId)) {
     return undefined;

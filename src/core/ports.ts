@@ -129,6 +129,11 @@ export interface UserMessage {
 
 export interface UiSink {
   showMessage(message: UserMessage): void;
+  /**
+   * Hands keyboard focus back to the editor or terminal the learner used last, so a click in
+   * the player is not a Focus change (ADR 0007).
+   */
+  returnFocus(): void;
 }
 
 // --- All of them --------------------------------------------------------------------------------

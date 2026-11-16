@@ -161,9 +161,15 @@ export class FakeConfig implements Config {
 
 export class RecordingUi implements UiSink {
   readonly messages: UserMessage[] = [];
+  /** How many times the core asked to hand keyboard focus back to the code. */
+  focusReturns = 0;
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
+  }
+
+  returnFocus(): void {
+    this.focusReturns += 1;
   }
 }
 
