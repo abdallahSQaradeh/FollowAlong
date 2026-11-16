@@ -130,7 +130,7 @@ export function createUiSink(
 }
 
 /** The file dialog of an Attach: one file, from anywhere on disk. */
-export async function pickFileToAttach(): Promise<vscode.Uri | undefined> {
+async function pickFileToAttach(): Promise<vscode.Uri | undefined> {
   return (
     await vscode.window.showOpenDialog({
       canSelectFiles: true,

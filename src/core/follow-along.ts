@@ -50,8 +50,12 @@ export interface FollowAlong {
   restoreCourse(): Promise<void>;
   /** Plays a Lesson of the open Course, by its id, beside the code. */
   playLesson(lessonId: string): void;
-  /** Attaches a file, from anywhere on disk, as a Resource of a Lesson of the open Course. */
-  attachResource(lessonId: string, absolutePath: string): Promise<void>;
+  /**
+   * Attaches a file, from anywhere on disk, as a Resource of a Lesson of the open Course: the
+   * tree's "+". Without `absolutePath` it first asks for the file; the Lesson and its Course are
+   * fixed when the command runs, so a Course opened while the dialog is up never receives it.
+   */
+  attachResource(lessonId: string, absolutePath?: string): Promise<void>;
   /**
    * The attach command from the chord or the Command Palette: asks for a file and attaches it to
    * the Loaded Lesson when the command runs. The Lesson keeps playing meanwhile.
@@ -467,21 +471,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
       }
     },
-    attachResource(lessonId, absolutePath) {
+    async attachResource(lessonId, absolutePath) {
       const course = openedCourse;
       const data = courseData;
       if (course === undefined || data === undefined) {
         logger.log({ level: 'warn', message: `Cannot attach to ${lessonId}: no Course is open.` });
-        return Promise.resolve();
+        return;
       }
       if (!lessonsInOrder(course).some((lesson) => lesson.id === lessonId)) {
         logger.log({
           level: 'warn',
           message: `Cannot attach to ${lessonId}: it is not a Lesson of the open Course.`,
         });
-        return Promise.resolve();
+        return;
       }
-      return attachInTurn(course, data, lessonId, absolutePath);
+      const path = absolutePath ?? (await ui.pickFile());
+      if (path !== undefined) {
+        await attachInTurn(course, data, lessonId, path);
+      }
     },
     async attachToLoadedLesson() {
       // The Lesson is fixed when the learner presses the key, not when the dialog closes: the

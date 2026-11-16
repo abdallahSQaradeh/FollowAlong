@@ -343,6 +343,37 @@ describe('attaching a file Resource to a Lesson', () => {
   });
 });
 
+describe('attaching from the tree’s “+” without a file yet', () => {
+  it('asks for a file and attaches it to the Lesson the “+” belongs to', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', { '01 One.webm': 'v', 'notes.md': '# notes' });
+    await h.core.openCourse(course);
+
+    const attached = h.core.attachResource('01 One.webm');
+    expect(h.ui.fileDialogOpen).toBe(true);
+    h.ui.answerFileDialog(join(course, 'notes.md'));
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+  });
+
+  it('attaches to the Lesson of the Course it was clicked in, if another Course opens meanwhile', async () => {
+    const h = await createHarness();
+    const first = await h.folder('First', { '01 One.webm': 'v', 'notes.md': '# notes' });
+    const other = await h.folder('Other', { '01 One.webm': 'v' });
+    await h.core.openCourse(first);
+
+    const attached = h.core.attachResource('01 One.webm');
+    await h.core.openCourse(other);
+    h.ui.answerFileDialog(join(first, 'notes.md'));
+    await attached;
+
+    expect(resourceLabels(h, '01 One.webm')).toEqual([]);
+    await h.core.openCourse(first);
+    expect(resourceLabels(h, '01 One.webm')).toEqual(['notes.md']);
+  });
+});
+
 describe('attaching to a read-only Course whose fallback Resources file cannot be read', () => {
   it('attaches nothing, and says so, instead of failing the command', async () => {
     const h = await createHarness();

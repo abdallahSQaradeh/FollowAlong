@@ -25,7 +25,6 @@ import {
   createTerminalSettings,
   createUiSink,
   folderPath,
-  pickFileToAttach,
 } from './ports.js';
 
 export const commands = {
@@ -166,10 +165,8 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       if (typeof lessonId !== 'string') {
         return;
       }
-      const target = file instanceof vscode.Uri ? file : await pickFileToAttach();
-      if (target !== undefined) {
-        await core.attachResource(lessonId, target.fsPath);
-      }
+      // Without a file the core asks for one, so it fixes the Lesson's Course first (ADR 0024).
+      await core.attachResource(lessonId, file instanceof vscode.Uri ? file.fsPath : undefined);
     }),
     register(commands.attachToLoadedLesson, async () => {
       await core.attachToLoadedLesson();

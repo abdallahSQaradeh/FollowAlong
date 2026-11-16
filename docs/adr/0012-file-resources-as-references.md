@@ -73,7 +73,8 @@ read-only fallback without any code of its own. The file is version 1:
   smoke test checks it in a real VS Code. The player stays `retainContextWhenHidden` for the
   spots where it can still be covered.
 - **The file dialog stays in the adapter**, as for Open Course…: the core's `attachResource` takes a
-  Lesson id and an absolute path.
+  Lesson id and an absolute path. (Revised by ADR 0024: with no path, the core asks for the file
+  through `UiSink.pickFile`, so it can fix the Lesson's Course before the dialog opens.)
 
 ## Considered options
 

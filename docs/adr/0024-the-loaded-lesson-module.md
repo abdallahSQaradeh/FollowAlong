@@ -27,10 +27,15 @@ Every playback ticket (#26–#30, #41–#52) adds to the player side. We split i
   - Player events already carry the `loadId` (ADR 0022).
   - Finding the Lesson beside the Loaded Lesson compares the `Lesson` objects of the open
     Course, so a Lesson from another Course is not found there.
-  - A Lesson the core holds across an `await` keeps its Course with it. The attach from the chord
-    fixes both the Lesson and its Course at the key press (ADR 0023), so a Course opened while the
-    file dialog is up never receives the Resource. That fix is the one behaviour change of CP1,
-    with a red-then-green Seam 1 test.
+  - A Lesson the core holds across an `await` keeps its Course with it. Both attach routes fix
+    the Lesson and its Course before the file dialog opens, so a Course opened while the dialog is
+    up never receives the Resource:
+    - the chord (ADR 0023) at the key press;
+    - the tree's "+": `attachResource(lessonId, absolutePath?)` now asks for the file itself when
+      it is given none. The adapter no longer opens the dialog first and then attaches by id
+      (this revises ADR 0012's "the file dialog stays in the adapter" for this route). A caller
+      that passes a path behaves as before.
+  - These two fixes are CP1's only behaviour changes, each with a red-then-green Seam 1 test.
 
 ## The player reads `<storage>/courses`, not the whole extension storage
 
