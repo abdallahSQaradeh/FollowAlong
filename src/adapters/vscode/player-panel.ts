@@ -78,7 +78,11 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
 
   /** [DEBUG-49v] Logs a step of a spot move. */
   private trace(message: string): void {
-    this.logger.log({ level: 'debug', message: `[DEBUG-49v] ${message}` });
+    const groups = vscode.window.tabGroups.all.length;
+    this.logger.log({
+      level: 'debug',
+      message: `[DEBUG-49v] +${String(Date.now() % 100000)}ms groups=${String(groups)} ${message}`,
+    });
   }
 
   /** [DEBUG-49v] */
@@ -250,6 +254,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       },
     };
     panel.onDidDispose(() => {
+      this.trace(`panel disposed; dropped=${String(dropped)}`);
       // A panel dropped for a move is not a close: the Lesson is still there.
       if (!dropped && this.host === host) {
         this.playerGone();
@@ -291,6 +296,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
         if (existing?.visible === true) {
           this.adopt(spot, existing);
         }
+        this.trace('returnFocus');
         this.returnFocus();
       },
       (error: unknown) => {
