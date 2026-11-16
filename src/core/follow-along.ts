@@ -2,67 +2,24 @@
  * The FollowAlong core: the headless part of the extension, reached only through its ports
  * (ADR 0002). It decides which Lesson plays and drives the player through the message protocol.
  */
-import { basename, extname, join } from 'node:path';
+import { basename } from 'node:path';
 
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
-import { FileSystemError, type Disposable, type FileSystem, type Ports } from './ports.js';
+import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
+import { FileSystemError, type Disposable, type Ports } from './ports.js';
+import { buildLessonTree } from './lesson-tree.js';
+import { readFolderListing } from './folder-listing.js';
 
 export interface FollowAlong {
-  /** Opens a Course folder and plays its first Lesson beside the code. */
+  /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
   openCourse(folder: string): Promise<void>;
+  /** Plays a Lesson of the open Course, by its id, beside the code. */
+  playLesson(lessonId: string): void;
   dispose(): void;
 }
 
-interface Lesson {
-  /** Path relative to the Course, with `/` separators. */
-  readonly id: string;
-  readonly path: string;
-  readonly title: string;
-}
-
-const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-
-/**
- * The first `.webm` in natural order, files before subfolders, at any depth. FollowAlong's own
- * folder and other hidden folders are left out. The Lesson tree ticket replaces this with the
- * full Course model.
- */
-async function findFirstLesson(
-  fileSystem: FileSystem,
-  folder: string,
-  prefix = '',
-): Promise<Lesson | undefined> {
-  const entries = [...(await fileSystem.readDirectory(folder))].sort((a, b) =>
-    naturalOrder.compare(a.name, b.name),
-  );
-  const video = entries.find(
-    (entry) => entry.kind === 'file' && extname(entry.name).toLowerCase() === '.webm',
-  );
-  if (video !== undefined) {
-    return {
-      id: `${prefix}${video.name}`,
-      path: join(folder, video.name),
-      title: basename(video.name, extname(video.name)),
-    };
-  }
-  for (const entry of entries) {
-    if (entry.kind !== 'directory' || entry.name.startsWith('.')) {
-      continue;
-    }
-    const found = await findFirstLesson(
-      fileSystem,
-      join(folder, entry.name),
-      `${prefix}${entry.name}/`,
-    );
-    if (found !== undefined) {
-      return found;
-    }
-  }
-  return undefined;
-}
-
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, fileSystem, storage, ui, logger } = ports;
+  const { player, storage, ui, logger } = ports;
 
   /** The Lesson the player should show. */
   let current: Lesson | undefined;
@@ -75,11 +32,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     if (current === undefined) {
       return;
     }
-    const command: PlayerCommand = {
+    const command: Extract<PlayerCommand, { type: 'load' }> = {
       type: 'load',
       lessonId: current.id,
       videoUri: player.resourceUri(current.path),
-      container: 'webm',
+      container: current.container,
       startAt: 0,
       autoplay: true,
     };
@@ -135,36 +92,63 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   const subscriptions: Disposable[] = [player.onEvent(onPlayerEvent)];
 
+  /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
+  let openedCourse: Course | undefined;
+
+  /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
+  function play(course: Course, lesson: Lesson): void {
+    current = lesson;
+    logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
+    const shown = player.show({
+      title: lesson.title,
+      resourceRoots: [course.folder, storage.folder],
+    });
+    if (shown === 'created') {
+      playerReady = false;
+    } else if (playerReady) {
+      loadCurrent();
+    }
+  }
+
   return {
-    async openCourse(course) {
-      let lesson: Lesson | undefined;
+    async openCourse(folder) {
+      let course: Course;
       try {
-        lesson = await findFirstLesson(fileSystem, course);
+        course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
       } catch (error) {
         if (FileSystemError.is(error, 'notFound')) {
           ui.showMessage({
             severity: 'error',
-            text: `FollowAlong cannot open “${basename(course)}”: the folder is missing.`,
+            text: `FollowAlong cannot open “${basename(folder)}”: the folder is missing.`,
           });
           return;
         }
         throw error;
       }
-      if (lesson === undefined) {
-        ui.showMessage({
-          severity: 'warning',
-          text: `FollowAlong found no WebM Lesson in “${basename(course)}”.`,
+      openedCourse = course;
+      const first = lessonsInOrder(course)[0];
+      if (first === undefined) {
+        const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
+        ui.showLessonTree({ message: text, nodes: [] });
+        ui.showMessage({ severity: 'warning', text });
+        return;
+      }
+      ui.showLessonTree(buildLessonTree(course));
+      logger.log({ level: 'info', message: `Opened Course ${folder}` });
+      play(course, first);
+    },
+    playLesson(lessonId) {
+      const course = openedCourse;
+      const lesson =
+        course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+      if (course === undefined || lesson === undefined) {
+        logger.log({
+          level: 'warn',
+          message: `Cannot play ${lessonId}: it is not a Lesson of the open Course.`,
         });
         return;
       }
-      current = lesson;
-      logger.log({ level: 'info', message: `Opened Course ${course}; playing ${lesson.id}` });
-      const shown = player.show({ title: lesson.title, resourceRoots: [course, storage.folder] });
-      if (shown === 'created') {
-        playerReady = false;
-      } else if (playerReady) {
-        loadCurrent();
-      }
+      play(course, lesson);
     },
     dispose() {
       for (const subscription of subscriptions) {

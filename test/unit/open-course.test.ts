@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createHarness } from './harness.js';
 
 describe('opening a Course', () => {
-  it('plays its first WebM Lesson in the player beside the code, with sound', async () => {
+  it('plays its first Lesson in the player beside the code, with sound', async () => {
     const h = await createHarness();
     const course = await h.folder('JavaScript The Advanced Concepts', {
       'Section 1/01 Welcome.webm': 'video',
@@ -17,7 +17,7 @@ describe('opening a Course', () => {
     h.player.ready();
 
     expect(h.player.shown).toEqual([
-      { title: '01 Welcome', resourceRoots: [course, h.storage.folder] },
+      { title: '01 Welcome.webm', resourceRoots: [course, h.storage.folder] },
     ]);
     expect(h.player.sent).toEqual([
       {
@@ -73,16 +73,17 @@ describe('opening a Course', () => {
     expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: 'Section 1/intro.webm' }]);
   });
 
-  it('says so, and opens no player, when the folder holds no WebM Lesson', async () => {
+  it('says so, and opens no player, when the folder holds no Lessons', async () => {
     const h = await createHarness();
-    const course = await h.folder('Zipped course', { 'course.zip': 'zip', 'intro.mp4': 'video' });
+    const course = await h.folder('Zipped course', { 'course.zip': 'zip', 'notes.pdf': 'pdf' });
 
     await h.core.openCourse(course);
 
+    const text =
+      'FollowAlong found no Lessons (.mp4 or .webm) in “Zipped course”. If the Course is zipped, extract it first.';
     expect(h.player.shown).toEqual([]);
-    expect(h.ui.messages).toEqual([
-      { severity: 'warning', text: 'FollowAlong found no WebM Lesson in “Zipped course”.' },
-    ]);
+    expect(h.ui.messages).toEqual([{ severity: 'warning', text }]);
+    expect(h.ui.lessonTree).toEqual({ message: text, nodes: [] });
   });
 
   it('loads the Lesson again when the player page reloads', async () => {
@@ -170,7 +171,7 @@ describe('opening a Course', () => {
     expect(h.ui.messages).toEqual([
       {
         severity: 'info',
-        text: 'VS Code did not let “01 Intro” start by itself. Press play in the player to start it.',
+        text: 'VS Code did not let “01 Intro.webm” start by itself. Press play in the player to start it.',
       },
     ]);
   });
@@ -197,7 +198,7 @@ describe('opening a Course', () => {
     h.player.emit({ type: 'error', lessonId: '01 Intro.webm', message: 'decode failed' });
 
     expect(h.ui.messages).toEqual([
-      { severity: 'error', text: 'FollowAlong could not play “01 Intro”: decode failed' },
+      { severity: 'error', text: 'FollowAlong could not play “01 Intro.webm”: decode failed' },
     ]);
   });
 

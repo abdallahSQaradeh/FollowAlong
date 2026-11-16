@@ -4,6 +4,7 @@
  * tests pass fakes for everything except the file system, which is real.
  */
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
+import type { LessonTreeModel } from './lesson-tree.js';
 import type { Logger } from './logger.js';
 
 export interface Disposable {
@@ -129,6 +130,8 @@ export interface UserMessage {
 
 export interface UiSink {
   showMessage(message: UserMessage): void;
+  /** Replaces the Lesson tree in the activity bar. */
+  showLessonTree(model: LessonTreeModel): void;
 }
 
 // --- All of them --------------------------------------------------------------------------------
