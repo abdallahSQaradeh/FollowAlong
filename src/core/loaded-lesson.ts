@@ -22,6 +22,7 @@ import {
   type AutoPauseEffect,
   type AutoPauseInput,
   type AutoPauseState,
+  type PlaySource,
 } from './auto-pause.js';
 import type { Lesson } from './course-model.js';
 import type { PreparedSound, SoundRequest } from './sidecar-sound.js';
@@ -236,8 +237,10 @@ interface Playback {
   readonly ended: boolean;
   /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
   readonly awaitingAutoplay: boolean;
-  /** Set when the play/pause command sent `play`, until the player answers it. */
+  /** Set when the play/pause command or auto-pause sent `play`, until the player answers it. */
   readonly awaitingPlayAnswer: boolean;
+  /** Who sent the `play` awaiting its answer: the learner's command, or auto-pause's resume. */
+  readonly playAskedBy: Exclude<PlaySource, 'autoplay'>;
   /** Set when the play/pause command sent `pause`, until the player answers it. */
   readonly awaitingPauseAnswer: boolean;
   /** Whether the learner was told, in this run of refusals, to press play in the player. */
@@ -250,9 +253,19 @@ function freshPlayback(autoplay: boolean): Playback {
     ended: false,
     awaitingAutoplay: autoplay,
     awaitingPlayAnswer: false,
+    playAskedBy: 'learner',
     awaitingPauseAnswer: false,
     toldToPressPlay: false,
   };
+}
+
+/** Who started the play the player reports now, from what was asked of it (ADR 0052). */
+function playSource(playback: Playback): PlaySource {
+  if (playback.awaitingPlayAnswer) {
+    return playback.playAskedBy;
+  }
+  // A play nobody asked for is the learner's: a click on the picture, or the native controls.
+  return playback.awaitingAutoplay ? 'autoplay' : 'learner';
 }
 
 /**
@@ -381,7 +394,7 @@ export function createLoadedLesson(
       quietTimer = undefined;
     },
     resume: () => {
-      resume(0);
+      resume(0, 'autoResume');
     },
   };
 
@@ -700,9 +713,7 @@ export function createLoadedLesson(
         // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         const after = afterPause(playback, event.byUser);
         playback = after.playback;
-        if (event.byUser) {
-          feedAutoPause({ type: 'learnerPaused' });
-        }
+        feedAutoPause({ type: event.byUser ? 'learnerPaused' : 'paused' });
         if (after.tellToPressPlay) {
           ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
         }
@@ -716,9 +727,10 @@ export function createLoadedLesson(
       case 'played': {
         const shown = shownLesson(event);
         if (shown !== undefined) {
+          const source = playSource(playback);
           // Also ends a run of refusals: the player did what it was asked.
           playback = { ...freshPlayback(false), playing: true };
-          feedAutoPause({ type: 'played' });
+          feedAutoPause({ type: 'played', source });
           shown.engaged = true;
           stopCountingPlay(shown);
           startSaving();
@@ -1090,10 +1102,10 @@ export function createLoadedLesson(
     return positiveSetting(config.get('resumeRewind'), 0);
   }
 
-  /** Sends `play`, after a `seekBy` back of `rewind` seconds when that is above 0. */
-  function resume(rewind: number): void {
+  /** Sends `play` for `by`, after a `seekBy` back of `rewind` seconds when that is above 0. */
+  function resume(rewind: number, by: Playback['playAskedBy']): void {
     const wasAwaiting = playback.awaitingPlayAnswer;
-    playback = { ...playback, awaitingPlayAnswer: true };
+    playback = { ...playback, awaitingPlayAnswer: true, playAskedBy: by };
     // A second press before the player answers must not rewind again.
     if (rewind > 0 && !playback.ended && !wasAwaiting) {
       player.send({ type: 'seekBy', seconds: -rewind });
@@ -1111,7 +1123,7 @@ export function createLoadedLesson(
       feedAutoPause({ type: 'learnerPaused' });
       return;
     }
-    resume(resumeRewindSeconds());
+    resume(resumeRewindSeconds(), 'learner');
   }
 
   function seekStep(size: StepSize, direction: StepDirection): void {
@@ -1152,7 +1164,7 @@ export function createLoadedLesson(
       if (current === undefined || !playerReady || playback.playing) {
         return;
       }
-      resume(0);
+      resume(0, 'autoResume');
     },
     seekStep,
     speedStep(direction) {

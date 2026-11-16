@@ -29,19 +29,29 @@ export function readResumeAfterMs(config: Pick<Config, 'get'>): number {
   return seconds * 1000;
 }
 
+/**
+ * Who started the Loaded Lesson playing:
+ * - `learner`: the play/pause command's `play`, or a play the core did not ask for (the learner's
+ *   click on the picture, the native controls);
+ * - `autoplay`: a `load` with autoplay (a picked Lesson, the next Lesson, a moved or reloaded page);
+ * - `autoResume`: auto-pause's own resume after the quiet period.
+ */
+export type PlaySource = 'learner' | 'autoplay' | 'autoResume';
+
 /** A mode in which auto-pause acts. */
 export type AutoPauseOnMode = Exclude<AutoPauseMode, 'off'>;
 
 /**
  * - `off`: the setting is off.
  * - `armed`: an edit while the Lesson plays pauses it.
- * - `autoPaused`: an edit paused the Lesson, and it has not played since.
- *
- * #60 adds `overridden` (the learner played while armed) and the quiet timer of `pauseAndResume`.
+ * - `autoPaused`: an edit paused the Lesson, and it has not played since. With `pauseAndResume`
+ *   the quiet period runs (the `resumeAfter` setting): when it passes, auto-pause resumes it.
+ * - `overridden`: the learner played the Lesson auto-pause paused, so typing plays through until
+ *   the next pause of any kind (story 102); then it is armed again.
  */
 export type AutoPauseState =
   | { readonly kind: 'off' }
-  | { readonly kind: 'armed' | 'autoPaused'; readonly mode: AutoPauseOnMode };
+  | { readonly kind: 'armed' | 'autoPaused' | 'overridden'; readonly mode: AutoPauseOnMode };
 
 export const autoPauseOff: AutoPauseState = { kind: 'off' };
 
@@ -50,11 +60,10 @@ export type AutoPauseInput =
   | { readonly type: 'modeChanged'; readonly mode: AutoPauseMode }
   /** The learner edited the active editor's document; `playing`: the Lesson is playing. */
   | { readonly type: 'typed'; readonly playing: boolean }
-  /**
-   * The player reports the Loaded Lesson playing. #60 gives it its source (the learner, a `load`'s
-   * autoplay, auto-resume): only a learner's play while armed sets `overridden` (ADR 0052).
-   */
-  | { readonly type: 'played' }
+  /** The player reports the Loaded Lesson playing; `source`: who started it (ADR 0052). */
+  | { readonly type: 'played'; readonly source: PlaySource }
+  /** The player reports the Loaded Lesson paused, whoever paused it. */
+  | { readonly type: 'paused' }
   /**
    * The learner paused the Lesson themselves: the play/pause command sent `pause`, or the player
    * reports a pause of theirs (`paused {byUser: true}`). Spec: "a manual pause during `autoPaused`
@@ -127,15 +136,26 @@ function transition(state: AutoPauseState, input: AutoPauseInput): AutoPauseStep
     case 'quiet':
       return { state, effects: quietRuns(state) ? ['resume'] : [] };
     case 'played':
-    case 'learnerPaused':
-    case 'lessonOver':
-      // Playing again, whoever started it; paused by the learner, so the pause is theirs; or no
-      // longer the Lesson it paused: what it paused is over, and the next edit while a Lesson
-      // plays pauses it.
+      // The learner playing a Lesson auto-pause paused lets typing play through (story 102). Its
+      // own resume, or a `load`'s autoplay, ends the pause it caused: the next edit pauses again.
+      if (state.kind !== 'autoPaused') {
+        return { state, effects: [] };
+      }
       return {
-        state: state.kind === 'autoPaused' ? { ...state, kind: 'armed' } : state,
+        state: { ...state, kind: input.source === 'learner' ? 'overridden' : 'armed' },
         effects: [],
       };
+    case 'paused':
+      // The next pause of any kind ends `overridden`. A pause while `autoPaused` is the one it sent.
+      return {
+        state: state.kind === 'overridden' ? { ...state, kind: 'armed' } : state,
+        effects: [],
+      };
+    case 'learnerPaused':
+    case 'lessonOver':
+      // Paused by the learner, so the pause is theirs; or no longer the Lesson it paused: what it
+      // paused or let play through is over, and the next edit while a Lesson plays pauses it.
+      return { state: state.kind === 'off' ? state : { ...state, kind: 'armed' }, effects: [] };
   }
 }
 

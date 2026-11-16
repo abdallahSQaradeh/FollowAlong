@@ -200,9 +200,7 @@ describe('auto-pause while typing', () => {
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
 
-    // Interim, until #60: there a learner's play while armed sets `overridden`, so typing does not
-    // pause again until the next pause of any kind (story 102).
-    it('(interim, until #60) pauses again for the first edit after the learner resumed the Lesson', async () => {
+    it('lets typing play through once the learner plays a Lesson it paused (story 102)', async () => {
       const h = await createHarness();
       await openLesson(h, 'pause');
       h.player.emit({ type: 'played', lessonId });
@@ -211,7 +209,19 @@ describe('auto-pause while typing', () => {
       h.core.playPause();
       h.player.emit({ type: 'played', lessonId });
 
-      expect(edit(h)).toEqual([{ type: 'pause' }]);
+      expect([...edit(h), ...edit(h)]).toEqual([]);
+    });
+
+    it('lets typing play through once the learner’s click plays a Lesson it paused', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+      h.player.emit({ type: 'played', lessonId });
+      edit(h);
+      h.player.emit({ type: 'paused', lessonId, byUser: false });
+      // A play the core did not ask for: the learner's click on the picture, or the native controls.
+      h.player.emit({ type: 'played', lessonId });
+
+      expect(edit(h)).toEqual([]);
     });
 
     it('acts from the moment the learner turns it on, mid-Lesson', async () => {
@@ -441,6 +451,15 @@ describe('pause and resume after a quiet period', () => {
 
       expect(after(h, 10_000)).toEqual([]);
     });
+  });
+
+  it('pauses again for an edit after it resumed the Lesson: its own play is not the learner’s', async () => {
+    const h = await createHarness();
+    await pausedByTyping(h);
+    expect(after(h, 2000)).toEqual([{ type: 'play' }]);
+    h.player.emit({ type: 'played', lessonId });
+
+    expect(edit(h)).toEqual([{ type: 'pause' }]);
   });
 
   it('leaves the Lesson paused when the learner switches to `pause` during the quiet period', async () => {
