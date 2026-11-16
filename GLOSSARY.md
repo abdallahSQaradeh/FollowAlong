@@ -68,6 +68,10 @@ _Avoid_: Index, table of contents, names file
 How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done. A Lesson is in progress after 10 s of play, and done when its playhead reaches the last 5 % or the end. Done stays until the learner un-marks it, and a done Lesson saved in its last 5 % starts again at 0:00.
 _Avoid_: History, completion
 
+**Progress line**:
+The second line of a Course in the Course picker that has Progress: `27/140 · 19% · last: <Lesson title>` (Lessons done of all Lessons, percent rounded down as in the Lesson tree, and the title of the Lesson played last). A Course nobody played, or whose Progress was reset, has none; a last Lesson that is unknown or reset leaves out `last:`.
+_Avoid_: Status line, summary
+
 **Reset**:
 To take away a Lesson's done mark and saved position, so it reads as never played. Offered for a Section's Lessons (_Reset Section_) and for the whole Course (_Reset Course progress_, after a confirmation; the Course then reopens on its first Lesson). It never touches Resources or prepared sound. _Mark all done_ on a Section is its counterpart for that Section: every Lesson in it is marked done, each keeping its saved position. For one Lesson, _Mark done_ and _Mark not done_ (the tree's Lesson menu) and the `Ctrl+'` `D` toggle (which does one or the other, by the Lesson's state) work on one Lesson: "not done" is a reset of that Lesson.
 _Avoid_: Clear, wipe, restart
