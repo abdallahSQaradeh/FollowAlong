@@ -140,12 +140,22 @@ function entryOf(
 }
 
 /**
- * Two entries of one Lesson (ADR 0074): the place saved later, with the status set later. `a` wins
- * a tie.
+ * Of two entries, the one whose status counts: the one set later, except that in progress never
+ * replaces done. Only the learner un-marks a done Lesson, with a reset (ADR 0030); play in a window
+ * that had not seen the mark yet only reaches in progress. `a` wins a tie.
+ */
+function statusHolder(a: LessonProgress, b: LessonProgress): LessonProgress {
+  const [later, earlier] = statusSetAt(b) > statusSetAt(a) ? [b, a] : [a, b];
+  return later.status === 'inProgress' && earlier.status === 'done' ? earlier : later;
+}
+
+/**
+ * Two entries of one Lesson (ADR 0074): the place saved later, with the status set later (see
+ * {@link statusHolder}). `a` wins a tie.
  */
 function mergeEntry(a: LessonProgress, b: LessonProgress): LessonProgress {
   const place = b.savedAt > a.savedAt ? b : a;
-  const marked = statusSetAt(b) > statusSetAt(a) ? b : a;
+  const marked = statusHolder(a, b);
   return place === marked ? place : entryOf(place, marked.status, statusSetAt(marked));
 }
 

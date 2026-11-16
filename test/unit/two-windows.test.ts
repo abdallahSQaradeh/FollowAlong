@@ -151,6 +151,27 @@ describe('two windows on the same Course', () => {
     expect(glyphs(h)[intro]).toBe('✓');
   });
 
+  it('keeps a done mark when the other window then plays the Lesson past its 10 s', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    other.core.playLesson(intro);
+    other.player.emit({ type: 'played', lessonId: intro });
+    for (let position = 0; position <= 4; position += 2) {
+      other.player.emit({ type: 'timeUpdate', lessonId: intro, position, duration: 600 });
+    }
+    wait(h, other, 1_000);
+
+    await h.core.markLessonDone(intro);
+    wait(h, other, 1_000);
+    // The other window has not seen the mark; its play now counts as in progress.
+    for (let position = 6; position <= 20; position += 2) {
+      other.player.emit({ type: 'timeUpdate', lessonId: intro, position, duration: 600 });
+    }
+    pause(other.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro], other)).toEqual({ [intro]: 15 });
+    expect(glyphs(h)[intro]).toBe('✓');
+  });
+
   it('keeps the place the other window saved when a Lesson is marked done', async () => {
     const { h, other, course } = await openInTwoWindows(0);
     other.core.playLesson(intro);
