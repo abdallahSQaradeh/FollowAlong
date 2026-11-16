@@ -10,6 +10,8 @@ import { FileSystemError, type Disposable, type FileSystem, type Ports } from '.
 export interface FollowAlong {
   /** Opens a Course folder and plays its first Lesson beside the code. */
   openCourse(folder: string): Promise<void>;
+  /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
+  playPause(): void;
   dispose(): void;
 }
 
@@ -70,6 +72,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let playerReady = false;
   /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
   let awaitingAutoplay = false;
+  /** Whether the player last reported the current Lesson playing. */
+  let playing = false;
 
   function loadCurrent(): void {
     if (current === undefined) {
@@ -85,6 +89,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     };
     player.send(command);
     awaitingAutoplay = command.autoplay;
+    playing = false;
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -113,6 +118,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         // A pause before the Lesson ever played, not by the learner: VS Code refused autoplay.
         // Without a word the learner would face a stopped video and not know why.
         if (event.lessonId === current?.id) {
+          playing = false;
           if (awaitingAutoplay && !event.byUser) {
             ui.showMessage({
               severity: 'info',
@@ -126,6 +132,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'ended':
         if (event.lessonId === current?.id) {
           awaitingAutoplay = false;
+          playing = event.type === 'played';
         }
         break;
       case 'timeUpdate':
@@ -165,6 +172,21 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       } else if (playerReady) {
         loadCurrent();
       }
+    },
+    playPause() {
+      if (current === undefined) {
+        ui.showMessage({
+          severity: 'info',
+          text: 'FollowAlong: no Lesson is open. Open a Course first.',
+        });
+        return;
+      }
+      if (!playerReady) {
+        // The page is still starting: it takes no command yet, and it plays the Lesson on `ready`.
+        logger.log({ level: 'debug', message: 'Play/pause ignored: the player is not ready yet.' });
+        return;
+      }
+      player.send({ type: playing ? 'pause' : 'play' });
     },
     dispose() {
       for (const subscription of subscriptions) {

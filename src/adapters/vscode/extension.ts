@@ -15,6 +15,8 @@ import { createConfig, createOutputLogger, createStorage, createUiSink } from '.
 export const commands = {
   /** Temporary: opens a folder as the Course. The Course picker replaces the folder dialog. */
   openCourse: 'followalong.openCourse',
+  /** A playback controller command: command in, player message out. Bound to keys in package.json. */
+  playPause: 'followalong.playPause',
 } as const;
 
 /**
@@ -86,6 +88,10 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       if (target !== undefined) {
         await core.openCourse(target.fsPath);
       }
+    }),
+    register(commands.playPause, () => {
+      core.playPause();
+      return Promise.resolve();
     }),
   );
   return testHooks;
