@@ -2,7 +2,7 @@
  * The FollowAlong core: the headless part of the extension, reached only through its ports
  * (ADR 0002). It decides which Lesson plays and drives the player through the message protocol.
  */
-import { basename } from 'node:path';
+import { basename, isAbsolute, relative, sep } from 'node:path';
 
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
@@ -141,6 +141,13 @@ function afterPause(
 
 function pressPlayText(lesson: Lesson): string {
   return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
+}
+
+/** Whether `path` is `folder` or inside it. */
+function isInside(path: string, folder: string): boolean {
+  const fromFolder = relative(folder, path);
+  const above = fromFolder === '..' || fromFolder.startsWith(`..${sep}`);
+  return !above && !isAbsolute(fromFolder);
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
@@ -357,7 +364,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     ui.selectLesson(lesson.id);
     const shown = player.show({
       title: lesson.title,
-      resourceRoots: [course.folder, storage.folder],
+      resourceRoots: playerRoots(course.folder),
     });
     if (shown === 'created') {
       // A new page is not ready and plays at normal speed.
@@ -530,6 +537,18 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     ui.showLessonTree(buildLessonTree(course, resources));
     logger.log({ level: 'info', message: `Opened Course ${folder}` });
     play(course, first);
+  }
+
+  /**
+   * The folders the player may read media from: the Courses roots, the Course folder when it is
+   * outside them, and the extension storage. A change reloads the player page, which loses the
+   * click that lets it start playback (#12 D3), so Courses under the same roots share them
+   * (ADR 0022).
+   */
+  function playerRoots(courseFolder: string): string[] {
+    const roots = coursesRoots();
+    const underARoot = roots.some((root) => isInside(courseFolder, root));
+    return [...roots, ...(underARoot ? [] : [courseFolder]), storage.folder];
   }
 
   /** The Courses roots the learner named in `followalong.coursesRoots`, as written there. */

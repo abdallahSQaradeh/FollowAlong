@@ -54,8 +54,9 @@ describe('the Course picker', () => {
     h.ui.choose('Some Course');
     await picking;
 
-    expect(h.player.shown.map((shown) => shown.resourceRoots[0])).toEqual([
-      join(learning, 'Some Course'),
+    h.player.ready();
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', videoUri: h.player.resourceUri(join(learning, 'Some Course', 'intro.webm')) },
     ]);
   });
 
@@ -193,14 +194,12 @@ describe('the Course picker', () => {
     await settle();
     h.ui.choose('Second Course');
     await picking;
-    h.player.ready();
 
     const second = join(learning, 'Second Course');
-    expect(h.player.shown.at(-1)).toEqual({
-      title: 'b',
-      resourceRoots: [second, h.storage.folder],
-    });
-    expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: 'b.webm' }]);
+    expect(h.player.shown.at(-1)?.title).toBe('b');
+    expect(h.player.sent).toMatchObject([
+      { type: 'load', lessonId: 'b.webm', videoUri: h.player.resourceUri(join(second, 'b.webm')) },
+    ]);
     expect(h.ui.lessonTree?.nodes.map((node) => node.label)).toEqual(['b', 'Section 1']);
     // No confirmation: nothing else was asked or said.
     expect(h.ui.pickers).toHaveLength(1);
@@ -238,5 +237,46 @@ describe('the Course picker', () => {
     await settle();
 
     expect(rows(h.ui.picker)).toEqual(['Node Course', 'React Basics', 'Add Courses root…']);
+  });
+
+  it('keeps the player page when the learner picks another Course under the Courses roots', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', {
+      'First Course/a.webm': 'v',
+      'Second Course/b.webm': 'v',
+    });
+    h.config.set('coursesRoots', [learning]);
+    const first = h.core.pickCourse();
+    await settle();
+    h.ui.choose('First Course');
+    await first;
+    h.player.ready();
+    h.player.clearSent();
+
+    // The page keeps the click that lets it start playback (#12 D3) only if it is not reloaded,
+    // which it is whenever the folders it may read change: they are the Courses roots.
+    const second = h.core.pickCourse();
+    await settle();
+    h.ui.choose('Second Course');
+    await second;
+
+    expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
+      [learning, h.storage.folder],
+      [learning, h.storage.folder],
+    ]);
+    expect(h.player.sent).toMatchObject([{ type: 'load', lessonId: 'b.webm' }]);
+  });
+
+  it('lets the player read a Course outside the Courses roots too', async () => {
+    const h = await createHarness();
+    const learning = await h.folder('Learning', { 'First Course/a.webm': 'v' });
+    const elsewhere = await h.folder('Elsewhere', { 'c.webm': 'v' });
+    h.config.set('coursesRoots', [learning]);
+
+    await h.core.openCourse(elsewhere);
+
+    expect(h.player.shown.map((shown) => shown.resourceRoots)).toEqual([
+      [learning, elsewhere, h.storage.folder],
+    ]);
   });
 });
