@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import * as vscode from 'vscode';
@@ -25,6 +26,15 @@ interface SeenEvent {
 /** What `activate` returns in ExtensionMode.Test (src/adapters/vscode/extension.ts). */
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
+  lessonTree(): { readonly nodes: readonly TreeNode[] };
+}
+
+/** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
+interface TreeNode {
+  readonly kind: string;
+  readonly id: string;
+  readonly label: string;
+  readonly resources?: readonly TreeNode[];
 }
 export async function run(): Promise<void> {
   // The suite runs inside the extension host, where Node prints a warning without saying who
@@ -44,7 +54,12 @@ export async function run(): Promise<void> {
   say('the FollowAlong extension activates');
 
   const registered = await vscode.commands.getCommands(true);
-  for (const command of ['followalong.openCourse', 'followalong.playLesson']) {
+  for (const command of [
+    'followalong.openCourse',
+    'followalong.playLesson',
+    'followalong.attachResource',
+    'followalong.openResource',
+  ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
   // VS Code adds a `.focus` command for every view it accepted from package.json: the FollowAlong
@@ -63,6 +78,73 @@ export async function run(): Promise<void> {
   // A click on a Lesson in the tree runs this command with the Lesson's id.
   await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
   say(await theLessonStarts(hooks.playerEvents, 'long.webm'));
+
+  await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
+  say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+}
+
+/** Attaches a text file to a Lesson of a scratch Course, then opens it from the tree. */
+async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHooks): Promise<void> {
+  // A scratch Course, so attaching never writes a `.followalong` folder into the repository.
+  const scratch = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
+  try {
+    const course = join(scratch, 'Course');
+    mkdirSync(course);
+    copyFileSync(
+      join(extensionPath, 'test', 'fixtures', 'media', 'lesson.webm'),
+      join(course, 'lesson.webm'),
+    );
+    const notes = join(scratch, 'notes.ts');
+    writeFileSync(notes, 'export const note = "beside the video";\n');
+    const code = await vscode.workspace.openTextDocument({
+      language: 'javascript',
+      content: '1;\n',
+    });
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+
+    // The "+" on the Lesson runs this command with the Lesson's tree node.
+    const lesson = hooks.lessonTree().nodes.find((node) => node.label === 'lesson.webm');
+    assert.ok(lesson, 'the scratch Course shows no lesson.webm');
+    await vscode.commands.executeCommand(
+      'followalong.attachResource',
+      lesson,
+      vscode.Uri.file(notes),
+    );
+    const shown = await waitFor(
+      'the Resource under its Lesson',
+      () => hooks.lessonTree().nodes.find((node) => node.id === lesson.id)?.resources?.[0],
+    );
+    assert.equal(shown.label, 'notes.ts');
+
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('followalong.openResource', shown.id);
+    const resourceGroup = await waitFor('the Resource tab', () =>
+      vscode.window.tabGroups.all.find((group) =>
+        group.tabs.some(
+          (tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.fsPath === notes,
+        ),
+      ),
+    );
+    assert.notEqual(
+      resourceGroup.viewColumn,
+      vscode.ViewColumn.One,
+      'the file opened over the code',
+    );
+    assert.ok(
+      vscode.window.tabGroups.all.some((group) =>
+        group.tabs.some(
+          (tab) =>
+            tab.input instanceof vscode.TabInputWebview &&
+            tab.input.viewType.endsWith('followalong.player'),
+        ),
+      ),
+      'opening the Resource closed the player',
+    );
+    assert.ok(!hooks.playerEvents.some((event) => event.type === 'error'));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 /** Waits for the real player page to play the Lesson, or to report that autoplay was refused. */
