@@ -42,6 +42,7 @@ import {
 import { readFolderListing } from './folder-listing.js';
 import { lessonStatus, openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
+import { leavePendingCourse, takePendingCourse, withdrawPendingCourse } from './pending-course.js';
 import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 
@@ -168,7 +169,7 @@ export interface FollowAlong {
 export type { SpeedDirection, StepDirection, StepSize } from './loaded-lesson.js';
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { storage, ui, logger, config } = ports;
+  const { storage, ui, logger, config, clock } = ports;
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
@@ -758,6 +759,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'openCourse':
         await openInTurn(intent.folder, false);
         break;
+      case 'openCourseInNewWindow':
+        await openInNewWindow(intent.folder);
+        break;
       case 'addCoursesRoot':
         // The learner added a root to pick a Course from it: show the list again, with its Courses.
         if (await chooseCoursesRoot()) {
@@ -779,6 +783,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         break;
       case undefined:
         break;
+    }
+  }
+
+  /** Leaves a note for the new window, then opens it; this window's Course is not touched. */
+  async function openInNewWindow(folder: string): Promise<void> {
+    try {
+      await leavePendingCourse(storage.global, folder, clock.now());
+      await ui.openNewWindow();
+    } catch (error) {
+      logger.log({
+        level: 'error',
+        message: `Could not open “${folder}” in a new window: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      ui.showMessage({
+        severity: 'error',
+        text: `FollowAlong could not open “${basename(folder)}” in a new window.`,
+      });
+      await withdrawPendingCourse(storage.global).catch(() => undefined);
     }
   }
 
@@ -805,6 +827,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const folder = storage.workspace.get(openCourseKey);
       if (typeof folder === 'string') {
         await openInTurn(folder, true);
+        return;
+      }
+      // A window that remembers no Course may be the new window another one asked for.
+      const asked = await takePendingCourse(storage.global, clock.now()).catch(() => undefined);
+      if (asked !== undefined) {
+        await openInTurn(asked, false);
       }
     },
     playLesson,

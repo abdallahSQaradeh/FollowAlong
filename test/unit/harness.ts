@@ -578,6 +578,19 @@ export class RecordingUi implements UiSink {
     this.focusReturns += 1;
   }
 
+  /** How many new windows the core asked for. */
+  newWindows = 0;
+  /** Makes the next requests for a new window fail, as VS Code may refuse them. */
+  failNewWindow = false;
+
+  openNewWindow(): Promise<void> {
+    if (this.failNewWindow) {
+      return Promise.reject(new Error('no window'));
+    }
+    this.newWindows += 1;
+    return Promise.resolve();
+  }
+
   chooseFolder(dialog: FolderDialog): Promise<string | undefined> {
     this.folderDialogs.push(dialog);
     return Promise.resolve(this.folderAnswers.shift());

@@ -18,6 +18,8 @@ export type CoursePickerIntent =
   | { readonly type: 'removeRecentCourse'; readonly folder: string }
   /** Rescans the Courses roots at once, so a Course just downloaded shows up (Refresh). */
   | { readonly type: 'refreshCourses' }
+  /** Opens the Course in a new window, leaving this window's Course as it is. */
+  | { readonly type: 'openCourseInNewWindow'; readonly folder: string }
   /** Hides a folder that is not a Course from the picker (Hide); the picker stays open. */
   | { readonly type: 'hideCourse'; readonly folder: string; readonly name: string };
 
@@ -95,6 +97,11 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
     intent: { type: 'hideCourse', folder, name } as const,
     staysOpen: true,
   });
+  const newWindowButton = (folder: string) => ({
+    label: 'Open in new window',
+    icon: 'multiple-windows',
+    intent: { type: 'openCourseInNewWindow', folder } as const,
+  });
   const recent = input.recent
     .filter((course) => !isHidden(course.folder))
     .map((course): Entry => ({
@@ -118,7 +125,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
               intent: { type: 'removeRecentCourse', folder: course.folder },
             },
           ]
-        : [hideButton(course.folder, course.name)],
+        : [newWindowButton(course.folder), hideButton(course.folder, course.name)],
     }));
   // A Recent Course is listed once, in Recent: the A–Z list is for the Courses not opened lately.
   const recentKeys = new Set(input.recent.map((course) => keyOf(course.folder)));
@@ -130,7 +137,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
       ...description(course.categories, course.folder, false),
       ...detail(course.folder, false),
       intent: { type: 'openCourse', folder: course.folder },
-      buttons: [hideButton(course.folder, course.name)],
+      buttons: [newWindowButton(course.folder), hideButton(course.folder, course.name)],
     }));
   return {
     title: 'Open Course',

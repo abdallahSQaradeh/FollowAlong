@@ -289,6 +289,11 @@ export interface UiSink {
    * the player is not a Focus change (ADR 0009).
    */
   returnFocus(): void;
+  /**
+   * Opens a new, empty window of the editor (no folder in it), so that a Course can be opened
+   * there without touching the Practice area. Rejects when the editor refuses.
+   */
+  openNewWindow(): Promise<void>;
   /** Asks the learner for one folder; resolves with its absolute path, or `undefined` on cancel. */
   chooseFolder(dialog: FolderDialog): Promise<string | undefined>;
   /**

@@ -112,6 +112,9 @@ export function createUiSink(
       }
       placement.opened(target.path);
     },
+    async openNewWindow() {
+      await vscode.commands.executeCommand('workbench.action.newWindow');
+    },
     async chooseFolder({ title, openLabel }) {
       const chosen = await vscode.window.showOpenDialog({
         canSelectFiles: false,
