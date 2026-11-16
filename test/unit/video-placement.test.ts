@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
 import { createHarness, type Harness } from './harness.js';
 
 const lessonId = '01 Intro.webm';
@@ -204,5 +205,41 @@ describe('after a move', () => {
     h.core.playLesson('02 Next.webm');
 
     expect(lastSpot(h)).toBe('editorSplit');
+  });
+});
+
+/** The text the Lesson tree shows beside the Lesson with this id. */
+function descriptionOf(h: Harness, id: string): string | undefined {
+  const walk = (nodes: readonly LessonTreeNode[]): LessonTreeNode[] =>
+    nodes.flatMap((node) => [node, ...(node.kind === 'section' ? walk(node.children) : [])]);
+  const node = walk(h.ui.lessonTree?.nodes ?? []).find((each) => each.id === id);
+  return node?.kind === 'resource' ? undefined : node?.description;
+}
+
+describe('Progress across a move', () => {
+  it('is saved at once with the playhead the page reported, so a crash right after keeps it', async () => {
+    const h = await createHarness();
+    await openCourse(h);
+    h.player.ready();
+    h.player.emit({ type: 'played', lessonId });
+    for (let position = 0; position <= 12; position += 2) {
+      h.player.emit({ type: 'timeUpdate', lessonId, position, duration: 300 });
+    }
+
+    const moving = h.core.moveVideo('secondarySidebar');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1,
+        zoom: { level: 1, left: 0, top: 0 },
+        lesson: { lessonId, position: 20, playing: true },
+      },
+    });
+    await moving;
+    await h.settle();
+    h.restart();
+    await h.core.restoreCourse();
+
+    expect(descriptionOf(h, lessonId)).toBe('00:20 / 05:00');
   });
 });
