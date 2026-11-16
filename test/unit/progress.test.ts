@@ -142,6 +142,22 @@ describe('remembering where the learner is in each Lesson', () => {
     });
   });
 
+  it('saves the Lesson left with Next, and Previous comes back to it 5 s before', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', lessons);
+    await h.core.openCourse(course);
+    h.player.ready();
+    playTo(h, '01 Intro.webm', 50);
+    h.core.nextLesson();
+    h.core.previousLesson();
+
+    expect(h.player.sent.slice(-2)).toMatchObject([
+      { lessonId: '02 Setup.webm', startAt: 0, autoplay: true },
+      { lessonId: '01 Intro.webm', startAt: 45, autoplay: true },
+    ]);
+    expect(await reopen(h, course)).toMatchObject({ lessonId: '01 Intro.webm', startAt: 45 });
+  });
+
   it('saves the open Course when the learner opens another one', async () => {
     const h = await createHarness();
     const first = await h.folder('first', lessons);

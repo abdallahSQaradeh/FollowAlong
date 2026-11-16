@@ -49,6 +49,10 @@ export interface FollowAlong {
   seekStep(size: StepSize, direction: StepDirection): void;
   /** The speed commands: moves the playback rate one rung up or down the speed ladder. */
   speedStep(direction: SpeedDirection): void;
+  /** The next Lesson in Course order, across Sections. */
+  nextLesson(): void;
+  /** The previous Lesson in Course order, across Sections. */
+  previousLesson(): void;
   /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
   goToLesson(): Promise<void>;
   /** The window is closing: saves Progress, then stops. */
@@ -344,6 +348,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       duration: 0,
     };
     logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
+    ui.selectLesson(lesson.id);
     const shown = player.show({
       title: lesson.title,
       resourceRoots: [course.folder, storage.folder],
@@ -474,6 +479,29 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     const next = opening.then(() => open(folder, restoring));
     opening = next.catch(() => undefined);
     return next;
+  }
+
+  /**
+   * Plays the Lesson `offset` places from the current one in Course order, if there is one. The
+   * current Lesson is not in the open Course when the learner opened a Course with no Lessons
+   * after it: its player still shows the old Lesson, but there is no Lesson to move from.
+   */
+  function moveToLesson(offset: number): void {
+    const course = openedCourse;
+    const lessons = course === undefined ? [] : lessonsInOrder(course);
+    const here = lessons.findIndex((lesson) => lesson.id === current?.lesson.id);
+    if (course === undefined || here === -1) {
+      ui.showMessage({
+        severity: 'info',
+        text: 'FollowAlong: no Lesson is open. Open a Course first.',
+      });
+      return;
+    }
+    const target = lessons[here + offset];
+    if (target !== undefined) {
+      // A Lesson switch like any other: the Lesson left is saved, the next resumes 5 s back.
+      playLesson(target.id);
+    }
   }
 
   return {
@@ -608,6 +636,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       rate = next;
       player.send({ type: 'setRate', rate });
+    },
+    nextLesson() {
+      moveToLesson(1);
+    },
+    previousLesson() {
+      moveToLesson(-1);
     },
     dispose,
   };
