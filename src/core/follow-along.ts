@@ -311,6 +311,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         if (shownLesson(event) !== undefined) {
           playback = freshPlayback(false);
           stopSaving();
+          offerNextLesson();
         }
         break;
       case 'timeUpdate': {
@@ -340,6 +341,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       }
+      case 'nextClicked':
+        // A click for a Lesson the learner has left, or one no Course holds any more, is stale.
+        if (shownLesson(event) !== undefined) {
+          const next = lessonBeside(1)?.target;
+          if (next !== undefined) {
+            // A Lesson switch like any other: the Lesson left is saved, the next resumes 5 s back.
+            playLesson(next.id);
+          }
+        }
+        break;
       case 'rateChanged': {
         // The answer to a press still counts it and every press before it; a late answer must not
         // undo the presses after it. A rate nobody asked for (the video's own menu) replaces them.
@@ -355,6 +366,34 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
     }
     refreshStatusBar();
+  }
+
+  /**
+   * The Lesson `offset` places from the current one in Course order. `undefined` when the current
+   * Lesson is not in the open Course (a Course with no Lessons was opened after it): there is no
+   * place to count from. `target` is `undefined` beyond either end of the Course.
+   */
+  function lessonBeside(
+    offset: number,
+  ): { readonly course: Course; readonly target: Lesson | undefined } | undefined {
+    const course = openedCourse;
+    const lessons = course === undefined ? [] : lessonsInOrder(course);
+    const here = lessons.findIndex((lesson) => lesson.id === current?.lesson.id);
+    return course === undefined || here === -1
+      ? undefined
+      : { course, target: lessons[here + offset] };
+  }
+
+  /**
+   * The Lesson has ended: the player stops on its last frame and, when a Lesson follows in Course
+   * order, shows "Next: <title>". The core never loads it by itself (spec #12, story 50); that is
+   * the learner's click on the overlay, or `nextLesson`.
+   */
+  function offerNextLesson(): void {
+    const next = lessonBeside(1)?.target;
+    if (next !== undefined) {
+      player.send({ type: 'showNext', title: next.title });
+    }
   }
 
   /** Forgets the loaded Lesson: nothing is loaded now, so the commands find no Lesson. */
@@ -594,20 +633,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
    * after it: its player still shows the old Lesson, but there is no Lesson to move from.
    */
   function moveToLesson(offset: number): void {
-    const course = openedCourse;
-    const lessons = course === undefined ? [] : lessonsInOrder(course);
-    const here = lessons.findIndex((lesson) => lesson.id === current?.lesson.id);
-    if (course === undefined || here === -1) {
+    const beside = lessonBeside(offset);
+    if (beside === undefined) {
       ui.showMessage({
         severity: 'info',
         text: 'FollowAlong: no Lesson is open. Open a Course first.',
       });
       return;
     }
-    const target = lessons[here + offset];
-    if (target !== undefined) {
+    if (beside.target !== undefined) {
       // A Lesson switch like any other: the Lesson left is saved, the next resumes 5 s back.
-      playLesson(target.id);
+      playLesson(beside.target.id);
     }
   }
 

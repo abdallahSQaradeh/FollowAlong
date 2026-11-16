@@ -43,6 +43,7 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 <body>
 <main class="stage">
 <video id="video" controls preload="auto"></video>
+<button class="next" type="button" hidden></button>
 </main>
 <script nonce="${nonce}">${inline(options.script, 'script')}</script>
 </body>
