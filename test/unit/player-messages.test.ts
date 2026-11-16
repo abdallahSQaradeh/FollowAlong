@@ -4,12 +4,11 @@ import { isZoomView } from '../../src/player/zoom.js';
 import { parsePlayerCommand, parsePlayerEvent } from '../../src/protocol/player-messages.js';
 
 describe('the zoom messages of the player protocol', () => {
-  it('accept zoom reset, and nothing else for now', () => {
-    expect(parsePlayerCommand({ type: 'zoom', action: 'reset' })).toEqual({
-      type: 'zoom',
-      action: 'reset',
-    });
-    for (const action of ['in', 'out', 'areaMode', undefined, 1, null]) {
+  it('accept the four zoom actions, and nothing else', () => {
+    for (const action of ['reset', 'in', 'out', 'areaMode']) {
+      expect(parsePlayerCommand({ type: 'zoom', action })).toEqual({ type: 'zoom', action });
+    }
+    for (const action of ['zoomIn', 'area', '', undefined, 1, null]) {
       expect(parsePlayerCommand({ type: 'zoom', action })).toBeUndefined();
     }
     expect(parsePlayerCommand({ type: 'zoom' })).toBeUndefined();

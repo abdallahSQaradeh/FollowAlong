@@ -126,6 +126,10 @@ export async function run(): Promise<void> {
     'followalong.seekForwardLong',
     'followalong.speedUp',
     'followalong.speedDown',
+    'followalong.zoomArea',
+    'followalong.zoomIn',
+    'followalong.zoomOut',
+    'followalong.zoomReset',
     'followalong.statusBarClick',
     'followalong.nextLesson',
     'followalong.previousLesson',
@@ -170,6 +174,15 @@ export async function run(): Promise<void> {
     ['speedUp', 'Speed up', "ctrl+' up"],
     ['speedDown', 'Speed down', "ctrl+' down"],
   ]);
+  chordCommandsAreBound(extension.packageJSON, [
+    ['zoomArea', 'Zoom area', "ctrl+' z"],
+    ['zoomIn', 'Zoom in', "ctrl+' ="],
+    ['zoomOut', 'Zoom out', "ctrl+' -"],
+    ['zoomReset', 'Zoom reset', "ctrl+' 0"],
+  ]);
+  say(
+    "FollowAlong: Zoom area / in / out / reset are in the Command Palette, bound to Ctrl+' Z = - 0",
+  );
   say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
 
   chordCommandsAreBound(extension.packageJSON, [['openCourse', 'Open Course…', "ctrl+' c"]]);
