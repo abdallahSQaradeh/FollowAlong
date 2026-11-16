@@ -53,12 +53,28 @@ A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with
 _Avoid_: Index, table of contents, names file
 
 **Progress**:
-How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done.
+How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done. A Lesson is in progress after 10 s of play, and done when its playhead reaches the last 5 % or the end. Done stays until the learner un-marks it, and a done Lesson saved in its last 5 % starts again at 0:00.
 _Avoid_: History, completion
 
 **Resource**:
 A file or link the learner attaches to a Lesson or a Course, to keep beside it while following along. It is a reference to the file, never a copy.
 _Avoid_: Material, attachment
+
+**Course Resource**:
+A Resource attached to the whole Course, such as a cheat sheet, with the "+" on the Course node at the top of the Lesson tree. It shows above the Sections and opens like a Lesson's Resource.
+_Avoid_: Global Resource, shared Resource
+
+**Detach**:
+To take a Resource off a Lesson or a Course. Only the reference goes; the file stays where it is.
+_Avoid_: Delete, remove
+
+**Missing Resource**:
+A Resource whose file is no longer where it points, because the learner moved, renamed or deleted it. It shows dimmed in the tree until it is relinked or detached.
+_Avoid_: Broken link, dead Resource
+
+**Relink**:
+To point a Resource at another file, keeping it where it is in its Lesson. Offered on a missing Resource.
+_Avoid_: Re-attach, repair
 
 **Resource tab**:
 The tab a Resource opens in, beside the code and never in the player's group, so the video stays in sight. The kind of tab follows the file's type: the editor for text and code, VS Code's image preview for images, a FollowAlong preview for HTML and Markdown, and the FollowAlong PDF viewer for PDFs.

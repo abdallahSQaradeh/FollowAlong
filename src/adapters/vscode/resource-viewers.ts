@@ -65,7 +65,8 @@ export class ResourceViewers implements vscode.Disposable {
       {
         enableScripts: true,
         // The PDF's own folder is all the viewer may read: its script and the pdf.js worker are
-        // inlined in the page (ADR 0004), so no root of the extension is needed.
+        // inlined in the page (ADR 0004), so no root of the extension is needed. The file alone
+        // is not a root VS Code serves (ADR 0046).
         localResourceRoots: [folder],
       },
     );

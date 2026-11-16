@@ -4,7 +4,7 @@
 a Course. `createFollowAlong` (`src/core/follow-along.ts`) decides when to save and where a Lesson
 starts. Spec #12 fixes the broad rules (a progress file in `.followalong\`, keyed by Lesson path,
 saved every 5 s and on pause, seek, switch, close and window close, resumed paused at
-`max(0, position − 5 s)`, merged per Lesson with the newest winning). This ADR records the details
+`max(0, position − 5 s)` (0:00 for a done Lesson saved in its last 5 %, ADR 0030), merged per Lesson with the newest winning). This ADR records the details
 it leaves open. #26 (done and in-progress rules), #27 (two windows) and #28 (the tree) build on
 them.
 
@@ -65,6 +65,7 @@ it with what this window recorded.
   that a WebM without a Duration landed near 0:00, so the next reopen lost the position (gate
   review of #25, H1; the player now lands it, ADR 0006). Source: orchestrator answer on #25; gate
   review H1.
+  **Superseded by ADR 0030:** only a `seeked` within 0.5 s of `startAt` is the start seek.
 - **Every 5 s while it plays:** a Clock timer runs from `played` until the Lesson pauses, ends,
   fails or is left. Each `timeUpdate` only notes the position; the timer writes it. A save writes
   only when something was noted since the last one.

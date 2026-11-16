@@ -28,6 +28,13 @@ function load(overrides: Partial<Extract<PlayerCommand, { type: 'load' }>> = {})
   };
 }
 
+/** The `startSeek` flag of every `seeked` the player posted, in order. */
+async function startSeeks(player: PlayerHarness): Promise<(boolean | undefined)[]> {
+  return (await player.events()).flatMap((event) =>
+    event.type === 'seeked' ? [event.startSeek] : [],
+  );
+}
+
 /**
  * Whether the player posted `seeked` for `lessonId`, after a `timeUpdate` at `position` (the core
  * reads the new position from that `timeUpdate` when `seeked` arrives).
@@ -229,6 +236,44 @@ test.describe('the player', () => {
     expect((await player.events()).map((event) => event.type)).not.toContain('played');
   });
 
+  test('tells the seek that applies the start position from a step the learner asks for', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+
+    await player.post(load({ startAt: 1.5, autoplay: false }));
+    await player.waitForEvent({ type: 'seeked', lessonId, startSeek: true });
+    await player.post({ type: 'seekBy', seconds: 1 });
+
+    await player.waitForEvent({ type: 'seeked', lessonId, startSeek: false });
+    const seeks = (await player.events()).filter((event) => event.type === 'seeked');
+    expect(seeks.map((seek) => seek.startSeek)).toEqual([true, false]);
+  });
+
+  test('reports a seek the learner makes while the start seek is pending as theirs', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    // The seek bar: the learner moves the playhead as soon as the start seek has begun.
+    await page.locator('video').evaluate((video: HTMLVideoElement) => {
+      video.addEventListener(
+        'seeking',
+        () => {
+          video.currentTime = 2.5;
+        },
+        { once: true },
+      );
+    });
+
+    await player.post(load({ startAt: 1.5, autoplay: false }));
+
+    await player.waitForEvent({ type: 'seeked', lessonId, startSeek: false });
+    expect(
+      (await player.events()).some((event) => event.type === 'seeked' && event.startSeek),
+    ).toBe(false);
+    expect((await player.video()).currentTime).toBeCloseTo(2.5, 1);
+  });
+
   test('reports the end of the Lesson', async ({ page }) => {
     const player = await openPlayer(page);
 
@@ -348,6 +393,7 @@ test.describe('the player', () => {
         .toBe(true);
       expect((await player.video()).currentTime).toBeCloseTo(6, 1);
       expect((await player.events()).map((event) => event.type)).not.toContain('error');
+      expect(await startSeeks(player)).toEqual([true]);
     });
   }
 
@@ -378,8 +424,26 @@ test.describe('the player', () => {
       const types = (await player.events()).map((event) => event.type);
       expect(types.filter((type) => type === 'seeked')).toHaveLength(1);
       expect(types).not.toContain('error');
+      expect(await startSeeks(player)).toEqual([true]);
     });
   }
+
+  test('reports a start seek to a time just before the first media at it as the start seek', async ({
+    page,
+  }) => {
+    // The start position, 2.95, falls in the few ms before the media of Cluster 3 begins (0:02.988):
+    // a seek target nothing is buffered at, which may be moved onto the media (ADR 0006).
+    const player = await openPlayer(page, { holdAt: noDurationClusterOffset(3) });
+    await player.post(load({ videoUri: media.noDuration, startAt: 2.95, autoplay: false }));
+    await expect.poll(async () => (await player.video()).duration).toBe(Infinity);
+
+    await player.releaseStream();
+
+    await player.waitForEvent({ type: 'seeked', lessonId });
+    expect(await startSeeks(player)).toEqual([true]);
+    expect((await player.video()).currentTime).toBeCloseTo(3, 1);
+    expect((await player.events()).map((event) => event.type)).not.toContain('error');
+  });
 
   test('re-streams again after a second seek back into media evicted after a re-stream', async ({
     page,
@@ -411,6 +475,10 @@ test.describe('the player', () => {
         { message: 'the playhead moves on from 0:02.2', timeout: 10_000 },
       )
       .toBe(true);
+    // The start seek, then the seek bar's two seeks back: a re-stream that moves a seek onto the
+    // media (ADR 0006) does not turn the learner's seek into the start seek.
+    await expect.poll(async () => (await startSeeks(player)).length).toBe(3);
+    expect(await startSeeks(player)).toEqual([true, false, false]);
   });
 
   test('plays on after two quick seeks back', async ({ page }) => {
