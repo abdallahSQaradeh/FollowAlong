@@ -57,8 +57,8 @@ export function createTerminalKeysOffer(
   ports: Pick<Ports, 'ui' | 'storage' | 'logger' | 'terminalSettings'>,
 ): () => void {
   const { ui, storage, logger, terminalSettings } = ports;
-  /** Whether the question is open, or its answer is still being stored: Lessons do not stack questions. */
-  let busy = false;
+  /** Whether the learner was asked in this window: a question closed unanswered is not asked again. */
+  let asked = false;
 
   async function run(): Promise<void> {
     const answer = await ui.ask(terminalQuestion);
@@ -83,23 +83,19 @@ export function createTerminalKeysOffer(
   }
 
   return () => {
-    if (busy || storage.global.get(terminalAnswerKey) !== undefined) {
+    if (asked || storage.global.get(terminalAnswerKey) !== undefined) {
       return;
     }
-    busy = true;
-    run()
-      .catch((error: unknown) => {
-        logger.log({
-          level: 'warn',
-          message: `Could not add the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
-        });
-        ui.showMessage({
-          severity: 'error',
-          text: 'FollowAlong could not add its keys to your terminal settings. Nothing was changed.',
-        });
-      })
-      .finally(() => {
-        busy = false;
+    asked = true;
+    run().catch((error: unknown) => {
+      logger.log({
+        level: 'warn',
+        message: `Could not add the terminal keys: ${error instanceof Error ? error.message : String(error)}`,
       });
+      ui.showMessage({
+        severity: 'error',
+        text: 'FollowAlong could not add its keys to your terminal settings. Nothing was changed.',
+      });
+    });
   };
 }

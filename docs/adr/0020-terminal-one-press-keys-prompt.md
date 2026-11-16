@@ -14,13 +14,16 @@ answer. These are the choices it leaves open.
 - **A notification with two buttons, never a modal.** The UI sink gets `ask(question)`, which
   resolves with `accept`, `decline` or `undefined`. The adapter shows an information message, which
   does not take focus from the code. The core does not wait for it: the Lesson plays at once.
-- **Only a button press is an answer.** `accept` and `decline` are stored in global state
-  (`followalong.terminalSkipShellAnswer`) and the question never comes back. Closing the
-  notification, or letting it go, is no answer: the next Lesson that opens asks again. Opening more
-  Lessons while the question is open does not stack questions.
+- **Only a button press is an answer, and a window asks at most once.** `accept` and `decline` are
+  stored in global state (`followalong.terminalSkipShellAnswer`) and the question never comes back.
+  Closing the notification, or letting it go, is no answer: nothing is stored, and the question is not
+  asked again in that window, however many Lessons open. The next window (a new activation of the
+  extension) asks again. Opening more Lessons while the question is open does not stack questions.
+  _Source: orchestrator answer to #24 (PR #78)._
 - **Where it asks.** Every time a Lesson is shown in the player, not only for the first Course: the
   first Lesson that opens is the first time, and an answer ends it for every Course and window.
-- **User settings only.** A new `TerminalSettings` port (it extends the port list of ADR 0002, as the Logger port did) reads and writes the learner's user-level
+- **User settings only.** A new `TerminalSettings` port (it extends the port list of ADR 0002, as the Logger port did; `Config` is scoped to `followalong.*`,
+  and a narrow port for one user setting is safer than widening it to arbitrary settings writes) reads and writes the learner's user-level
   value (`inspect().globalValue`, written to the Global target). The workspace value is never read
   or written: the Practice area is never changed (spec #12, story 20). The value is read when the
   learner agrees, not when the question opened, so edits made meanwhile are kept.
@@ -37,6 +40,8 @@ answer. These are the choices it leaves open.
   FollowAlong exists to remove.
 - **Treat a dismissed notification as a decline.** Rejected: a toast that times out would silently
   end the offer for good.
+- **Ask again at every Lesson until answered.** Rejected: a dismissed toast would come back every
+  time the learner moves to another Lesson.
 - **Write the setting without asking.** Rejected: it changes the learner's own settings (spec #12,
   story 45).
 

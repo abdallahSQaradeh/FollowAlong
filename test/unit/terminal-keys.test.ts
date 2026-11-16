@@ -123,12 +123,25 @@ describe('the one-time terminal prompt', () => {
     expect(h.terminalSettings.writes).toEqual([]);
   });
 
-  it('asks again at the next Lesson when the learner closed the question without answering', async () => {
+  it('does not ask again in the same window after the learner closed the question', async () => {
     const h = await createHarness();
     await openLesson(h);
     await answer(h, undefined);
     h.core.nextLesson();
+    h.core.previousLesson();
     await flush();
+
+    expect(h.ui.questions).toHaveLength(1);
+  });
+
+  it('asks again in the next window when the learner closed the question without answering', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    await answer(h, undefined);
+    const nextWindow = createFollowAlong(h.ports);
+    await nextWindow.openCourse(await h.folder('second', { 'a.webm': 'video' }));
+    await flush();
+    nextWindow.dispose();
 
     expect(h.ui.questions).toHaveLength(2);
   });
