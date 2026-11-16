@@ -243,7 +243,7 @@ describe('a Recent Course whose folder has moved', () => {
       'Add Courses root…',
     ]);
     expect(h.ui.buttonsOf('A')).toEqual(['Locate…', 'Remove']);
-    expect(h.ui.buttonsOf('B')).toEqual([]);
+    expect(h.ui.buttonsOf('B')).toEqual(['Hide']);
   });
 
   it('drops the Course from Recent when the learner presses Remove, and shows the list again', async () => {

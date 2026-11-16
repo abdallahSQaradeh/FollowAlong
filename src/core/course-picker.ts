@@ -5,6 +5,7 @@
  */
 import { keyOf, sameFolder } from './courses-roots.js';
 import type { ScannedCourse } from './course-scanner.js';
+import { hiddenKeyOf } from './hidden-courses.js';
 import type { QuickPickEntry, QuickPickModel } from './quick-pick.js';
 
 /** What picking an item, or pressing a button, of the Course picker asks the core to do. */
@@ -16,7 +17,9 @@ export type CoursePickerIntent =
   /** Drops a Course from Recent. */
   | { readonly type: 'removeRecentCourse'; readonly folder: string }
   /** Rescans the Courses roots at once, so a Course just downloaded shows up (Refresh). */
-  | { readonly type: 'refreshCourses' };
+  | { readonly type: 'refreshCourses' }
+  /** Hides a folder that is not a Course from the picker (Hide); the picker stays open. */
+  | { readonly type: 'hideCourse'; readonly folder: string; readonly name: string };
 
 type Entry = QuickPickEntry<CoursePickerIntent>;
 
@@ -48,6 +51,11 @@ export interface CoursePickerInput {
    * Course's name. A Course not in it has none (yet).
    */
   readonly progressLines?: ReadonlyMap<string, string | undefined>;
+  /**
+   * The folders the learner hid, by {@link hiddenKeyOf}: a Course in it is not listed, wherever it
+   * would have been (Recent or the A–Z list).
+   */
+  readonly hidden?: ReadonlySet<string>;
 }
 
 function placeholderOf({ hasRoots, courses, recent, scanning }: CoursePickerInput): string {
@@ -80,17 +88,25 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
     const line = missing ? undefined : input.progressLines?.get(keyOf(folder));
     return line === undefined ? {} : { detail: line };
   };
-  const recent = input.recent.map((course): Entry => ({
-    kind: 'item',
-    label: course.name,
-    ...description(course.categories, course.folder, course.missing),
-    ...detail(course.folder, course.missing),
-    intent: course.missing
-      ? { type: 'locateCourse', folder: course.folder }
-      : { type: 'openCourse', folder: course.folder },
-    ...(course.missing
-      ? {
-          buttons: [
+  const isHidden = (folder: string): boolean => input.hidden?.has(hiddenKeyOf(folder)) === true;
+  const hideButton = (folder: string, name: string) => ({
+    label: 'Hide',
+    icon: 'eye-closed',
+    intent: { type: 'hideCourse', folder, name } as const,
+    staysOpen: true,
+  });
+  const recent = input.recent
+    .filter((course) => !isHidden(course.folder))
+    .map((course): Entry => ({
+      kind: 'item',
+      label: course.name,
+      ...description(course.categories, course.folder, course.missing),
+      ...detail(course.folder, course.missing),
+      intent: course.missing
+        ? { type: 'locateCourse', folder: course.folder }
+        : { type: 'openCourse', folder: course.folder },
+      buttons: course.missing
+        ? [
             {
               label: 'Locate…',
               icon: 'folder-opened',
@@ -101,20 +117,20 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
               icon: 'trash',
               intent: { type: 'removeRecentCourse', folder: course.folder },
             },
-          ],
-        }
-      : {}),
-  }));
+          ]
+        : [hideButton(course.folder, course.name)],
+    }));
   // A Recent Course is listed once, in Recent: the A–Z list is for the Courses not opened lately.
   const recentKeys = new Set(input.recent.map((course) => keyOf(course.folder)));
   const others = input.courses
-    .filter((course) => !recentKeys.has(keyOf(course.folder)))
+    .filter((course) => !recentKeys.has(keyOf(course.folder)) && !isHidden(course.folder))
     .map((course): Entry => ({
       kind: 'item',
       label: course.name,
       ...description(course.categories, course.folder, false),
       ...detail(course.folder, false),
       intent: { type: 'openCourse', folder: course.folder },
+      buttons: [hideButton(course.folder, course.name)],
     }));
   return {
     title: 'Open Course',
