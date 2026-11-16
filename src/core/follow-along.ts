@@ -97,6 +97,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let current: Lesson | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
+  /** The Rewind the open player page holds; 0 for a page that has just started. */
+  let playerResumeRewind = 0;
   /** What the player last said about the current Lesson; starts again with every `load`. */
   let playback = freshPlayback(false);
 
@@ -114,12 +116,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     };
     player.send(command);
     playback = freshPlayback(command.autoplay);
+    sendResumeRewind();
+  }
+
+  /**
+   * Tells the player the Rewind for the click that resumes a Lesson there (ADR 0016), when it
+   * differs from what the player holds. A fresh player page holds 0, so the default sends nothing.
+   */
+  function sendResumeRewind(): void {
+    const seconds = resumeRewindSeconds();
+    if (seconds !== playerResumeRewind) {
+      playerResumeRewind = seconds;
+      player.send({ type: 'setResumeRewind', seconds });
+    }
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
     switch (event.type) {
       case 'ready':
         playerReady = true;
+        playerResumeRewind = 0;
         logger.log({
           level: 'debug',
           message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
@@ -165,7 +181,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
-  const subscriptions: Disposable[] = [player.onEvent(onPlayerEvent)];
+  const subscriptions: Disposable[] = [
+    player.onEvent(onPlayerEvent),
+    config.onDidChange((affects) => {
+      if (playerReady && affects('resumeRewind')) {
+        sendResumeRewind();
+      }
+    }),
+  ];
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;

@@ -124,4 +124,84 @@ describe('resume with rewind', () => {
       ).toEqual([]);
     });
   });
+
+  describe('the player applies it to a click', () => {
+    it('is told the setting once the page is ready, and not again with each Lesson', async () => {
+      const h = await createHarness();
+      h.config.set('resumeRewind', 4);
+      const course = await h.folder('course', { [lessonId]: 'video', '02 Next.webm': 'video' });
+      await h.core.openCourse(course);
+      h.player.ready();
+
+      expect(h.player.sent.map((command) => command.type)).toEqual(['load', 'setResumeRewind']);
+      expect(h.player.sent[1]).toEqual({ type: 'setResumeRewind', seconds: 4 });
+
+      h.player.clearSent();
+      h.core.playLesson('02 Next.webm');
+      expect(h.player.sent.map((command) => command.type)).toEqual(['load']);
+    });
+
+    it('is told again when the player page reloads', async () => {
+      const h = await createHarness();
+      h.config.set('resumeRewind', 4);
+      const course = await h.folder('course', { [lessonId]: 'video' });
+      await h.core.openCourse(course);
+      h.player.ready();
+      h.player.clearSent();
+
+      h.player.ready();
+
+      expect(h.player.sent).toContainEqual({ type: 'setResumeRewind', seconds: 4 });
+    });
+
+    it('says nothing while the setting is the default', async () => {
+      const h = await createHarness();
+      const course = await h.folder('course', { [lessonId]: 'video' });
+      await h.core.openCourse(course);
+      h.player.ready();
+
+      expect(h.player.sent.map((command) => command.type)).toEqual(['load']);
+    });
+
+    it('is told when the setting changes', async () => {
+      const h = await createHarness();
+      await openPausedLesson(h);
+      h.player.clearSent();
+
+      h.config.set('resumeRewind', 6);
+
+      expect(h.player.sent).toEqual([{ type: 'setResumeRewind', seconds: 6 }]);
+    });
+
+    it('is not told about other settings', async () => {
+      const h = await createHarness();
+      await openPausedLesson(h);
+      h.player.clearSent();
+
+      h.config.set('shortStep', 9);
+
+      expect(h.player.sent).toEqual([]);
+    });
+
+    it('is told 0 for a bad value', async () => {
+      const h = await createHarness();
+      await openPausedLesson(h);
+      h.config.set('resumeRewind', 5);
+      h.player.clearSent();
+
+      h.config.set('resumeRewind', -1);
+
+      expect(h.player.sent).toEqual([{ type: 'setResumeRewind', seconds: 0 }]);
+    });
+
+    it('waits for the player page to be ready', async () => {
+      const h = await createHarness();
+      const course = await h.folder('course', { [lessonId]: 'video' });
+      await h.core.openCourse(course);
+
+      h.config.set('resumeRewind', 6);
+
+      expect(h.player.sent).toEqual([]);
+    });
+  });
 });
