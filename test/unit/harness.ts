@@ -231,6 +231,9 @@ export class RecordingUi implements UiSink {
   private answer: ((intent: unknown) => void) | undefined;
   /** How many times the core asked to hand keyboard focus back to the Practice area. */
   focusReturns = 0;
+  /** How many times the core opened the file dialog for an Attach. */
+  fileDialogs = 0;
+  private fileAnswer: ((path: string | undefined) => void) | undefined;
 
   showMessage(message: UserMessage): void {
     this.messages.push(message);
@@ -309,6 +312,28 @@ export class RecordingUi implements UiSink {
 
   returnFocus(): void {
     this.focusReturns += 1;
+  }
+
+  pickFile(): Promise<string | undefined> {
+    this.fileDialogs += 1;
+    return new Promise((resolve) => {
+      this.fileAnswer = resolve;
+    });
+  }
+
+  /** Whether a file dialog is open now. */
+  get fileDialogOpen(): boolean {
+    return this.fileAnswer !== undefined;
+  }
+
+  /** The learner picks this file in the open file dialog, or `undefined` for closing it. */
+  answerFileDialog(path: string | undefined): void {
+    const resolve = this.fileAnswer;
+    if (resolve === undefined) {
+      throw new Error('No file dialog is open');
+    }
+    this.fileAnswer = undefined;
+    resolve(path);
   }
 }
 
