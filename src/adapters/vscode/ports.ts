@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import type { Logger } from '../../core/logger.js';
 import type { Config, KeyValueStore, Storage, UiSink } from '../../core/ports.js';
 import type { LessonTreeView } from './lesson-tree-view.js';
+import type { ResourcePlacement } from './resource-placement.js';
 import { showQuickPick } from './quick-pick.js';
 
 function store(memento: vscode.Memento): KeyValueStore {
@@ -35,7 +36,7 @@ export function createConfig(): Config {
   };
 }
 
-export function createUiSink(tree: LessonTreeView): UiSink {
+export function createUiSink(tree: LessonTreeView, placement: ResourcePlacement): UiSink {
   return {
     showMessage({ severity, text }) {
       const show = {
@@ -50,14 +51,14 @@ export function createUiSink(tree: LessonTreeView): UiSink {
       tree.show(model);
     },
     async openResource(target) {
-      // VS Code picks the editor for the file (text and code in the text editor), in the group
-      // beside the code, and focus stays where it was. The player is retained while another tab
-      // is in front: the Lesson plays on.
+      // VS Code picks the editor for the file (text and code in the text editor). The group is
+      // never the player's, so the video stays in sight, and focus stays where it was.
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(target.path), {
-        viewColumn: vscode.ViewColumn.Beside,
+        viewColumn: placement.column(),
         preview: false,
         preserveFocus: true,
       });
+      placement.opened(target.path);
     },
   };
 }

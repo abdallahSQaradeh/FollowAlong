@@ -16,6 +16,7 @@ import {
   noResources,
   resourcePath,
   resourcesFile,
+  resourcesFileExists,
   withResource,
   type ResourcesData,
 } from './resources.js';
@@ -317,7 +318,21 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
       const attach = async (): Promise<void> => {
         // Re-read first: another window may have attached to this Course since it was opened.
-        const stored = (await data.read(resourcesFile)) ?? noResources;
+        const read = await data.read(resourcesFile);
+        if (read === undefined && (await resourcesFileExists(ports.fileSystem, course.folder))) {
+          // The file is there but was ignored (damaged, or from a newer FollowAlong): writing
+          // would replace data the learner, or a newer version, still needs.
+          logger.log({
+            level: 'warn',
+            message: `Not attaching ${absolutePath}: the Resources file of ${course.folder} is damaged or from a newer version, and was left as it is.`,
+          });
+          ui.showMessage({
+            severity: 'warning',
+            text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+          });
+          return;
+        }
+        const stored = read ?? noResources;
         const next = withResource(stored, lessonId, newResource(course.folder, absolutePath));
         await data.write(resourcesFile, next);
         logger.log({ level: 'info', message: `Attached ${absolutePath} to ${lessonId}` });

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { LessonTreeNode } from '../../src/core/lesson-tree.js';
 import { createFollowAlong } from '../../src/core/follow-along.js';
+import type { UserMessage } from '../../src/core/ports.js';
 import { createHarness, type Harness } from './harness.js';
 import { makeReadOnly } from './read-only.js';
 
@@ -289,19 +290,56 @@ describe('attaching a file Resource to a Lesson', () => {
     expect(resourceLabels(h, 'intro.webm')).toEqual([]);
   });
 
-  it('opens the Course without Resources when the Resources file is damaged, and mends it on attach', async () => {
+  const cannotUpdate: UserMessage = {
+    severity: 'warning',
+    text: "FollowAlong can't update this Course's Resources file (it is damaged or from a newer version). Nothing was changed.",
+  };
+
+  it('opens the Course without Resources when the Resources file is damaged', async () => {
     const h = await createHarness();
     const course = await h.folder('Course', {
       'intro.webm': 'video',
-      'a.md': '#',
       '.followalong/resources.json': '{"version": 1, "data": ',
     });
+
     await h.core.openCourse(course);
+
     expect(resourceLabels(h, 'intro.webm')).toEqual([]);
+    expect(h.ui.messages).toEqual([]);
+  });
+
+  it('attaches nothing, and says so, when the Resources file is damaged', async () => {
+    const h = await createHarness();
+    const damaged = '{"version": 1, "data": ';
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'a.md': '#',
+      '.followalong/resources.json': damaged,
+    });
+    await h.core.openCourse(course);
 
     await h.core.attachResource('intro.webm', join(course, 'a.md'));
 
-    expect(resourceLabels(h, 'intro.webm')).toEqual(['a.md']);
+    expect(await readFile(join(course, '.followalong', 'resources.json'), 'utf8')).toBe(damaged);
+    expect(resourceLabels(h, 'intro.webm')).toEqual([]);
+    expect(h.ui.messages).toEqual([cannotUpdate]);
+  });
+
+  it('attaches nothing, and says so, when the Resources file is from a newer FollowAlong', async () => {
+    const h = await createHarness();
+    const newer = JSON.stringify({ version: 9, data: { lessons: { 'intro.webm': ['future'] } } });
+    const course = await h.folder('Course', {
+      'intro.webm': 'video',
+      'a.md': '#',
+      '.followalong/resources.json': newer,
+    });
+    await h.core.openCourse(course);
+
+    await h.core.attachResource('intro.webm', join(course, 'a.md'));
+
+    expect(await readFile(join(course, '.followalong', 'resources.json'), 'utf8')).toBe(newer);
+    expect(resourceLabels(h, 'intro.webm')).toEqual([]);
+    expect(h.ui.messages).toEqual([cannotUpdate]);
   });
 });
 

@@ -12,6 +12,7 @@ import { createNodeFileSystem } from '../node/file-system.js';
 import type { LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
 import { PlayerPanel } from './player-panel.js';
+import { createResourcePlacement } from './resource-placement.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
 
 export const commands = {
@@ -57,7 +58,10 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     clock: createSystemClock(),
     converter: createUnavailableConverter(),
     config: createConfig(),
-    ui: createUiSink(lessonTree),
+    ui: createUiSink(
+      lessonTree,
+      createResourcePlacement(() => player.viewColumn),
+    ),
     logger,
   });
 

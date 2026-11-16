@@ -41,24 +41,37 @@ read-only fallback without any code of its own. The file is version 1:
   opened the Course is kept. There is no lock between windows: two attaches in the same instant can
   still lose one, and the other window's tree shows the change only when its Course is opened
   again. Progress (story 85) has the same limit and the tickets for it may add a lock for both.
-- **A file that was ignored is replaced by the next attach.** `openCourseData.read` answers
-  `undefined` both for "no file" and for "ignored" (damaged, or from a newer FollowAlong; ADR 0005),
-  so an attach after an ignored read writes a new file. That mends a damaged file, and also
-  replaces a newer FollowAlong's file if the learner runs an older build. Telling the two apart
-  needs a change in `course-data.ts`, which this ticket leaves alone.
+- **An ignored Resources file is never overwritten.** `openCourseData.read` answers `undefined`
+  both for "no file" and for a file it ignored (damaged, or from a newer FollowAlong; ADR 0005). An
+  attach that read `undefined` therefore asks the File system port whether `.followalong/resources.json`
+  exists. If it does, the attach is refused: nothing is written, the path is logged, and the learner
+  sees one message ("FollowAlong can't update this Course's Resources file (it is damaged or from a
+  newer version). Nothing was changed."). Otherwise a damaged file would be replaced, and a newer
+  FollowAlong's data lost (spec #12: "versioned JSON … so later versions can migrate"). Source:
+  orchestrator gate round 1, which also asked that `course-data.ts` stays untouched (#25 changes it).
+  Limit: the check looks only in `.followalong`. An ignored file in the fallback storage of a
+  read-only Course is not protected, because its location is a private rule of `course-data.ts`;
+  exporting it would remove the limit.
 - **Opening a Course reads the Resources, and a read failure is only logged**: the Lessons still
   play without them. Attaching reads again and lets such a failure through as a command error,
   because writing after a failed read could drop what was there.
 - **Opening a Resource is a UI sink method** (`UiSink.openResource(target)`), not a new port: the
   list of ports in spec #12 stays as it is. The target is `{kind: 'file', path}` today; the tickets
   for opener types, URLs and PDFs add kinds and route them inside the adapter, without changing the
-  method's shape. The VS Code adapter runs `vscode.open` with `ViewColumn.Beside` and
-  `preserveFocus` (focus stays where the learner was): VS Code picks the
-  editor for the file (text and code in the text editor), in the group beside the code. The player is `retainContextWhenHidden`, so a
-  Resource tab in front of it does not stop the Lesson, but the learner cannot see it while the tab
-  is in front: where the Resource should sit so both are visible is a Manual QA question (#64).
-  The core sends the player nothing when a Resource opens, and says so in a message when the file
-  cannot be opened. The tickets for previews, PDFs and URLs add targets here.
+  method's shape. The VS Code adapter runs `vscode.open` with `preserveFocus` (focus stays where the
+  learner was), so VS Code picks the editor for the file (text and code in the text editor).
+- **A Resource never opens in the player's editor group**, so the video stays in sight (story 94:
+  "open in a VS Code tab beside the code while the video keeps playing"). Source: orchestrator
+  answer, story 94. The group is, in order: the one that already holds a Resource this window opened
+  (so Resources collect in one group, also when the learner's focus is in it); else a group that is
+  not the player's, not the active group and not the active editor's; else a new group at the end,
+  which is to the right of the player in the usual code | player layout. If the player is not in
+  an editor group (the other spots, #49), VS Code's own `ViewColumn.Beside`. The first rule is an
+  addition to the orchestrator's: without it, a learner who clicks into the Resource tab and then
+  opens another Resource would find the code's group as the only one that is "neither". The rule
+  lives in the adapter (`resource-placement.ts`) because it is about VS Code's window layout; the
+  smoke test checks it in a real VS Code. The player stays `retainContextWhenHidden` for the
+  spots where it can still be covered.
 - **The file dialog stays in the adapter**, as for Open Course…: the core's `attachResource` takes a
   Lesson id and an absolute path.
 

@@ -134,32 +134,56 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
       () => hooks.lessonTree().nodes.find((node) => node.id === lesson.id)?.resources?.[0],
     );
 
-    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
-    await vscode.commands.executeCommand('followalong.openResource', shown.id);
-    const resourceGroup = await waitFor('the Resource tab', () =>
+    const isPlayer = (tab: vscode.Tab): boolean =>
+      tab.input instanceof vscode.TabInputWebview &&
+      tab.input.viewType.endsWith('followalong.player');
+    const groupHolding = (file: string): vscode.TabGroup | undefined =>
       vscode.window.tabGroups.all.find((group) =>
         group.tabs.some(
           (tab) =>
             tab.input instanceof vscode.TabInputText &&
-            tab.input.uri.fsPath === vscode.Uri.file(notes).fsPath,
+            tab.input.uri.fsPath === vscode.Uri.file(file).fsPath,
         ),
-      ),
+      );
+
+    await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('followalong.openResource', shown.id);
+    const resourceGroup = await waitFor('the Resource tab', () => groupHolding(notes));
+    const playerGroup = vscode.window.tabGroups.all.find((group) => group.tabs.some(isPlayer));
+    assert.ok(playerGroup, 'opening the Resource closed the player');
+    // Story 94: the Resource never covers the video, so both stay in sight.
+    assert.notEqual(
+      resourceGroup.viewColumn,
+      playerGroup.viewColumn,
+      'the file opened in the player’s editor group',
     );
     assert.notEqual(
       resourceGroup.viewColumn,
       vscode.ViewColumn.One,
       'the file opened over the code',
     );
-    assert.ok(
-      vscode.window.tabGroups.all.some((group) =>
-        group.tabs.some(
-          (tab) =>
-            tab.input instanceof vscode.TabInputWebview &&
-            tab.input.viewType.endsWith('followalong.player'),
-        ),
-      ),
-      'opening the Resource closed the player',
+    assert.ok(playerGroup.activeTab && isPlayer(playerGroup.activeTab), 'the player is covered');
+    assert.equal(
+      vscode.window.activeTextEditor?.document,
+      code,
+      'opening the Resource took the focus from the code',
     );
+
+    // A second Resource goes to the same group, not to another new one.
+    const more = join(scratch, 'more.ts');
+    writeFileSync(more, 'export const more = 1;\n');
+    await vscode.commands.executeCommand(
+      'followalong.attachResource',
+      lesson,
+      vscode.Uri.file(more),
+    );
+    const second = await waitFor(
+      'the second Resource under its Lesson',
+      () => hooks.lessonTree().nodes.find((node) => node.id === lesson.id)?.resources?.[1],
+    );
+    await vscode.commands.executeCommand('followalong.openResource', second.id);
+    const secondGroup = await waitFor('the second Resource tab', () => groupHolding(more));
+    assert.equal(secondGroup.viewColumn, resourceGroup.viewColumn);
     assert.ok(!hooks.playerEvents.some((event) => event.type === 'error'));
   } finally {
     rmSync(scratch, { recursive: true, force: true });

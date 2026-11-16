@@ -7,7 +7,8 @@
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import type { CourseDataFile } from './course-data.js';
+import { courseDataFolderName, type CourseDataFile } from './course-data.js';
+import { FileSystemError, type FileSystem } from './ports.js';
 
 export interface ResourceRecord {
   readonly id: string;
@@ -92,6 +93,30 @@ export function newResource(courseFolder: string, absolutePath: string): Resourc
 /** The file a Resource points to now, for a Course that may have been moved. */
 export function resourcePath(courseFolder: string, record: ResourceRecord): string {
   return record.relative ? join(courseFolder, ...record.path.split('/')) : record.path;
+}
+
+/**
+ * Whether the Course already has a Resources file in `.followalong`. `CourseData.read` answers
+ * `undefined` both for "no file" and for a file it ignored (damaged, or from a newer FollowAlong),
+ * so this tells the two apart before anything is written over a file the learner may still need.
+ * Only a file that is not there counts as absent: any other failure to look counts as present.
+ */
+export async function resourcesFileExists(
+  fileSystem: FileSystem,
+  courseFolder: string,
+): Promise<boolean> {
+  try {
+    await fileSystem.readText(join(courseFolder, courseDataFolderName, resourcesFile.name));
+    return true;
+  } catch (error) {
+    if (FileSystemError.is(error, 'notFound')) {
+      return false;
+    }
+    if (error instanceof FileSystemError) {
+      return true;
+    }
+    throw error;
+  }
 }
 
 export function findResource(data: ResourcesData, id: string): ResourceRecord | undefined {
