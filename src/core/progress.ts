@@ -96,7 +96,7 @@ export const progressFile: CourseDataFile<CourseProgress> = {
 };
 
 /** A Lesson's entry: only the record's own keys count, never one inherited from `Object`. */
-function entryOf(
+export function lessonEntry(
   lessons: Readonly<Record<string, LessonProgress>>,
   lessonId: string,
 ): LessonProgress | undefined {
@@ -107,7 +107,7 @@ function entryOf(
 function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
   const lessons: Record<string, LessonProgress> = { ...a.lessons };
   for (const [lessonId, lesson] of Object.entries(b.lessons)) {
-    const other = entryOf(lessons, lessonId);
+    const other = lessonEntry(lessons, lessonId);
     if (other === undefined || lesson.savedAt > other.savedAt) {
       lessons[lessonId] = lesson;
     }
@@ -121,7 +121,7 @@ function mergeProgress(a: CourseProgress, b: CourseProgress): CourseProgress {
 
 /** A Lesson's state: not started, in progress or done (ADR 0030). */
 export function lessonStatus(progress: CourseProgress, lessonId: string): LessonStatus {
-  return entryOf(progress.lessons, lessonId)?.status ?? 'notStarted';
+  return lessonEntry(progress.lessons, lessonId)?.status ?? 'notStarted';
 }
 
 /**
@@ -129,7 +129,7 @@ export function lessonStatus(progress: CourseProgress, lessonId: string): Lesson
  * for a done Lesson saved in its last 5 %.
  */
 export function resumePosition(progress: CourseProgress, lessonId: string): number {
-  return startPosition(entryOf(progress.lessons, lessonId), lessonStatus(progress, lessonId));
+  return startPosition(lessonEntry(progress.lessons, lessonId), lessonStatus(progress, lessonId));
 }
 
 /** One open Course's Progress: read once when the Course opens, saved as the learner goes. */

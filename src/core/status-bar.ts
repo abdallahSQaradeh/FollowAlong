@@ -58,7 +58,7 @@ const secondsPerMinute = 60;
 const unknownTime = '--:--';
 
 /** `mm:ss`, with minutes past 59 kept as minutes (`65:30`). */
-function clock(seconds: number): string {
+export function formatClock(seconds: number): string {
   const whole = Math.floor(seconds);
   const minutes = Math.floor(whole / secondsPerMinute);
   const rest = whole % secondsPerMinute;
@@ -77,7 +77,7 @@ export function buildStatusBar(state: StatusBarState): StatusBarModel {
       },
       {
         id: 'time',
-        text: `${clock(state.position)} / ${state.duration > 0 ? clock(state.duration) : unknownTime}`,
+        text: `${formatClock(state.position)} / ${state.duration > 0 ? formatClock(state.duration) : unknownTime}`,
         tooltip: 'Position / length of the Lesson',
       },
       {

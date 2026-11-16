@@ -144,6 +144,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     nextClicked: (next) => {
       playLesson(next.id);
     },
+    progressChanged: refreshTree,
   });
 
   /**

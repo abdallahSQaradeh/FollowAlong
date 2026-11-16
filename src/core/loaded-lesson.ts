@@ -9,7 +9,7 @@ import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player
 import type { Lesson } from './course-model.js';
 import type { Disposable, Ports } from './ports.js';
 import type { PlayheadSeen } from './lesson-status.js';
-import type { ProgressRecorder } from './progress.js';
+import { lessonStatus, type ProgressRecorder } from './progress.js';
 import {
   buildStatusBar,
   hiddenStatusBar,
@@ -42,6 +42,12 @@ export interface OpenCourseView {
   lessonAfter(lesson: Lesson): Lesson | undefined;
   /** The learner clicked the Next overlay of the Loaded Lesson: `next` is the Lesson it names. */
   nextClicked(next: Lesson): void;
+  /**
+   * What the Lesson tree shows of the Progress may have changed: a Lesson's state changed, or
+   * Progress was saved (every 5 s while playing, on pause and seek). Never called for every
+   * `timeUpdate`.
+   */
+  progressChanged(): void;
 }
 
 /** Where and how a Lesson is loaded. */
@@ -283,6 +289,7 @@ export function createLoadedLesson(
     saveTimer ??= clock.schedule(saveIntervalMs, () => {
       saveTimer = undefined;
       void course.progress()?.save();
+      course.progressChanged();
       if (playback.playing) {
         startSaving();
       }
@@ -305,11 +312,27 @@ export function createLoadedLesson(
     shown.lastPlayingPosition = undefined;
   }
 
+  /**
+   * Records what the player reported about `shown`. The tree is told at once when that changes the
+   * Lesson's state (not started → in progress → done), so it never lags behind the Lesson.
+   */
+  function record(shown: LessonLoad, seen: PlayheadSeen): void {
+    const progress = course.progress();
+    if (progress === undefined) {
+      return;
+    }
+    const before = lessonStatus(progress.current(), shown.lesson.id);
+    progress.record(shown.lesson.id, seen);
+    if (lessonStatus(progress.current(), shown.lesson.id) !== before) {
+      course.progressChanged();
+    }
+  }
+
   /** Records what the player reported about `shown` and saves it now. */
   function recordAndSave(shown: LessonLoad, seen: PlayheadSeen): void {
-    const progress = course.progress();
-    progress?.record(shown.lesson.id, seen);
-    void progress?.save();
+    record(shown, seen);
+    void course.progress()?.save();
+    course.progressChanged();
   }
 
   /** Counts the play between the last `timeUpdate` of a playing Lesson and this one at `at`. */
@@ -394,6 +417,7 @@ export function createLoadedLesson(
         stopCountingPlay(shown);
         if (shown.engaged) {
           void course.progress()?.save();
+          course.progressChanged();
         }
         break;
       }
@@ -432,7 +456,7 @@ export function createLoadedLesson(
           position = event.position;
           duration = event.duration;
           if (shown.engaged) {
-            course.progress()?.record(shown.lesson.id, seenOf(shown, false));
+            record(shown, seenOf(shown, false));
           }
         }
         break;
