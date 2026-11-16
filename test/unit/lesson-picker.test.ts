@@ -81,18 +81,17 @@ describe('Go to Lesson…', () => {
     expect(h.player.sent).toEqual([]);
   });
 
-  it('tells the learner to open a Course first when none is open, and shows no picker', async () => {
+  it('opens the Course picker instead when no Course is open, so the key is never a dead end', async () => {
     const h = await createHarness();
+    const learning = await h.folder('Learning', { 'Some Course/intro.webm': 'v' });
+    h.config.set('coursesRoots', [learning]);
 
-    await h.core.goToLesson();
+    void h.core.goToLesson();
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(h.ui.picker).toBeUndefined();
-    expect(h.ui.messages).toEqual([
-      {
-        severity: 'info',
-        text: 'FollowAlong has no Course open. Run “FollowAlong: Open Course…” to pick one.',
-      },
-    ]);
+    expect(h.ui.picker?.title).toBe('Open Course');
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    expect(h.ui.messages).toEqual([]);
   });
 
   it('plays nothing when another Course was opened while the picker was open', async () => {

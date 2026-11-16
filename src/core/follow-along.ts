@@ -58,7 +58,10 @@ export interface FollowAlong {
   nextLesson(): void;
   /** The previous Lesson in Course order, across Sections. */
   previousLesson(): void;
-  /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
+  /**
+   * Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. With no
+   * Course open, it opens the Course picker instead.
+   */
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
@@ -560,10 +563,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     pickCourse,
     async goToLesson() {
       if (openedCourse === undefined) {
-        ui.showMessage({
-          severity: 'info',
-          text: 'FollowAlong has no Course open. Run “FollowAlong: Open Course…” to pick one.',
-        });
+        // With no Course there is no Lesson to go to: the key opens the Course picker (story 35).
+        await pickCourse();
         return;
       }
       const course = openedCourse;
