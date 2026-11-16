@@ -15,6 +15,7 @@ import {
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
 import { createCourseScans } from './course-list-cache.js';
+import { unhideCourse } from './hidden-courses.js';
 import { showCoursePicker } from './live-course-picker.js';
 import { addCoursesRoot, playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
 import { locateCourse } from './locate-course.js';
@@ -119,6 +120,11 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * `FollowAlong: Unhide a Course…`: lists the Courses hidden from the Course picker and shows the
+   * one the learner picks in it again (ADR 0072).
+   */
+  unhideCourse(): Promise<void>;
   /**
    * The text of a document open in VS Code changed: auto-pause's input (spec #12, Auto-pause).
    * Cursor moves are not edits, so they never reach it.
@@ -432,8 +438,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /**
    * Opens a Course folder: its Lessons in the tree, and the last Lesson played (paused, 5 s before
    * its position) or else the first Lesson, which plays unless the workspace is being restored.
+   * With `video` (an absolute path, picked in the Folder browser) that Lesson plays instead, as
+   * `playLesson` plays it, whatever the Course had played last.
    */
-  async function open(folder: string, restoring: boolean, request: number): Promise<void> {
+  async function open(
+    folder: string,
+    restoring: boolean,
+    request: number,
+    video?: string,
+  ): Promise<void> {
     /** Whether the learner asked for another Course since this one: then this open is dropped. */
     const superseded = (): boolean => {
       if (request === openRequests) {
@@ -449,7 +462,19 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return;
     }
     const playing = loaded.lesson();
+    const openLesson = openedCourse === undefined ? undefined : lessonOfVideo(openedCourse, video);
     if (
+      openLesson !== undefined &&
+      openedCourse !== undefined &&
+      sameFolder(openedCourse.folder, folder)
+    ) {
+      // The Course is open and the learner picked one of its videos: nothing is opened again.
+      logger.log({ level: 'info', message: `Not opening ${folder}: it is the open Course.` });
+      playLesson(openLesson.id);
+      return;
+    }
+    if (
+      video === undefined &&
       playing !== undefined &&
       openedCourse !== undefined &&
       sameFolder(openedCourse.folder, folder)
@@ -526,7 +551,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await rememberRecent(folder);
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);
-      if (last === undefined) {
+      const picked = lessonOfVideo(course, video);
+      if (picked !== undefined) {
+        // A video the learner picked plays, as a Lesson picked from the Lesson picker does.
+        play(course, picked, resumePosition(saved, picked.id), true);
+      } else if (last === undefined) {
         // A Lesson the learner did not ask for in this session does not start by itself.
         play(course, first, 0, !restoring);
       } else {
@@ -536,6 +565,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } finally {
       switching = false;
     }
+  }
+
+  /** The Lesson of `course` that is the video at this absolute path, if it is one. */
+  function lessonOfVideo(course: Course, video: string | undefined): Lesson | undefined {
+    return video === undefined
+      ? undefined
+      : lessonsInOrder(course).find((lesson) => sameFolder(lesson.path, video));
   }
 
   /** Puts the Course first in Recent; Recent is a convenience, so a failure is only logged. */
@@ -563,8 +599,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return true;
   }
 
-  /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
-  function playLesson(lessonId: string): void {
+  /**
+   * Plays a Lesson of the open Course, by its id, from where the start rule says (5 s before where
+   * the learner left it; 0:00 for a done Lesson saved at its end), or from 0:00 with `fromStart`.
+   */
+  function playLesson(lessonId: string, fromStart = false): void {
     if (refusedWhileOpening()) {
       logger.log({
         level: 'info',
@@ -585,7 +624,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     // The Lesson left shows where the learner left it, which is saved with it.
     refreshTree();
     const saved = progress?.current();
-    play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
+    const startAt = saved === undefined || fromStart ? 0 : resumePosition(saved, lesson.id);
+    play(course, lesson, startAt, true);
   }
 
   /** The Courses roots setting entries, and the roots, the learner was told about in this window. */
@@ -602,10 +642,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let openRequests = 0;
   /** Set while an open has left the Lesson that played and has not played the new Course yet. */
   let switching = false;
-  function openInTurn(folder: string, restoring: boolean): Promise<void> {
+  function openInTurn(folder: string, restoring: boolean, video?: string): Promise<void> {
     openRequests += 1;
     const request = openRequests;
-    const next = opening.then(() => open(folder, restoring, request));
+    const next = opening.then(() => open(folder, restoring, request, video));
     opening = next.catch(() => undefined);
     return next;
   }
@@ -752,6 +792,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'openCourse':
         await openInTurn(intent.folder, false);
         break;
+      case 'playVideo':
+        await openInTurn(intent.folder, false, intent.video);
+        break;
       case 'addCoursesRoot':
         // The learner added a root to pick a Course from it: show the list again, with its Courses.
         if (await chooseCoursesRoot()) {
@@ -803,6 +846,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     playLesson,
     pickCourse,
+    unhideCourse: () => unhideCourse(ports),
     async goToLesson() {
       if (refusedWhileOpening()) {
         return;
@@ -813,10 +857,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const course = openedCourse;
-      const intent = await ui.pick(buildLessonPicker(course));
-      if (intent?.type === 'playLesson') {
+      const intent = await ui.pick(
+        buildLessonPicker(course, progress?.current() ?? { lessons: {} }),
+      );
+      if (intent !== undefined) {
         if (course === openedCourse) {
-          playLesson(intent.lessonId);
+          playLesson(intent.lessonId, intent.type === 'playLessonFromStart');
         } else {
           logger.log({
             level: 'info',

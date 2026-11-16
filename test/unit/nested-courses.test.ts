@@ -11,7 +11,7 @@ import { createHarness, type Harness } from './harness.js';
 /** The Course picker as the learner reads it: each Course as `label` or `label — description`. */
 function courses(picker: QuickPickModel<unknown> | undefined): string[] {
   return (picker?.entries ?? []).flatMap((entry) =>
-    entry.kind === 'item' && entry.label !== 'Add Courses root…'
+    entry.kind === 'item' && entry.label !== 'Add Courses root…' && entry.label !== 'Browse…'
       ? [entry.description === undefined ? entry.label : `${entry.label} — ${entry.description}`]
       : [],
   );
@@ -52,6 +52,7 @@ describe('a Course at the root of a drive', () => {
       readDirectory: (path) =>
         Promise.resolve(path === driveRoot ? [{ name: '01 Intro.mp4', kind: 'file' }] : []),
       stat: () => Promise.reject(new Error('not stated')),
+      startingFolders: () => Promise.resolve([]),
       readText: () => Promise.reject(new Error('not read')),
       exists: () => Promise.resolve(true),
       writeText: () => Promise.reject(new Error('not written')),

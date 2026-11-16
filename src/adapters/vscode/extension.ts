@@ -8,6 +8,7 @@ import { createFollowAlong } from '../../core/follow-along.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import type { PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
+import { bundledFfmpegPath } from '../node/bundled-ffmpeg.js';
 import { createSystemClock } from '../node/clock.js';
 import { createFfmpegConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
@@ -42,6 +43,8 @@ export const commands = {
    * as the Course without the picker.
    */
   openCourse: 'followalong.openCourse',
+  /** `FollowAlong: Unhide a Course…`: gives a Course hidden from the Course picker back to it. */
+  unhideCourse: 'followalong.unhideCourse',
   /** Run by a click on a Lesson in the tree, with the Lesson's id. */
   playLesson: playLessonCommand,
   /** The "+" on a Lesson in the tree; it is run with the Lesson's tree node. */
@@ -135,6 +138,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     ),
     logger,
     terminalSettings: createTerminalSettings(),
+    bundledFfmpeg: bundledFfmpegPath(context.extensionPath),
   });
 
   closeCore = () => core.close();
@@ -195,6 +199,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.openCourse, (folder) =>
       folder instanceof vscode.Uri ? core.openCourse(folderPath(folder)) : core.pickCourse(),
     ),
+    register(commands.unhideCourse, () => core.unhideCourse()),
     register(commands.attachResource, async (node, file) => {
       const nodeKey = nodeId(node);
       if (nodeKey === undefined) {

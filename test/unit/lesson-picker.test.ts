@@ -7,7 +7,7 @@ import { createHarness } from './harness.js';
 
 /**
  * The picker as the learner reads it, top to bottom: a separator as `── Section`, an item as
- * `title  ·  Section` (just the title when it shows no Section).
+ * `glyph title  ·  Section` (just the glyph and title when it shows no Section).
  */
 function rows(picker: QuickPickModel<unknown> | undefined): string[] {
   return (picker?.entries ?? []).map((entry) =>
@@ -33,10 +33,10 @@ describe('Go to Lesson…', () => {
 
     expect(rows(h.ui.picker)).toEqual([
       '── Section 1',
-      'Welcome  ·  Section 1',
-      'Setup  ·  Section 1',
+      '○ Welcome  ·  Section 1',
+      '○ Setup  ·  Section 1',
       '── Section 2',
-      'Tools  ·  Section 2',
+      '○ Tools  ·  Section 2',
     ]);
   });
 
@@ -51,7 +51,7 @@ describe('Go to Lesson…', () => {
     h.player.clearSent();
 
     const going = h.core.goToLesson();
-    h.ui.choose('Tools');
+    h.ui.choose('○ Tools');
     await going;
 
     expect(h.player.shown.at(-1)?.title).toBe('Tools');
@@ -91,7 +91,7 @@ describe('Go to Lesson…', () => {
     await h.ui.pickerShown();
 
     expect(h.ui.picker?.title).toBe('Open Course');
-    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Browse…', 'Add Courses root…']);
     expect(h.ui.messages).toEqual([]);
   });
 
@@ -106,7 +106,7 @@ describe('Go to Lesson…', () => {
     await h.core.openCourse(second);
     h.player.ready();
     h.player.clearSent();
-    h.ui.choose('intro');
+    h.ui.choose('○ intro');
     await going;
 
     expect(h.player.sent).toEqual([]);
@@ -125,11 +125,11 @@ describe('Go to Lesson…', () => {
     void h.core.goToLesson();
 
     expect(rows(h.ui.picker)).toEqual([
-      'intro',
-      'lesson2',
-      'lesson10',
+      '○ intro',
+      '○ lesson2',
+      '○ lesson10',
       '── Basics',
-      'Variables  ·  Basics',
+      '○ Variables  ·  Basics',
     ]);
   });
 
@@ -148,13 +148,13 @@ describe('Go to Lesson…', () => {
 
     expect(rows(h.ui.picker)).toEqual([
       '── Part 1',
-      'Variables  ·  Part 1',
+      '○ Variables  ·  Part 1',
       '── Part 1 / Deep',
-      'Types  ·  Part 1 / Deep',
+      '○ Types  ·  Part 1 / Deep',
       '── Part 2',
-      'Recap  ·  Part 2',
+      '○ Recap  ·  Part 2',
       '── Part 2 / Wrapper',
-      'Loops  ·  Part 2 / Wrapper',
+      '○ Loops  ·  Part 2 / Wrapper',
     ]);
   });
 

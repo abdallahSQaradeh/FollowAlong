@@ -19,7 +19,7 @@ describe('the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Browse…', 'Add Courses root…']);
   });
 
   it('writes the folder the learner chooses for “Add Courses root…” to the setting', async () => {
@@ -45,7 +45,7 @@ describe('the Course picker', () => {
     await h.ui.pickerShown();
     h.ui.choose('Add Courses root…');
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Browse…', 'Add Courses root…']);
     h.ui.choose('Some Course');
     await picking;
 
@@ -105,6 +105,7 @@ describe('the Course picker', () => {
       'React Basics',
       'TypeScript Deep Dive',
       'Vue Basics',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -121,7 +122,7 @@ describe('the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Node Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Node Course', 'Browse…', 'Add Courses root…']);
   });
 
   it('skips hidden folders, node_modules and .git', async () => {
@@ -138,7 +139,7 @@ describe('the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Browse…', 'Add Courses root…']);
   });
 
   it('lists the Courses of the other roots, and says which root it cannot read', async () => {
@@ -150,7 +151,7 @@ describe('the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Browse…', 'Add Courses root…']);
     expect(h.ui.messages).toEqual([
       {
         severity: 'warning',
@@ -171,7 +172,7 @@ describe('the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Browse…', 'Add Courses root…']);
     expect(h.ui.messages).toEqual([]);
   });
 
@@ -238,6 +239,7 @@ describe('the Course picker', () => {
       'Node Course',
       'React Basics',
       'Vue Basics',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -322,7 +324,7 @@ describe('the Course picker', () => {
 
     const picking = h.core.pickCourse();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Browse…', 'Add Courses root…']);
     h.ui.choose('Add Courses root…');
     await h.ui.pickerShown();
     h.ui.choose('Some Course');
@@ -348,7 +350,7 @@ describe('the Course picker', () => {
 
     const first = h.core.pickCourse();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Browse…', 'Add Courses root…']);
     h.ui.choose('Some Course');
     await first;
     const second = h.core.pickCourse();
@@ -379,7 +381,7 @@ describe('the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Real Course', 'Browse…', 'Add Courses root…']);
   });
 
   it('says once per window that a Courses root cannot be read', async () => {

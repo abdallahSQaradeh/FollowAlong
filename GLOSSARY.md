@@ -17,8 +17,12 @@ One video inside a Course.
 _Avoid_: Episode, clip, lecture
 
 **Course picker**:
-The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, or add a Courses root. It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
+The quick pick behind _Open Course…_ (`Ctrl+'` `C`) that lists the Courses found under the Courses roots, so the learner can open one by typing, add a Courses root, or _Browse…_ folders (the **Folder browser**). It opens at once from the **Course list cache**, shows a busy indicator while it rescans, and has a _Refresh_ button that rescans straight away.
 _Avoid_: Course list, library view
+
+**Folder browser**:
+The list behind _Browse…_ in the Course picker, shown inside the same quick pick. It walks folders from the Courses roots (or the drives or home folder when there is no root), with a way back up. A folder that holds videos can be opened as a Course; picking a video opens its folder as the Course and plays that video.
+_Avoid_: File explorer, folder dialog, tree
 
 **Course list cache**:
 The Courses the last scan of the Courses roots found, kept on this machine (not in any Course folder) so the Course picker can open from it before the rescan is done. It is used only for the same Courses roots, and a copy that cannot be read is ignored.
@@ -29,7 +33,7 @@ A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
 
 **Lesson picker**:
-The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing.
+The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing. Each item shows the Lesson's state (✓/◐/○) and, for one in progress, its saved position, as the Lesson tree does; a _Start from beginning_ button on the item plays that Lesson from 0:00.
 _Avoid_: Lesson search, jump list
 
 **Course order**:
@@ -59,6 +63,10 @@ _Avoid_: Opened Course, tracked Course
 **Recent Courses**:
 The Courses the learner opened last (5 at most, newest first), kept on this machine and listed first in the Course picker. The Course open in this window is tagged _(open)_. One whose folder has moved shows as _missing_, with _Locate…_ to point it at its new folder and _Remove_ to drop it.
 _Avoid_: History, favourites, last opened
+
+**Hidden Course**:
+A folder the learner hid from the Course picker with _Hide_ because it is not a real Course (a stray `images` folder holding one video). Kept in a hidden-Course list on this machine, so it stays hidden across rescans and restarts. Hiding only changes what the picker lists, never the folder; _FollowAlong: Unhide a Course…_ gives one back.
+_Avoid_: Ignored Course, excluded folder, deleted Course
 
 **Title list**:
 A `.txt` file in the Course folder (or a wrapper folder around its Lessons) with one line per Lesson, giving the instructor's real Lesson titles in Lesson order.
@@ -111,6 +119,10 @@ _Avoid_: Metadata, cache, settings
 **Audio sidecar**:
 An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
 _Avoid_: Soundtrack, audio copy, audio cache
+
+**Bundled ffmpeg**:
+The minimal LGPL ffmpeg that comes inside the Windows x64 `.vsix`, and makes the Audio sidecar of an MP4 Lesson with nothing for the learner to install. It is used unless the learner's own `followalong.ffmpegPath` names another; where there is none (Linux and macOS), ffmpeg on PATH is.
+_Avoid_: Embedded ffmpeg, default ffmpeg, ffmpeg binary
 
 **Sound notice**:
 The words over the first frame of an MP4 Lesson that waits for its Audio sidecar: "Preparing sound… N%" while the sound is converted (the status bar says the same), or the error and the _Play without sound_ button when preparing failed. The Lesson starts by itself when the sound is ready, or when the learner presses play if that is later.

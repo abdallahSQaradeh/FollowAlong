@@ -46,6 +46,7 @@ describe('Recent Courses in the Course picker', () => {
       '── Other Courses',
       'D',
       'F',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -62,7 +63,13 @@ describe('Recent Courses in the Course picker', () => {
     await h.ui.pickerShown();
 
     expect(h.player.shown).toEqual([]);
-    expect(rows(h.ui.picker)).toEqual(['── Recent Courses', 'B', 'A', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual([
+      '── Recent Courses',
+      'B',
+      'A',
+      'Browse…',
+      'Add Courses root…',
+    ]);
   });
 
   it('treats another spelling of the open Course’s folder as that Course', async () => {
@@ -77,7 +84,12 @@ describe('Recent Courses in the Course picker', () => {
     await h.ui.pickerShown();
 
     expect(h.player.sent).toEqual([]);
-    expect(rows(h.ui.picker)).toEqual(['── Recent Courses', 'A — (open)', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual([
+      '── Recent Courses',
+      'A — (open)',
+      'Browse…',
+      'Add Courses root…',
+    ]);
   });
 
   it('lists a Course once, first, when it is opened again', async () => {
@@ -95,6 +107,7 @@ describe('Recent Courses in the Course picker', () => {
       'A — (open)',
       'C',
       'B',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -112,6 +125,7 @@ describe('Recent Courses in the Course picker', () => {
       '── Recent Courses',
       'B — (open)',
       'A',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -123,7 +137,7 @@ describe('Recent Courses in the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['A', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['A', 'Browse…', 'Add Courses root…']);
   });
 
   it('keeps Recent for this machine when VS Code starts again', async () => {
@@ -143,6 +157,7 @@ describe('Recent Courses in the Course picker', () => {
       'A',
       '── Other Courses',
       'C',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -155,7 +170,7 @@ describe('Recent Courses in the Course picker', () => {
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Browse…', 'Add Courses root…']);
   });
 
   it('lists a Course opened from outside the Courses roots, even with no root set', async () => {
@@ -169,6 +184,7 @@ describe('Recent Courses in the Course picker', () => {
     expect(rows(h.ui.picker)).toEqual([
       '── Recent Courses',
       'Some Course — (open)',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -196,6 +212,7 @@ describe('Recent Courses are known Courses for the scan', () => {
       'Other Course',
       'Part 1 — Algorithms',
       'Part 2 — Algorithms',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -212,6 +229,7 @@ describe('Recent Courses are known Courses for the scan', () => {
       '── Recent Courses',
       'Other Course — (open)',
       'Algorithms',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -240,10 +258,11 @@ describe('a Recent Course whose folder has moved', () => {
       '── Recent Courses',
       'B — (open)',
       'A — missing',
+      'Browse…',
       'Add Courses root…',
     ]);
     expect(h.ui.buttonsOf('A')).toEqual(['Locate…', 'Remove']);
-    expect(h.ui.buttonsOf('B')).toEqual([]);
+    expect(h.ui.buttonsOf('B')).toEqual(['Hide']);
   });
 
   it('drops the Course from Recent when the learner presses Remove, and shows the list again', async () => {
@@ -255,12 +274,17 @@ describe('a Recent Course whose folder has moved', () => {
     h.ui.press('A', 'Remove');
     await h.ui.pickerShown();
 
-    expect(rows(h.ui.picker)).toEqual(['── Recent Courses', 'B — (open)', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual([
+      '── Recent Courses',
+      'B — (open)',
+      'Browse…',
+      'Add Courses root…',
+    ]);
     h.ui.dismissPicker();
     h.restart();
     void h.core.pickCourse();
     await h.ui.pickerShown();
-    expect(rows(h.ui.picker)).toEqual(['── Recent Courses', 'B', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['── Recent Courses', 'B', 'Browse…', 'Add Courses root…']);
   });
 
   it('does not open the Course when the learner picks it: it asks for the new folder', async () => {
@@ -352,6 +376,7 @@ describe('Locate…', () => {
       '── Recent Courses',
       'B — (open)',
       'A moved',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -406,7 +431,12 @@ describe('Locate…', () => {
     await rename(old, moved);
     makeReadOnly(moved);
 
-    expect(await locate(h, moved)).toEqual(['── Recent Courses', 'A moved', 'Add Courses root…']);
+    expect(await locate(h, moved)).toEqual([
+      '── Recent Courses',
+      'A moved',
+      'Browse…',
+      'Add Courses root…',
+    ]);
 
     expect(await openFromPicker(h, 'A moved')).toMatchObject({
       lessonId: '02 Setup.webm',
@@ -488,6 +518,7 @@ describe('Locate…', () => {
       '── Recent Courses',
       'B — (open)',
       'A — missing',
+      'Browse…',
       'Add Courses root…',
     ]);
     expect(h.ui.messages).toEqual([
@@ -506,6 +537,7 @@ describe('Locate…', () => {
       '── Recent Courses',
       'B — (open)',
       'A — missing',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
@@ -676,6 +708,7 @@ describe('a Course that cannot be stored as open', () => {
       '── Recent Courses',
       'Second — (open)',
       'First',
+      'Browse…',
       'Add Courses root…',
     ]);
   });
