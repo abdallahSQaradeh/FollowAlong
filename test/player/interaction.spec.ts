@@ -168,6 +168,24 @@ test.describe('the keyboard in the player', () => {
 });
 
 test.describe('commands from the extension', () => {
+  test('seek steps, back, forward and past the end, without asking for focus', async ({ page }) => {
+    const player = await openPlayer(page);
+    await player.post(load());
+    await player.waitForEvent({ type: 'played', lessonId });
+
+    await player.post({ type: 'seekBy', seconds: 2 });
+    await player.waitForEvent({ type: 'seeked', lessonId });
+    await player.post({ type: 'seekBy', seconds: -1.5 });
+    await expect
+      .poll(async () => (await player.events()).filter((event) => event.type === 'seeked'))
+      .toHaveLength(2);
+    await player.post({ type: 'seekBy', seconds: 30 });
+    await player.waitForEvent({ type: 'ended', lessonId });
+    await page.waitForTimeout(300);
+
+    expect(await interactions(player)).toBe(0);
+  });
+
   test('play and pause without asking for focus', async ({ page }) => {
     const player = await openPlayer(page);
     await player.post(load());
