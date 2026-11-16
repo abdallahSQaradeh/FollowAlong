@@ -10,10 +10,16 @@ import {
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
 import { WebmSource } from './webm-source.js';
+import { ZoomControls } from './zoom-controls.js';
 
 declare global {
   /** Provided by VS Code inside a webview (and by the Seam 2 harness in Playwright). */
-  function acquireVsCodeApi(): { postMessage(message: unknown): void };
+  function acquireVsCodeApi(): {
+    postMessage(message: unknown): void;
+    /** The page's view state, kept by VS Code across reloads of the page; `undefined` at first. */
+    getState(): unknown;
+    setState(state: unknown): unknown;
+  };
 }
 
 const host = acquireVsCodeApi();
@@ -148,6 +154,8 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
 function load(command: Extract<PlayerCommand, { type: 'load' }>, media: HTMLVideoElement): void {
   current?.stop.abort();
   hideNext();
+  // A click waiting out the double-click window was meant for the Lesson before.
+  cancelPendingToggle();
   // A pause or play whose event the new load cancels must not mark the next one.
   pauseBy = undefined;
   playRequested = false;
@@ -281,6 +289,9 @@ function run(command: PlayerCommand, media: HTMLVideoElement): void {
     case 'setResumeRewind':
       resumeRewind = command.seconds;
       break;
+    case 'zoom':
+      zoomControls.reset();
+      break;
   }
 }
 
@@ -394,20 +405,59 @@ function togglePlayback(media: HTMLVideoElement): void {
 }
 
 /**
+ * How long a click on the zoomed picture waits for a second click before it plays or pauses: a
+ * double-click resets the zoom and must not toggle twice (ADR 0037).
+ */
+const doubleClickWindowMs = 300;
+/** The play/pause of a click on the zoomed picture, waiting out the double-click window. */
+let pendingToggle: ReturnType<typeof setTimeout> | undefined;
+
+function cancelPendingToggle(): void {
+  clearTimeout(pendingToggle);
+  pendingToggle = undefined;
+}
+
+/**
+ * A click on the picture plays or pauses the Lesson: at once at 1× (ADR 0009), where a
+ * double-click does nothing. While zoomed a double-click resets the zoom, so a click plays or
+ * pauses only once no second click followed it, and the second click of a pair toggles nothing.
+ */
+function clickOnPicture(clicks: number, media: HTMLVideoElement): void {
+  cancelPendingToggle();
+  if (!zoomControls.zoomed) {
+    togglePlayback(media);
+  } else if (clicks === 1) {
+    pendingToggle = setTimeout(() => {
+      pendingToggle = undefined;
+      togglePlayback(media);
+    }, doubleClickWindowMs);
+  }
+}
+
+/**
  * Reports the end of each learner interaction as `userInteracted` (ADR 0009). The native control
  * bar keeps its pointer events to itself, so its buttons show only through what they change, and
  * its sliders through their pointer capture, which ends when the learner lets go.
  */
-function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
+function reportInteractions(media: HTMLVideoElement, overlay: HTMLElement): void {
   const ended = () => {
     interactions.ended();
   };
-  overlay.addEventListener('click', () => {
-    togglePlayback(media);
+  overlay.addEventListener('click', (event) => {
+    if (!zoomControls.takeDragClick()) {
+      clickOnPicture(event.detail, media);
+    }
+  });
+  // At 1× there is nothing to reset: a double-click there is two clicks, as before (#23).
+  overlay.addEventListener('dblclick', () => {
+    if (zoomControls.zoomed) {
+      cancelPendingToggle();
+      zoomControls.reset();
+    }
   });
   // The overlay takes the pointer moves that would show the native control bar: pass them on.
   overlay.addEventListener('pointermove', (event) => {
-    const { clientX, clientY, pointerId, pointerType } = event as PointerEvent;
+    const { clientX, clientY, pointerId, pointerType } = event;
     media.dispatchEvent(
       new PointerEvent('pointermove', { bubbles: true, clientX, clientY, pointerId, pointerType }),
     );
@@ -448,10 +498,27 @@ function reportInteractions(media: HTMLVideoElement, overlay: Element): void {
   media.addEventListener('volumechange', ended);
 }
 
-const overlay = document.querySelector('.overlay');
-if (overlay === null) {
-  throw new Error('The player page has no overlay.');
+/** One element of the page, which the page's own HTML always has. */
+function part(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element === null) {
+    throw new Error(`The player page has no ${selector}.`);
+  }
+  return element;
 }
+
+const overlay = part('.overlay');
+const zoomControls = new ZoomControls({
+  media: video,
+  overlay,
+  box: part('.zoom-box'),
+  toolbar: part('.zoom-tools'),
+  interactions,
+  state: host,
+  zoomChanged: (level) => {
+    post({ type: 'zoomChanged', level });
+  },
+});
 
 nextOverlay.addEventListener('click', () => {
   if (current !== undefined && !current.failed) {
@@ -468,3 +535,5 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
   }
 });
 post({ type: 'ready', aacSupported: aac !== '' });
+// A reloaded page shows the zoom the page before it had, and so reports it after `ready`.
+zoomControls.restore();

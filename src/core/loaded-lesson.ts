@@ -219,6 +219,23 @@ export function createLoadedLesson(
   /** The playhead and length the player last reported for the current Lesson, in seconds. */
   let position = 0;
   let duration = 0;
+  /**
+   * The open player page's zoom level, as it last reported it. Zoom belongs to the page, not to
+   * the Lesson (ADR 0037): it stays from Lesson to Lesson, and a new page starts at 1×.
+   */
+  let zoom = 1;
+  /**
+   * What a player page that has just started is like (one that posted `ready`, or one that is
+   * starting or gone): it plays at normal speed and shows the whole picture, until it says
+   * otherwise.
+   */
+  function newPage(ready: boolean): void {
+    playerReady = ready;
+    rate = normalRate;
+    askedRates = [];
+    zoom = 1;
+  }
+
   /** What the status bar shows now; a new model is sent to the UI only when it differs. */
   let statusBar: StatusBarModel = hiddenStatusBar;
 
@@ -232,6 +249,7 @@ export function createLoadedLesson(
             duration,
             rate,
             shortStep: stepSeconds('short'),
+            zoom,
           });
     if (JSON.stringify(next) === JSON.stringify(statusBar)) {
       return;
@@ -366,10 +384,9 @@ export function createLoadedLesson(
   function onPlayerEvent(event: PlayerEvent): void {
     switch (event.type) {
       case 'ready':
-        playerReady = true;
+        // A page that kept its zoom reports it right after `ready`.
+        newPage(true);
         playerResumeRewind = 0;
-        rate = normalRate;
-        askedRates = [];
         logger.log({
           level: 'debug',
           message: `Player ready (AAC ${event.aacSupported ? 'supported' : 'not supported'})`,
@@ -513,6 +530,9 @@ export function createLoadedLesson(
       case 'userInteracted':
         ui.returnFocus();
         break;
+      case 'zoomChanged':
+        zoom = event.level;
+        break;
     }
     refreshStatusBar();
   }
@@ -548,9 +568,7 @@ export function createLoadedLesson(
 
   /** The learner closed the player: a new page starts from scratch, at normal speed. */
   function onPlayerClosed(): void {
-    playerReady = false;
-    rate = normalRate;
-    askedRates = [];
+    newPage(false);
     // Closing the player closes the Lesson's playback: its Progress is saved now (spec #12).
     void leave();
     // The Lesson shows where it was left, saved with it.
@@ -590,10 +608,7 @@ export function createLoadedLesson(
     resetPlayhead(false);
     const shown = player.show({ title: lesson.title, resourceRoots });
     if (shown === 'created') {
-      // A new page is not ready and plays at normal speed.
-      playerReady = false;
-      rate = normalRate;
-      askedRates = [];
+      newPage(false);
     } else if (playerReady) {
       loadCurrent();
     }
@@ -699,6 +714,12 @@ export function createLoadedLesson(
         case 'speedCycle':
           if (hasPlayableLesson('Speed cycle')) {
             setRate(cycledRate(rate));
+          }
+          break;
+        case 'zoomReset':
+          // The item goes once the player reports the whole picture: it knows what it shows.
+          if (hasPlayableLesson('Zoom reset')) {
+            player.send({ type: 'zoom', action: 'reset' });
           }
           break;
       }

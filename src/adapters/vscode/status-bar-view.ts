@@ -24,6 +24,7 @@ const codicons: Readonly<Record<StatusBarIcon, string>> = {
   play: 'play',
   pause: 'debug-pause',
   back: 'debug-step-back',
+  zoom: 'zoom-in',
 };
 
 export class StatusBarView implements vscode.Disposable {
