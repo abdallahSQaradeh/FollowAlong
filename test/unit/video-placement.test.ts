@@ -492,3 +492,183 @@ describe('the page a move left', () => {
     expect(h.ui.statusBar).toEqual(statusBar);
   });
 });
+
+describe('Toggle video', () => {
+  it('collapses the video, and restores it in the same spot with its time, speed, play and zoom', async () => {
+    const h = await createHarness();
+    await movedPlaying(h);
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 42, duration: 300 });
+    h.player.emit({ type: 'rateChanged', lessonId, rate: 1.5 });
+    h.player.emit({ type: 'zoomChanged', level: 2 });
+    h.player.clearSent();
+    const shows = h.player.shown.length;
+
+    const collapsing = h.core.toggleVideo();
+    expect(h.player.sent).toEqual([{ type: 'takeSnapshot' }]);
+    answerSnapshot(h, 42.5, true);
+    await collapsing;
+
+    expect(h.player.hidden).toBe(true);
+    expect(h.player.shown).toHaveLength(shows);
+
+    await h.core.toggleVideo();
+    h.player.clearSent();
+
+    expect(h.player.hidden).toBe(false);
+    expect(lastSpot(h)).toBe('bottomPanel');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 42.5, autoplay: true }),
+      { type: 'setRate', rate: 1.5 },
+      { type: 'restore', zoom: { level: 2, left: 0.25, top: 0.5 } },
+    ]);
+  });
+});
+
+describe('Toggle video with no Lesson loaded', () => {
+  it('does nothing but say so', async () => {
+    const h = await createHarness();
+
+    await h.core.toggleVideo();
+
+    expect(h.ui.messages).toEqual([
+      { severity: 'info', text: 'FollowAlong: no Lesson is open. Open a Course first.' },
+    ]);
+  });
+});
+
+describe('a collapsed video', () => {
+  it('restores a paused Lesson paused, at the position it had', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const collapsing = h.core.toggleVideo();
+    answerSnapshot(h, 61, false);
+    await collapsing;
+
+    await h.core.toggleVideo();
+    h.player.clearSent();
+    h.player.ready();
+
+    expect(h.player.sent[0]).toMatchObject({
+      type: 'load',
+      lessonId,
+      startAt: 61,
+      autoplay: false,
+    });
+  });
+
+  it('collapses after 1 s with what FollowAlong knows when the page does not answer', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+
+    const collapsing = h.core.toggleVideo();
+    h.clock.advance(1000);
+    await collapsing;
+
+    expect(h.player.hidden).toBe(true);
+    await h.core.toggleVideo();
+    h.player.clearSent();
+    h.player.ready();
+    expect(h.player.sent[0]).toMatchObject({ type: 'load', lessonId, startAt: 42, autoplay: true });
+  });
+
+  it('is shown again by a Lesson the learner picks, in the same spot', async () => {
+    const h = await createHarness();
+    await movedPlaying(h);
+    const collapsing = h.core.toggleVideo();
+    h.clock.advance(1000);
+    await collapsing;
+
+    h.core.nextLesson();
+
+    expect(h.player.hidden).toBe(false);
+    expect(lastSpot(h)).toBe('bottomPanel');
+  });
+
+  it('tells the learner when a playback key is pressed, and sends nothing', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const collapsing = h.core.toggleVideo();
+    h.clock.advance(1000);
+    await collapsing;
+    h.player.clearSent();
+
+    h.core.playPause();
+
+    expect(h.player.sent).toEqual([]);
+    expect(h.ui.messages.at(-1)).toEqual({
+      severity: 'info',
+      text: "FollowAlong: the video is collapsed. Press Ctrl+' V to bring it back.",
+    });
+  });
+
+  it('keeps an ended Lesson ended, so the next play starts it again without a Rewind', async () => {
+    const h = await createHarness();
+    h.config.set('resumeRewind', 5);
+    await playingZoomed(h);
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 300, duration: 300 });
+    h.player.emit({ type: 'ended', lessonId });
+    const collapsing = h.core.toggleVideo();
+    answerSnapshot(h, 300, false);
+    await collapsing;
+    await h.core.toggleVideo();
+    h.player.ready();
+    h.player.emit({ type: 'seeked', lessonId, startSeek: true });
+    h.player.clearSent();
+
+    h.core.playPause();
+
+    expect(h.player.sent).toEqual([{ type: 'play' }]);
+  });
+
+  it('is restored by Move video to…, in the spot the learner picks', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const collapsing = h.core.toggleVideo();
+    h.clock.advance(1000);
+    await collapsing;
+
+    await h.core.moveVideo('secondarySidebar');
+
+    expect(h.player.hidden).toBe(false);
+    expect(lastSpot(h)).toBe('secondarySidebar');
+  });
+
+  it('collapses after a second press when the first waits for its snapshot, and restores after a third', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const shows = h.player.shown.length;
+
+    const first = h.core.toggleVideo();
+    const second = h.core.toggleVideo();
+    answerSnapshot(h, 42, true);
+    await Promise.all([first, second]);
+
+    // Collapse, then undo: the video stays where it is.
+    expect(h.player.hidden).toBe(false);
+    expect(h.player.shown).toHaveLength(shows);
+  });
+});
+
+describe('a move that was waiting when the Lesson changed', () => {
+  it('does not carry the old Lesson having ended over to the next Lesson', async () => {
+    const h = await createHarness();
+    h.config.set('resumeRewind', 5);
+    await playingZoomed(h);
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 300, duration: 300 });
+    h.player.emit({ type: 'ended', lessonId });
+    const moving = h.core.moveVideo('bottomPanel');
+    answerSnapshot(h, 300, false);
+    await moving;
+
+    // The page in the bottom panel is still starting when the learner picks another Lesson.
+    h.core.nextLesson();
+    h.player.ready();
+    h.player.emit({ type: 'timeUpdate', lessonId: '02 Next.webm', position: 20, duration: 300 });
+    h.player.clearSent();
+
+    h.core.playPause();
+
+    expect(h.player.sent).toEqual([{ type: 'seekBy', seconds: -5 }, { type: 'play' }]);
+  });
+});
