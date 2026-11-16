@@ -22,6 +22,13 @@ interface SeenEvent {
   readonly message?: string;
 }
 
+/** One entry of `contributes.keybindings` in package.json. */
+interface SeenKeybinding {
+  readonly command: string;
+  readonly key: string;
+  readonly when?: string;
+}
+
 /** What `activate` returns in ExtensionMode.Test (src/adapters/vscode/extension.ts). */
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
@@ -44,7 +51,11 @@ export async function run(): Promise<void> {
   say('the FollowAlong extension activates');
 
   const registered = await vscode.commands.getCommands(true);
-  for (const command of ['followalong.openCourse', 'followalong.playLesson']) {
+  for (const command of [
+    'followalong.openCourse',
+    'followalong.playLesson',
+    'followalong.goToLesson',
+  ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
   // VS Code adds a `.focus` command for every view it accepted from package.json: the FollowAlong
@@ -54,6 +65,17 @@ export async function run(): Promise<void> {
     'VS Code did not register the followalong.lessons view',
   );
   say('its commands and the Lessons tree view are registered');
+
+  // The chord Ctrl+' L opens the Lesson picker from the editor or the terminal. VS Code reads the
+  // keybinding table from package.json; this checks it is declared with the right `when`.
+  const keybindings = (
+    extension.packageJSON as { contributes?: { keybindings?: readonly SeenKeybinding[] } }
+  ).contributes?.keybindings;
+  const goToLesson = keybindings?.find((binding) => binding.command === 'followalong.goToLesson');
+  assert.ok(goToLesson, "Ctrl+' L is not bound to Go to Lesson…");
+  assert.equal(goToLesson.key, "ctrl+' l");
+  assert.equal(goToLesson.when, 'editorTextFocus || terminalFocus');
+  say("Ctrl+' L is bound to Go to Lesson… in the editor and the terminal");
 
   await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
