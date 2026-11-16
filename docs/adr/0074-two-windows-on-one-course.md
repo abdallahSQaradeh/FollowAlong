@@ -113,7 +113,7 @@ one look fresh (then each save waits 2 s and goes ahead).
   is optional and additive, so a FollowAlong that knows only version 1 still reads the file. A
   version 2 file would be unreadable to it, and under D5 it would then keep its Progress elsewhere
   rather than write over the file. Such a reader drops `statusAt` when it writes, and the entries
-  then read as before (`statusAt` defaults to `savedAt`).
+  then read with the defaults above (a status set at `savedAt`, or never).
 
 ## Consequences
 
