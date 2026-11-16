@@ -75,6 +75,12 @@ export class FileSystemError extends Error {
 export interface FileSystem {
   readDirectory(path: string): Promise<readonly DirectoryEntry[]>;
   readText(path: string): Promise<string>;
+  /**
+   * Whether anything is at `path`. It resolves `false` only when nothing is there (`notFound`); a
+   * path that cannot be looked at for another reason counts as present, because only a file that
+   * is surely gone is shown as missing and offered for a relink.
+   */
+  exists(path: string): Promise<boolean>;
   /** Writes the whole file at once: readers see the old or the new content, never a mix. */
   writeText(path: string, content: string): Promise<void>;
   /**

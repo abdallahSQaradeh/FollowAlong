@@ -531,6 +531,7 @@ export async function createHarness(): Promise<Harness> {
           : hold.released.then(() => nodeFileSystem.readText(path)),
       );
     },
+    exists: (path) => track(nodeFileSystem.exists(path)),
     writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
   };

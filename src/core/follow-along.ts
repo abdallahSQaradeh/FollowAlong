@@ -27,6 +27,7 @@ import {
 import type { StatusBarCommand } from './status-bar.js';
 import {
   findResource,
+  missingResources,
   newResource,
   noResources,
   resourcePath,
@@ -110,6 +111,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   /** The open Course's Course data, and the Resources read from it. */
   let courseData: CourseData | undefined;
   let resources: ResourcesData = noResources;
+  /** The ids of the open Course's Resources whose file is missing: the tree shows them dimmed. */
+  let missing: ReadonlySet<string> = new Set();
   /** The open Course's Progress. */
   let progress: ProgressRecorder | undefined;
   /** Attaches run one at a time, so two quick attaches cannot overwrite each other. */
@@ -206,7 +209,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // The Course may have been opened again, or another one opened, while this attach wrote.
       if (openedCourse?.folder === course.folder) {
         resources = next;
-        ui.showLessonTree(buildLessonTree(openedCourse, resources));
+        ui.showLessonTree(buildLessonTree(openedCourse, resources, missing));
       } else {
         // The tree shows another Course: without a word the learner might attach the file again.
         const lesson = lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
@@ -303,12 +306,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       // Read first, then switch, so no click sees one Course's Resources next to another's folder.
       const data = openCourseData(folder, ports);
       const stored = await readResources(data, folder);
+      const storedMissing = await missingResources(ports.fileSystem, folder, stored);
       const inOrder = lessonsInOrder(course);
       const first = inOrder[0];
       const recorder = first === undefined ? undefined : await openProgress(folder, ports);
       openedCourse = course;
       courseData = data;
       resources = stored;
+      missing = storedMissing;
       progress = recorder;
       if (first === undefined || recorder === undefined) {
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
@@ -321,7 +326,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       await storage.workspace.set(openCourseKey, folder);
-      ui.showLessonTree(buildLessonTree(course, resources));
+      ui.showLessonTree(buildLessonTree(course, resources, missing));
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       const saved = recorder.current();
       const last = inOrder.find((lesson) => lesson.id === saved.last?.lessonId);

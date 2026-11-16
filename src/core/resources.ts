@@ -119,6 +119,19 @@ export async function resourcesFileExists(
   }
 }
 
+/** The ids of the Resources whose file is no longer where they point (Course `folder` as opened). */
+export async function missingResources(
+  fileSystem: FileSystem,
+  folder: string,
+  data: ResourcesData,
+): Promise<ReadonlySet<string>> {
+  const records = [...data.course, ...Object.values(data.lessons).flat()];
+  const found = await Promise.all(
+    records.map(async (record) => fileSystem.exists(resourcePath(folder, record))),
+  );
+  return new Set(records.filter((_, index) => !found[index]).map((record) => record.id));
+}
+
 export function findResource(data: ResourcesData, id: string): ResourceRecord | undefined {
   return Object.values(data.lessons)
     .flat()
