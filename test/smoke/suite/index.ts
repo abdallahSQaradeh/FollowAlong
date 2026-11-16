@@ -54,6 +54,8 @@ export async function run(): Promise<void> {
     'followalong.seekForwardShort',
     'followalong.seekBackLong',
     'followalong.seekForwardLong',
+    'followalong.speedUp',
+    'followalong.speedDown',
     'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
@@ -70,6 +72,9 @@ export async function run(): Promise<void> {
   say('FollowAlong: Play/Pause is in the Command Palette and bound to its default keys');
   goToLessonIsBoundToItsChord(extension.packageJSON);
   say("FollowAlong: Go to Lesson… is in the Command Palette and bound to Ctrl+' L");
+
+  speedIsBoundToItsKeys(extension.packageJSON);
+  say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
 
   stepsAreBoundToTheirKeys(extension.packageJSON);
   say(
@@ -149,6 +154,28 @@ function stepsAreBoundToTheirKeys(packageJson: unknown): void {
   const settings = vscode.workspace.getConfiguration('followalong');
   assert.equal(settings.get('shortStep'), 5, 'the short step defaults to 5 s');
   assert.equal(settings.get('longStep'), 30, 'the long step defaults to 30 s');
+}
+
+/** The speed commands' Palette entries and chord keys. */
+function speedIsBoundToItsKeys(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  for (const [name, title, key] of [
+    ['speedUp', 'Speed up', "ctrl+' up"],
+    ['speedDown', 'Speed down', "ctrl+' down"],
+  ] as const) {
+    const id = `followalong.${name}`;
+    const command = contributes?.commands?.find((entry) => entry.command === id);
+    assert.deepEqual(
+      { title: command?.title, category: command?.category },
+      { title, category: 'FollowAlong' },
+      `the Command Palette entry is "FollowAlong: ${title}"`,
+    );
+    const bindings = (contributes?.keybindings ?? []).filter((entry) => entry.command === id);
+    assert.deepEqual(
+      bindings.map(({ key: bound, when }) => ({ key: bound, when })),
+      [{ key, when: 'editorTextFocus || terminalFocus' }],
+    );
+  }
 }
 
 /** The Lesson picker: VS Code reads the manifest for the Command Palette entry and the chord. */

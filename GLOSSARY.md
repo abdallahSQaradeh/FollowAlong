@@ -56,6 +56,10 @@ _Avoid_: Workflow, session
 One keypress that moves the playhead back or forward by a fixed number of seconds: the short step (5 s by default) or the long step (30 s by default). Both sizes are settings.
 _Avoid_: Skip, jump, scrub
 
+**Speed ladder**:
+The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
+_Avoid_: Speed slider, rate list
+
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.
 _Avoid_: Context switch, tab switch, window switch
