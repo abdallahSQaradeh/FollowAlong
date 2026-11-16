@@ -1,3 +1,4 @@
+import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -254,5 +255,53 @@ describe('one window, with the file read again before each write', () => {
     pause(h.player, intro);
 
     expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 305 });
+  });
+});
+
+describe('the lock two windows take turns with', () => {
+  /** A Course whose `.followalong` holds a lock on `progress.json` last touched `ageMs` ago. */
+  async function courseWithLock(
+    ageMs: number,
+  ): Promise<{ h: Harness; course: string; lock: string }> {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      [intro]: 'video',
+      '.followalong/progress.json.lock': '4242',
+    });
+    const lock = join(course, '.followalong', 'progress.json.lock');
+    const touched = new Date(Date.now() - ageMs);
+    await utimes(lock, touched, touched);
+    await h.core.openCourse(course);
+    h.player.ready();
+    return { h, course, lock };
+  }
+
+  it('takes over a lock left behind by a window that stopped, and saves', async () => {
+    const { h, course } = await courseWithLock(60 * 60_000);
+
+    playTo(h.player, intro, 100);
+    pause(h.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 95 });
+    expect(await h.listFiles(join(course, '.followalong'))).toEqual(['progress.json']);
+  });
+
+  it('saves after a moment when another window keeps the lock, and leaves that lock alone', async () => {
+    const { h, course } = await courseWithLock(0);
+
+    playTo(h.player, intro, 100);
+    pause(h.player, intro);
+
+    expect(await startsAfterRestart(h, course, [intro])).toEqual({ [intro]: 95 });
+    expect(await h.listFiles(join(course, '.followalong'))).toEqual([
+      'progress.json',
+      'progress.json.lock',
+    ]);
+    expect(h.logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        message: expect.stringContaining('without its lock') as unknown,
+      }),
+    );
   });
 });
