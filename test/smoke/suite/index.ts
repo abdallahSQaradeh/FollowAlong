@@ -559,23 +559,35 @@ async function doesAMoveIntoANewWindowKeepThePage(hooks: TestHooks): Promise<str
         : undefined,
     20_000,
   );
-  const playerGroup = vscode.window.tabGroups.all.find((group) =>
+  const holdsPlayer = (group: vscode.TabGroup): boolean =>
     group.tabs.some(
       (tab) =>
         tab.input instanceof vscode.TabInputWebview &&
         tab.input.viewType.includes('followalong.player'),
-    ),
-  );
-  assert.ok(playerGroup, 'no editor group holds the player');
+    );
+  // The tab API hears of the new tab a moment after the panel shows.
+  const playerGroup = await waitFor('an editor group that holds the player tab', () =>
+    vscode.window.tabGroups.all.find(holdsPlayer),
+  ).catch((error: unknown) => {
+    const tabs = vscode.window.tabGroups.all.flatMap((group) =>
+      group.tabs.map(
+        (tab) =>
+          `${String(group.viewColumn)}:${tab.label}:${tab.input instanceof vscode.TabInputWebview ? tab.input.viewType : typeof tab.input}`,
+      ),
+    );
+    throw new Error(`${String(error)}; the tabs are: [${tabs.join(', ')}]`);
+  });
   const ordinals = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'];
   await vscode.commands.executeCommand(
     `workbench.action.focus${ordinals[playerGroup.viewColumn - 1] ?? 'First'}EditorGroup`,
   );
-  const active = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
-  assert.ok(
-    active instanceof vscode.TabInputWebview && active.viewType.includes('followalong.player'),
-    'the player tab is not the active editor',
-  );
+  await waitFor('the player tab as the active editor', () => {
+    const active = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    return active instanceof vscode.TabInputWebview &&
+      active.viewType.includes('followalong.player')
+      ? true
+      : undefined;
+  });
   const from = hooks.playerEvents.length;
   await vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow');
   await waitForAsync('the player tab in a new window', async () =>
