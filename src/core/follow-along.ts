@@ -123,6 +123,12 @@ export interface FollowAlong {
    * Section's "Mark all done" in the tree. Resolves once the marks are saved.
    */
   markSectionDone(sectionId: string): Promise<void>;
+  /**
+   * Clears the done marks and positions of every Lesson of a Section of the open Course, nested
+   * Sections included, and nothing outside it: the Section's "Reset Section" in the tree.
+   * Resolves once the change is saved.
+   */
+  resetSection(sectionId: string): Promise<void>;
   /** The window is closing: saves Progress, then stops. */
   close(): Promise<void>;
   /** Stops at once, without saving (tests use it as a crash). */
@@ -748,6 +754,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     markSectionDone(sectionId) {
       return changeSection(sectionId, 'mark all done', (recorder, lessons) => {
         recorder.markDone(lessons.map((lesson) => lesson.id));
+      });
+    },
+    resetSection(sectionId) {
+      return changeSection(sectionId, 'reset', (recorder, lessons) => {
+        recorder.clear(lessons.map((lesson) => lesson.id));
       });
     },
     async attachResource(lessonId, absolutePath) {

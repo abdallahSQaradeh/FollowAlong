@@ -133,3 +133,31 @@ describe('Mark all done', () => {
     expect(descriptionOf(h, 'Part 1/Exercises/')).toBe('2/2');
   });
 });
+
+describe('Reset Section', () => {
+  it('clears the done marks and positions of the Section, and nothing outside it', async () => {
+    const h = await createHarness();
+    const course = await openWithProgress(h);
+    await h.core.markSectionDone('Basics/');
+
+    await h.core.resetSection('Basics/');
+
+    expect(glyphs(h)).toEqual({
+      'Basics/01 Intro.webm': '○',
+      'Basics/02 Setup.webm': '○',
+      'Advanced/03 Closures.webm': '◐',
+      'Advanced/04 Prototypes.webm': '○',
+    });
+    expect(descriptionOf(h, 'Basics/')).toBe('0/2');
+    expect(descriptionOf(h, 'Advanced/03 Closures.webm')).toBe('00:12 / 10:00');
+
+    await reopen(h, course);
+    h.core.playLesson('Basics/01 Intro.webm');
+    expect(h.player.sent.at(-1)).toMatchObject({ lessonId: 'Basics/01 Intro.webm', startAt: 0 });
+    h.core.playLesson('Advanced/03 Closures.webm');
+    expect(h.player.sent.at(-1)).toMatchObject({
+      lessonId: 'Advanced/03 Closures.webm',
+      startAt: 7,
+    });
+  });
+});

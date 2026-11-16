@@ -155,6 +155,12 @@ export interface ProgressRecorder {
    * a done mark at 0:00. Written by the next `save`.
    */
   markDone(lessonIds: readonly string[]): void;
+  /**
+   * Clears these Lessons' done marks and positions, so each reads as never played. An entry is
+   * written rather than removed: the newest entry per Lesson wins when two copies are merged, and
+   * a removed one would come back from the other copy (ADR 0061). Written by the next `save`.
+   */
+  clear(lessonIds: readonly string[]): void;
   /** Writes what was recorded since the last save, after any save already under way. */
   save(): Promise<void>;
 }
@@ -269,6 +275,19 @@ export async function openProgress(
           duration: before?.duration ?? 0,
           savedAt: savedAfter(before, clock.now()),
           status: 'done',
+        };
+      }
+      progress = { ...progress, lessons };
+      unsaved = true;
+    },
+    clear(lessonIds) {
+      const lessons: Record<string, LessonProgress> = { ...progress.lessons };
+      for (const lessonId of lessonIds) {
+        const before = lessonEntry(lessons, lessonId);
+        lessons[lessonId] = {
+          position: 0,
+          duration: 0,
+          savedAt: savedAfter(before, clock.now()),
         };
       }
       progress = { ...progress, lessons };
