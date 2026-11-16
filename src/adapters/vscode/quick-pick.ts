@@ -7,6 +7,9 @@ import * as vscode from 'vscode';
 
 import type { QuickPickButtonModel, QuickPickModel } from '../../core/quick-pick.js';
 
+/** How many quick picks were shown: the smoke test waits on it instead of racing the scan. */
+export const quickPicksShown = { count: 0 };
+
 type IntentItem<Intent> = vscode.QuickPickItem & { readonly intent?: Intent };
 
 export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined> {
@@ -57,6 +60,7 @@ export function showQuickPick<Intent>(model: QuickPickModel<Intent>): Promise<In
     quickPick.onDidHide(() => {
       answer(undefined);
     });
+    quickPicksShown.count += 1;
     quickPick.show();
   });
 }
