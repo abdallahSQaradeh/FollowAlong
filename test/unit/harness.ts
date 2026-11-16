@@ -40,6 +40,7 @@ export class FakePlayer implements PlayerPort {
   readonly shown: PlayerShowOptions[] = [];
   readonly sent: PlayerCommand[] = [];
   private readonly listeners = new Set<(event: PlayerEvent) => void>();
+  private readonly closeListeners = new Set<() => void>();
   private openRoots: readonly string[] | undefined;
 
   show(options: PlayerShowOptions): PlayerShowResult {
@@ -69,9 +70,17 @@ export class FakePlayer implements PlayerPort {
     this.sent.length = 0;
   }
 
+  onDidClose(listener: () => void): Disposable {
+    this.closeListeners.add(listener);
+    return { dispose: () => this.closeListeners.delete(listener) };
+  }
+
   /** The learner closed the player tab. */
   close(): void {
     this.openRoots = undefined;
+    for (const listener of this.closeListeners) {
+      listener();
+    }
   }
 
   emit(event: PlayerEvent): void {

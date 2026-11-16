@@ -10,7 +10,12 @@ import { FileSystemError, type Disposable, type Ports } from './ports.js';
 import { openCourseData, type CourseData } from './course-data.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree } from './lesson-tree.js';
-import { buildStatusBar, type StatusBarModel } from './status-bar.js';
+import {
+  buildStatusBar,
+  hiddenStatusBar,
+  type StatusBarCommand,
+  type StatusBarModel,
+} from './status-bar.js';
 import {
   findResource,
   newResource,
@@ -42,10 +47,11 @@ export interface FollowAlong {
   /** The speed commands: moves the playback rate one rung up or down the speed ladder. */
   speedStep(direction: SpeedDirection): void;
   /**
-   * The speed item in the status bar: moves the playback rate one rung up the speed ladder, and
-   * from the top rung back to the bottom one, so repeated clicks go round.
+   * A click on a status bar item: runs the command the item names. The speed item moves the
+   * playback rate one rung up the speed ladder, and from the top rung back to the bottom one,
+   * so repeated clicks go round.
    */
-  speedCycle(): void;
+  statusBarClick(command: StatusBarCommand): void;
   /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
   goToLesson(): Promise<void>;
   dispose(): void;
@@ -137,17 +143,20 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let position = 0;
   let duration = 0;
   /** What the status bar shows now; a new model is sent to the UI only when it differs. */
-  let statusBar: StatusBarModel = { items: [] };
+  let statusBar: StatusBarModel = hiddenStatusBar;
 
   function refreshStatusBar(): void {
-    const next = buildStatusBar({
-      playing: playback.playing,
-      position,
-      duration,
-      rate,
-      shortStep: stepSeconds('short'),
-    });
-    if (current === undefined || JSON.stringify(next) === JSON.stringify(statusBar)) {
+    const next =
+      current === undefined
+        ? hiddenStatusBar
+        : buildStatusBar({
+            playing: playback.playing,
+            position,
+            duration,
+            rate,
+            shortStep: stepSeconds('short'),
+          });
+    if (JSON.stringify(next) === JSON.stringify(statusBar)) {
       return;
     }
     statusBar = next;
@@ -237,8 +246,21 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     refreshStatusBar();
   }
 
+  /** The learner closed the player: nothing is loaded now, and a new page starts from scratch. */
+  function onPlayerClosed(): void {
+    current = undefined;
+    playerReady = false;
+    playback = freshPlayback(false);
+    position = 0;
+    duration = 0;
+    rate = normalRate;
+    askedRates = [];
+    refreshStatusBar();
+  }
+
   const subscriptions: Disposable[] = [
     player.onEvent(onPlayerEvent),
+    player.onDidClose(onPlayerClosed),
     // The back item names the short step, so a changed setting shows at once.
     config.onDidChange((affects) => {
       if (affects(stepSettings.short)) {
@@ -314,6 +336,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return typeof value === 'number' && Number.isFinite(value) && value > 0
       ? value
       : defaultStepSeconds[size];
+  }
+
+  /** The play/pause command. */
+  function playPause(): void {
+    if (!hasPlayableLesson('Play/pause')) {
+      return;
+    }
+    playback = { ...playback, awaitingPlayAnswer: !playback.playing };
+    player.send({ type: playback.playing ? 'pause' : 'play' });
+  }
+
+  /** The step commands. */
+  function seekStep(size: StepSize, direction: StepDirection): void {
+    if (!hasPlayableLesson('Seek step')) {
+      return;
+    }
+    const seconds = stepSeconds(size);
+    player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
   }
 
   /** Asks the player for `next`, the rung a speed command chose. */
@@ -464,28 +504,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         });
       }
     },
-    playPause() {
-      if (!hasPlayableLesson('Play/pause')) {
-        return;
-      }
-      playback = { ...playback, awaitingPlayAnswer: !playback.playing };
-      player.send({ type: playback.playing ? 'pause' : 'play' });
-    },
-    seekStep(size, direction) {
-      if (!hasPlayableLesson('Seek step')) {
-        return;
-      }
-      const seconds = stepSeconds(size);
-      player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
-    },
+    playPause,
+    seekStep,
     speedStep(direction) {
       if (hasPlayableLesson('Speed step')) {
         setRate(nextRate(rate, direction));
       }
     },
-    speedCycle() {
-      if (hasPlayableLesson('Speed cycle')) {
-        setRate(rate >= fastest ? slowest : nextRate(rate, 'up'));
+    statusBarClick(command) {
+      switch (command) {
+        case 'playPause':
+          playPause();
+          break;
+        case 'seekBackShort':
+          seekStep('short', 'back');
+          break;
+        case 'speedCycle':
+          if (hasPlayableLesson('Speed cycle')) {
+            setRate(rate >= fastest ? slowest : nextRate(rate, 'up'));
+          }
+          break;
       }
     },
     dispose() {

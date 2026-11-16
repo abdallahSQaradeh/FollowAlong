@@ -36,6 +36,8 @@ export interface PlayerPort {
   resourceUri(absolutePath: string): string;
   send(command: PlayerCommand): void;
   onEvent(listener: (event: PlayerEvent) => void): Disposable;
+  /** Calls `listener` when the learner closes the player: whatever it had loaded is gone. */
+  onDidClose(listener: () => void): Disposable;
 }
 
 // --- File system --------------------------------------------------------------------------------

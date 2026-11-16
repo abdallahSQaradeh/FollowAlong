@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 
 import { createFollowAlong } from '../../core/follow-along.js';
+import type { StatusBarCommand } from '../../core/status-bar.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
@@ -15,6 +16,10 @@ import { PlayerPanel } from './player-panel.js';
 import { StatusBarView, type DrawnItem } from './status-bar-view.js';
 import { createResourcePlacement } from './resource-placement.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
+
+function isStatusBarCommand(value: unknown): value is StatusBarCommand {
+  return value === 'playPause' || value === 'speedCycle' || value === 'seekBackShort';
+}
 
 export const commands = {
   /** Temporary: opens a folder as the Course. The Course picker replaces the folder dialog. */
@@ -35,8 +40,8 @@ export const commands = {
   /** `Ctrl+'` `↑` / `↓`: one rung up or down the speed ladder. */
   speedUp: 'followalong.speedUp',
   speedDown: 'followalong.speedDown',
-  /** Run by a click on the speed item in the status bar: one rung up the ladder, round to 0.75×. */
-  speedCycle: 'followalong.speedCycle',
+  /** Run by a click on a status bar item, with the name of the core command the item names. */
+  statusBarClick: 'followalong.statusBarClick',
   /** `Ctrl+'` `L`: the Lesson picker. */
   goToLesson: 'followalong.goToLesson',
 } as const;
@@ -59,11 +64,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
   const lessonTree = new LessonTreeView();
-  const statusBar = new StatusBarView({
-    playPause: commands.playPause,
-    speedCycle: commands.speedCycle,
-    seekBackShort: commands.seekBackShort,
-  });
+  const statusBar = new StatusBarView(commands.statusBarClick);
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -185,8 +186,14 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.speedDown, () => {
       core.speedStep('down');
     }),
-    register(commands.speedCycle, () => {
-      core.speedCycle();
+    register(commands.statusBarClick, async (command) => {
+      if (isStatusBarCommand(command)) {
+        core.statusBarClick(command);
+      }
+      // A click gives the status bar item keyboard focus (VS Code makes the label focusable), so
+      // the learner would have to click back into the code. The click is a mouse action, so the
+      // editor is where the learner was typing.
+      await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
     }),
     register(commands.goToLesson, () => core.goToLesson()),
   );

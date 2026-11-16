@@ -21,6 +21,15 @@ function item(h: Harness, id: StatusBarItemId): StatusBarItemModel {
   return found;
 }
 
+/** Clicks the status bar item with this id, as the learner does. */
+function click(h: Harness, id: StatusBarItemId): void {
+  const { command } = item(h, id);
+  if (command === undefined) {
+    throw new Error(`The status bar item “${id}” runs no command`);
+  }
+  h.core.statusBarClick(command);
+}
+
 describe('status bar items', () => {
   it('are not shown until a Lesson is loaded, and then are play/pause, time, speed and back', async () => {
     const h = await createHarness();
@@ -120,7 +129,7 @@ describe('status bar items', () => {
     h.player.clearSent();
 
     const shown = Array.from({ length: 6 }, () => {
-      h.core.speedCycle();
+      click(h, 'speed');
       return item(h, 'speed').text;
     });
 
@@ -136,7 +145,7 @@ describe('status bar items', () => {
     h.player.emit({ type: 'rateChanged', lessonId, rate: 1.1 });
     h.player.clearSent();
 
-    h.core.speedCycle();
+    h.core.statusBarClick('speedCycle');
 
     expect(h.player.sent).toEqual([{ type: 'setRate', rate: 1.25 }]);
   });
@@ -162,5 +171,53 @@ describe('status bar items', () => {
 
     h.config.set('shortStep', 'ten');
     expect(item(h, 'back').text).toBe('5s');
+  });
+
+  it('go away when the player tab is closed, and come back when a Lesson is loaded again', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+
+    h.player.close();
+    expect(h.ui.statusBar.items).toEqual([]);
+
+    h.core.playLesson(lessonId);
+    h.player.ready();
+    expect(h.ui.statusBar.items.map((entry) => entry.id)).toEqual([
+      'playPause',
+      'time',
+      'speed',
+      'back',
+    ]);
+    expect(item(h, 'time').text).toBe('00:00 / --:--');
+  });
+
+  it('run the command the item names when it is clicked: play/pause and back', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    h.player.emit({ type: 'played', lessonId });
+    h.player.clearSent();
+
+    click(h, 'playPause');
+    click(h, 'back');
+    h.config.set('shortStep', 12);
+    click(h, 'back');
+
+    expect(h.player.sent).toEqual([
+      { type: 'pause' },
+      { type: 'seekBy', seconds: -5 },
+      { type: 'seekBy', seconds: -12 },
+    ]);
+  });
+
+  it('tell the learner no Lesson is open when a click comes after the player was closed', async () => {
+    const h = await createHarness();
+    await openLesson(h);
+    h.player.close();
+    h.player.clearSent();
+
+    h.core.statusBarClick('playPause');
+
+    expect(h.player.sent).toEqual([]);
+    expect(h.ui.messages.at(-1)?.text).toContain('no Lesson is open');
   });
 });

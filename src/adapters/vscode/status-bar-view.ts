@@ -11,19 +11,13 @@ import type {
   StatusBarModel,
 } from '../../core/status-bar.js';
 
-/** The VS Code command a click on an item runs, by the name the core gives it. */
-export interface StatusBarCommands {
-  readonly playPause: string;
-  readonly speedCycle: string;
-  readonly seekBackShort: string;
-}
-
 /** An item as VS Code has it: for the smoke test to read. */
 export interface DrawnItem {
   readonly id: StatusBarItemId;
   /** With the icon as `$(name)`. */
   readonly text: string;
-  readonly command: string | undefined;
+  /** The VS Code command a click runs, and the core command it is run with. */
+  readonly command: { readonly id: string; readonly argument: unknown } | undefined;
 }
 
 const codicons: Readonly<Record<StatusBarIcon, string>> = {
@@ -39,14 +33,19 @@ export class StatusBarView implements vscode.Disposable {
   private readonly items = new Map<StatusBarItemId, vscode.StatusBarItem>();
   /** The items as VS Code has them now: what the learner sees, and what a click runs. */
   drawn(): readonly DrawnItem[] {
-    return [...this.items].map(([id, item]) => ({
-      id,
-      text: item.text,
-      command: typeof item.command === 'string' ? item.command : item.command?.command,
-    }));
+    return [...this.items].map(([id, item]): DrawnItem => {
+      const { command } = item;
+      const argument: unknown = typeof command === 'object' ? command.arguments?.[0] : undefined;
+      return {
+        id,
+        text: item.text,
+        command: typeof command === 'object' ? { id: command.command, argument } : undefined,
+      };
+    });
   }
 
-  constructor(private readonly commands: StatusBarCommands) {}
+  /** `clickCommand` is run with the name of the core command, whenever an item is clicked. */
+  constructor(private readonly clickCommand: string) {}
 
   show(model: StatusBarModel): void {
     const shown = new Set(model.items.map((item) => item.id));
@@ -77,7 +76,10 @@ export class StatusBarView implements vscode.Disposable {
       .join(' ');
     item.tooltip = model.tooltip;
     item.accessibilityInformation = { label: model.tooltip, role: 'button' };
-    item.command = model.command === undefined ? undefined : this.commands[model.command];
+    item.command =
+      model.command === undefined
+        ? undefined
+        : { command: this.clickCommand, title: model.tooltip, arguments: [model.command] };
     item.show();
   }
 
