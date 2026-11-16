@@ -605,6 +605,42 @@ describe('pause and resume after a quiet period', () => {
     expect(after(h, 2000)).toEqual([{ type: 'play' }]);
   });
 
+  it('lets typing play through when the learner plays during the quiet period', async () => {
+    const h = await createHarness();
+    await pausedByTyping(h);
+    h.core.playPause();
+    h.player.emit({ type: 'played', lessonId });
+
+    expect(edit(h)).toEqual([]);
+    expect(after(h, 10_000)).toEqual([]);
+  });
+
+  it('leaves a plain pause when the player has not reported the pause by the end of the quiet period', async () => {
+    const h = await createHarness();
+    await openLesson(h, 'pauseAndResume');
+    h.player.emit({ type: 'played', lessonId });
+    edit(h);
+
+    expect(after(h, 2000)).toEqual([]);
+    h.player.emit({ type: 'paused', lessonId, byUser: false });
+    expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+  });
+
+  it('counts a changed quiet period from the next edit, and keeps the pause it holds', async () => {
+    const h = await createHarness();
+    await pausedByTyping(h);
+    h.clock.advance(500);
+    h.config.set(resumeAfter, 5);
+
+    expect(playPauseItem(h)).toMatchObject({ text: 'Paused (typing)' });
+    expect(after(h, 1500)).toEqual([{ type: 'play' }]);
+    h.player.emit({ type: 'played', lessonId });
+    edit(h);
+    h.player.emit({ type: 'paused', lessonId, byUser: false });
+    expect(after(h, 4999)).toEqual([]);
+    expect(after(h, 1)).toEqual([{ type: 'play' }]);
+  });
+
   it('starts the quiet period again with every edit', async () => {
     const h = await createHarness();
     await pausedByTyping(h);
