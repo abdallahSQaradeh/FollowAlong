@@ -6,6 +6,8 @@
  */
 import { buildCoursePicker, type CoursePickerIntent } from './course-picker.js';
 import type { CourseScans } from './course-list-cache.js';
+import { buildFolderBrowser, type FolderBrowserIntent } from './folder-browser.js';
+import type { QuickPickModel } from './quick-pick.js';
 import type { CourseScan, ScannedCourse } from './course-scanner.js';
 import type { Ports } from './ports.js';
 import { recentCourses, recentCoursesUnchecked } from './recent-courses.js';
@@ -23,6 +25,9 @@ export interface CoursePickerSession {
   warnUnreadableRoot(root: string): void;
 }
 
+/** What the learner can ask of the picker: for its list of Courses, or for the Folder browser. */
+export type PickerIntent = CoursePickerIntent | FolderBrowserIntent;
+
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -33,7 +38,7 @@ function describe(error: unknown): string {
  */
 export async function showCoursePicker(
   session: CoursePickerSession,
-): Promise<CoursePickerIntent | undefined> {
+): Promise<PickerIntent | undefined> {
   const { ports, scans, roots, recent } = session;
   // The cached Courses, or nothing yet. Busy until the scan is done and the Recent Courses are
   // looked at: the picker never waits for the disk before it shows.
@@ -45,14 +50,19 @@ export async function showCoursePicker(
   let drawn = 0;
   let newestScan = 0;
 
-  const view = () =>
-    buildCoursePicker({
-      hasRoots: roots.length > 0,
-      courses,
-      recent: recentShown,
-      openFolder: session.openFolder(),
-      scanning: busy,
-    });
+  /** Set while the learner walks folders (Browse…, ADR 0066): the quick pick shows them, not the Courses. */
+  let browsing = false;
+
+  const view = (): QuickPickModel<PickerIntent> =>
+    browsing
+      ? buildFolderBrowser({ roots: roots.map((path) => ({ path })) })
+      : buildCoursePicker({
+          hasRoots: roots.length > 0,
+          courses,
+          recent: recentShown,
+          openFolder: session.openFolder(),
+          scanning: busy,
+        });
 
   /** Looks at which Recent Courses are missing, then shows the list as it is now. */
   const redraw = async (): Promise<void> => {
@@ -96,12 +106,24 @@ export async function showCoursePicker(
     await redraw();
   };
 
-  const picker = ports.ui.openPicker(view(), (button) => {
-    if (button.type === 'refreshCourses') {
-      busy = true;
-      drawn += 1;
-      picker.update(view());
-      void showScan(scans.scan(roots, recent, { fresh: true }));
+  const picker = ports.ui.openPicker<PickerIntent>(view(), (intent) => {
+    switch (intent.type) {
+      case 'refreshCourses':
+        busy = true;
+        drawn += 1;
+        picker.update(view());
+        void showScan(scans.scan(roots, recent, { fresh: true }));
+        break;
+      case 'browse':
+        browsing = true;
+        picker.update(view());
+        break;
+      case 'backToCourses':
+        browsing = false;
+        picker.update(view());
+        break;
+      default:
+        break;
     }
   });
   if (roots.length > 0) {

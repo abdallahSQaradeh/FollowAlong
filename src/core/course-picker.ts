@@ -16,7 +16,9 @@ export type CoursePickerIntent =
   /** Drops a Course from Recent. */
   | { readonly type: 'removeRecentCourse'; readonly folder: string }
   /** Rescans the Courses roots at once, so a Course just downloaded shows up (Refresh). */
-  | { readonly type: 'refreshCourses' };
+  | { readonly type: 'refreshCourses' }
+  /** Walks folders inside the picker (Browse…, ADR 0066): the picker stays open. */
+  | { readonly type: 'browse' };
 
 type Entry = QuickPickEntry<CoursePickerIntent>;
 
@@ -119,6 +121,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
         ? []
         : [{ kind: 'separator', label: 'Other Courses' } as const]),
       ...others,
+      { kind: 'item', label: 'Browse…', intent: { type: 'browse' }, keepsOpen: true },
       { kind: 'item', label: 'Add Courses root…', intent: { type: 'addCoursesRoot' } },
     ],
   };

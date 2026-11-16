@@ -497,6 +497,11 @@ export class RecordingUi implements UiSink {
     if (this.answer === undefined || item?.kind !== 'item') {
       throw new Error(`No item “${label}” in the open quick pick`);
     }
+    if (item.keepsOpen === true) {
+      // As the adapter does: the quick pick stays open and the core is told, as for a title bar button.
+      this.toolbarHandler?.(item.intent);
+      return;
+    }
     const answer = this.answer;
     this.answer = undefined;
     answer(item.intent);
@@ -666,6 +671,12 @@ export interface Harness {
    */
   makeUnreadable(folder: string): void;
   /**
+   * The folders the machine offers the Folder browser when no Courses root is set: its drives, or
+   * the home folder. None until a test sets them; the real adapter is not used here, because a
+   * test machine's own drives are no fixture.
+   */
+  setStartingFolders(...folders: string[]): void;
+  /**
    * Holds every read of `folder`'s listing until the returned function is called, as a slow disk
    * or network drive would, so a test can make reads finish in another order than they started.
    */
@@ -730,6 +741,8 @@ export async function createHarness(): Promise<Harness> {
     folder: join(root, 'extension-storage'),
   };
   const nodeFileSystem = createNodeFileSystem();
+  /** The drives or home folder of the fake machine: the test sets them, as the OS would have them. */
+  let startFolders: readonly string[] = [];
   const unreadable = new Set<string>();
   const broken = new Map<string, string>();
   const held = new Map<string, Promise<void>>();
@@ -787,6 +800,7 @@ export async function createHarness(): Promise<Harness> {
       );
     },
     stat: (path) => track(nodeFileSystem.stat(path)),
+    startingFolders: () => Promise.resolve(startFolders),
     exists: (path) => track(nodeFileSystem.exists(path)),
     writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
@@ -831,6 +845,9 @@ export async function createHarness(): Promise<Harness> {
     root,
     makeUnreadable(folder) {
       unreadable.add(folder);
+    },
+    setStartingFolders(...folders) {
+      startFolders = folders;
     },
     holdWorkspaceWrite() {
       return workspace.holdNextSet();

@@ -83,6 +83,13 @@ export interface FileSystem {
   readDirectory(path: string): Promise<readonly DirectoryEntry[]>;
   /** The size and last change of a file or folder. */
   stat(path: string): Promise<FileStat>;
+  /**
+   * The folders the Folder browser starts from when the learner named no Courses root (ADR 0066):
+   * the drives of a Windows machine that are there now (`C:\`, `D:\`), the learner's home folder
+   * elsewhere. Absolute paths; empty if there are none. Never rejects: a drive that cannot be
+   * looked at is left out.
+   */
+  startingFolders(): Promise<readonly string[]>;
   readText(path: string): Promise<string>;
   /**
    * Whether anything is at `path`. It resolves `false` only when nothing is there (`notFound`); a
@@ -268,12 +275,13 @@ export interface UiSink {
   pick<Intent>(model: QuickPickModel<Intent>): Promise<Intent | undefined>;
   /**
    * Shows a quick pick whose list the core may replace while it is open (the Course picker, which
-   * opens from a cache and updates when the rescan is done). `onToolbarButton` gets the intent of
-   * a title bar button the learner presses; the quick pick stays open.
+   * opens from a cache and updates when the rescan is done). `onStayOpen` gets the intent of a
+   * title bar button the learner presses, or of an item that `keepsOpen` (a folder of the Folder
+   * browser); the quick pick stays open.
    */
   openPicker<Intent>(
     model: QuickPickModel<Intent>,
-    onToolbarButton: (intent: Intent) => void,
+    onStayOpen: (intent: Intent) => void,
   ): LivePicker<Intent>;
   /** Replaces the Lesson tree in the activity bar. */
   showLessonTree(model: LessonTreeModel): void;

@@ -4,6 +4,7 @@
  */
 import { execFile } from 'node:child_process';
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -15,6 +16,9 @@ import {
 } from '../../core/ports.js';
 
 const run = promisify(execFile);
+
+/** How long a Windows drive gets to answer before the Folder browser leaves it out. */
+const driveTimeoutMs = 1500;
 
 function reasonOf(error: unknown): FileSystemErrorReason {
   const code = error instanceof Error && 'code' in error ? error.code : undefined;
@@ -82,6 +86,33 @@ export function createNodeFileSystem(): FileSystem {
         const found = await stat(path);
         return { size: found.size, modifiedMs: found.mtimeMs };
       }),
+
+    startingFolders: async () => {
+      if (process.platform !== 'win32') {
+        return [homedir()];
+      }
+      // A drive that is not there (an empty card reader, a network drive that is gone) fails to
+      // stat, or hangs: it gets a moment, then is left out, so the browser never waits long for it.
+      const letters = Array.from({ length: 26 }, (_, index) => String.fromCharCode(65 + index));
+      const found = await Promise.all(
+        letters.map(async (letter) => {
+          const drive = `${letter}:\\`;
+          const present = await Promise.race([
+            stat(drive).then(
+              () => true,
+              () => false,
+            ),
+            new Promise<boolean>((resolve) =>
+              setTimeout(() => {
+                resolve(false);
+              }, driveTimeoutMs),
+            ),
+          ]);
+          return present ? [drive] : [];
+        }),
+      );
+      return found.flat();
+    },
 
     readText: (path) => wrap(path, () => readFile(path, 'utf8')),
 
