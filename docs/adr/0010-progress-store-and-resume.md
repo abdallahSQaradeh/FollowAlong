@@ -73,7 +73,8 @@ it with what this window recorded.
 - **Late events of a Lesson left are ignored** from the moment the learner leaves it, so none is
   recorded into the Course opened next. One gap remains: once the next Lesson loads, an event in
   flight from a Lesson with the same id (the same path in another Course) cannot be told apart, since
-  the protocol has no load number. It needs a `load` that was answered in under a frame.
+  the protocol has no load number. The window is the few milliseconds a message takes to cross
+  from the player.
 - **One open at a time:** Course opens, including the restore at startup, run in the order they
   were asked for, so a Course the learner opens while the remembered one is being restored is the
   one left open (and remembered).
