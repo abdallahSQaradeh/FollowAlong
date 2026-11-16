@@ -144,6 +144,36 @@ describe('Move video to… a floating window', () => {
     ]);
   });
 
+  it('moves the player out again to another spot, carrying time, speed, pause and zoom', async () => {
+    const h = await createHarness();
+    await playingZoomed(h);
+    const moving = h.core.moveVideo('floatingWindow');
+    h.clock.advance(1000);
+    await moving;
+    h.player.ready();
+    h.player.clearSent();
+
+    const leaving = h.core.moveVideo('editorSplit');
+    h.player.emit({
+      type: 'snapshot',
+      snapshot: {
+        rate: 1.25,
+        zoom: { level: 3, left: 0.5, top: 0.25 },
+        lesson: { lessonId, position: 77, playing: false },
+      },
+    });
+    await leaving;
+    h.player.clearSent();
+
+    expect(lastSpot(h)).toBe('editorSplit');
+    h.player.ready();
+    expect(h.player.sent).toEqual([
+      expect.objectContaining({ type: 'load', lessonId, startAt: 77, autoplay: false }),
+      { type: 'setRate', rate: 1.25 },
+      { type: 'restore', zoom: { level: 3, left: 0.5, top: 0.25 } },
+    ]);
+  });
+
   it('is left when the learner closes that window: Progress is saved and the next Lesson opens at the setting', async () => {
     const h = await createHarness();
     await playingZoomed(h);

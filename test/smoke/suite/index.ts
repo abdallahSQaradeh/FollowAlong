@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
-import { type Browser, chromium } from '@playwright/test';
+import { type Browser, chromium, type Page } from '@playwright/test';
 import * as vscode from 'vscode';
 
 /**
@@ -421,20 +421,10 @@ interface FloatingWindowLook {
  * `about:blank` page of its own and builds an editor part in it; the main window is `workbench.html`.
  */
 async function floatingWindows(): Promise<FloatingWindowLook[]> {
-  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
-  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  try {
-    const pages = browser
-      .contexts()
-      .flatMap((context) => context.pages())
-      .filter((page) => !page.url().includes('workbench'));
+  return withFloatingWindowPages(async (pages) => {
     const looks = await Promise.all(
       pages.map((page) =>
-        page.evaluate((): FloatingWindowLook | undefined => {
-          if (document.querySelector('.part.editor') === null) {
-            return undefined;
-          }
+        page.evaluate((): FloatingWindowLook => {
           const statusBar = document.querySelector('.part.statusbar');
           return {
             holdsWebview: document.querySelector('.webview, iframe') !== null,
@@ -449,7 +439,29 @@ async function floatingWindows(): Promise<FloatingWindowLook[]> {
         }),
       ),
     );
-    return looks.filter((look): look is FloatingWindowLook => look !== undefined);
+    return looks;
+  });
+}
+
+/**
+ * Runs `use` with the pages of the floating VS Code windows, over the DevTools protocol: pages that
+ * are not the main `workbench.html` and hold an editor part.
+ */
+async function withFloatingWindowPages<T>(use: (pages: readonly Page[]) => Promise<T>): Promise<T> {
+  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
+  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  try {
+    const candidates = browser
+      .contexts()
+      .flatMap((context) => context.pages())
+      .filter((page) => !page.url().includes('workbench'));
+    const holdsEditorPart = await Promise.all(
+      candidates.map((page) =>
+        page.evaluate(() => document.querySelector('.part.editor') !== null),
+      ),
+    );
+    return await use(candidates.filter((_, index) => holdsEditorPart[index] === true));
   } finally {
     // Only disconnects: for a DevTools connection Playwright closes its socket, not VS Code.
     await browser.close();
@@ -458,8 +470,9 @@ async function floatingWindows(): Promise<FloatingWindowLook[]> {
 
 /**
  * The floating window (#51, ADR 0102): one window of its own holds the player, compact (no status
- * bar). Whether the OS keeps it on top cannot be read from a page: the title bar's actions are
- * reported, and Windows manual QA checks it.
+ * bar), with the title bar actions VS Code shows only for a compact, always-on-top window: _Turn
+ * Off Compact Mode_ and _Turn Off Always on Top_. Whether the OS really keeps it above other apps
+ * cannot be read from a page: Windows manual QA checks it.
  */
 async function theFloatingWindowHoldsThePlayer(): Promise<string> {
   const look = await waitForAsync('a floating window that holds the player', async () => {
@@ -472,7 +485,13 @@ async function theFloatingWindowHoldsThePlayer(): Promise<string> {
     false,
     'the floating window is not compact: it shows a status bar',
   );
-  return `the player sits in a floating window of its own, compact (no status bar); its title bar actions: [${look.titleActions.join(', ')}]; the main window has the OS focus: ${String(mainHasFocus)}`;
+  for (const action of ['Turn Off Compact Mode', 'Turn Off Always on Top']) {
+    assert.ok(
+      look.titleActions.includes(action),
+      `the floating window's title bar has no "${action}": [${look.titleActions.join(', ')}]`,
+    );
+  }
+  return `the player sits in a floating window of its own, compact (no status bar) and on top (its title bar offers: ${look.titleActions.filter((label) => label.startsWith('Turn Off')).join(', ')}); the main window has the OS focus: ${String(mainHasFocus)}`;
 }
 
 /** Waits until no floating VS Code window is left after `what`. */
@@ -494,30 +513,16 @@ async function closingTheFloatingWindowClosesTheLesson(
   const from = hooks.playerEvents.length;
   await vscode.commands.executeCommand('followalong.moveVideo', 'floatingWindow');
   await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
-  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
-  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  try {
-    const pages = browser
-      .contexts()
-      .flatMap((context) => context.pages())
-      .filter((page) => !page.url().includes('workbench'));
-    const floating = await Promise.all(
-      pages.map(async (page) =>
-        (await page.evaluate(() => document.querySelector('.part.editor') !== null))
-          ? page
-          : undefined,
-      ),
-    );
-    const window = floating.find((page) => page !== undefined);
+  await withFloatingWindowPages(async ([window]) => {
     assert.ok(window, 'no floating window to close');
-    // `window.close()` does not return before the page goes; do not wait for an answer.
-    void window.evaluate(() => {
-      globalThis.close();
-    });
-  } finally {
-    await browser.close();
-  }
+    // The page goes before `window.close()` can answer, which rejects the evaluate: that is the
+    // close this asks for.
+    await window
+      .evaluate(() => {
+        globalThis.close();
+      })
+      .catch(() => undefined);
+  });
   await waitFor('the player to close with its window', () =>
     hooks.playerSpot() === undefined ? true : undefined,
   );

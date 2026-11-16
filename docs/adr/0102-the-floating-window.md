@@ -34,7 +34,10 @@ ADR 0092, the orchestrator's binding notes on #51, and the VS Code 1.146.0 sourc
   → 600 ms for the new window to take the OS focus (the prototype's measured wait; the next two
   commands act on the window that has it) → `workbench.action.enableCompactAuxiliaryWindow` →
   `workbench.action.enableWindowAlwaysOnTop` → start the page → hand focus back to the code
-  (ADR 0009). Each step first checks the player has not moved on, so the spot asked for last wins.
+  (ADR 0009). Each step first checks the player has not moved on, so the spot asked for last wins,
+  and every wait ends as soon as the tab is dropped, so a float the learner moved on from never
+  holds up the spot changes queued after it (review of #51). Right before the move the tab is
+  checked again to be the active editor: the command moves whichever editor is active.
 - **`enableWindowAlwaysOnTop`, not `toggleWindowAlwaysOnTop`.** Both exist in 1.146 and both act
   only when the window with the focus is an auxiliary window (`isAuxiliaryWindow`), so neither can
   pin the main window. The enable command cannot turn the pin off if a window was already on top;
@@ -47,7 +50,7 @@ ADR 0092, the orchestrator's binding notes on #51, and the VS Code 1.146.0 sourc
 - **When it cannot float.** A tab that does not become active within 5 s, or a move VS Code refuses,
   is handled like a view that does not open (ADR 0049): the tab is dropped, the learner is told
   once, and the core is told the player closed, so it never waits for a page: nothing is left
-  half-open, and the next Lesson opens at the setting (orchestrator, note 4; Seam 1 covers it with
+  half-open, the code gets the focus back, and the next Lesson opens at the setting (orchestrator, note 4; Seam 1 covers it with
   the fake player closing before its page starts).
 - **Resources stay in the main window** (D4, ADR 0012). The floating player is in no editor group of
   the main window: the adapter reports no column for it, so a Resource opens `ViewColumn.Beside`
@@ -66,14 +69,35 @@ ADR 0092, the orchestrator's binding notes on #51, and the VS Code 1.146.0 sourc
 
 ## Measured (smoke test, CI)
 
-MEASUREMENTS
+CI run 43971341720 on VS Code 1.146.0 (Windows, and Ubuntu under xvfb), read over the DevTools
+protocol from the floating window's own page:
+
+- **The Lesson loads in the floating window**, a page of its own (`about:blank` with an editor part),
+  and the code keeps the focus: the main window has the OS focus after the focus return (Windows
+  and Ubuntu).
+- **Compact and always on top:** the floating window shows no status bar, and its title bar offers
+  _Turn Off Compact Mode_ and _Turn Off Always on Top_, the actions VS Code shows only for a compact,
+  pinned auxiliary window (`IsCompactTitleBarContext`, `IsWindowAlwaysOnTopContext`). The 600 ms
+  settle was enough on both. The smoke test now asserts both actions.
+- **Leaving, collapsing and the learner's close leave no floating window**, and the close unloads
+  the Lesson.
+- **A move into a new window does not keep the page.** With a Lesson loaded in an editor group, the
+  player tab moved by `moveEditorToNewWindow` posted a new `ready` (Windows: 1 new `ready`): VS Code
+  starts the page again in the new window. So ADR 0049 holds for this spot too: every move makes a
+  new page, which has not had the learner's click (#12 D3). Starting the page only once the tab is
+  in the floating window costs nothing.
 
 ## Consequences
 
 - The focus caveat (story 58) is a Windows manual QA item: a click in the floating window gives the
   OS focus to that window, and whether the focus return after the click (ADR 0009) brings the OS
   focus back to the main window cannot be seen from a headless run.
-- Whether the OS keeps the window on top is also Windows manual QA: no page can read it.
+- Whether the OS keeps the window above other apps is also Windows manual QA: a page can only show
+  that VS Code counts it as pinned.
+- The check that the tab is active right before the move reads the extension host's last view
+  state. A click into the code in the instant between that check and the move could still move the
+  code editor instead; VS Code tells an extension nothing that would let it check afterwards which
+  window a tab went to.
 - A learner who drags the floating tab back into the main window (or into another floating window)
   by hand is not fought (orchestrator, note 3): the page plays on, and the spot is still reported as
   `floatingWindow` until the next move. Picking another spot moves it as usual; picking

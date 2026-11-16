@@ -184,7 +184,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     } else if (spot === 'floatingWindow') {
       const { host, panel, startPage } = this.openPanel(spot, title);
       this.host = host;
-      void this.after(shown, () => this.float(host, panel, startPage));
+      void this.after(shown, () => this.moveIntoFloatingWindow(host, panel, startPage));
     } else {
       this.awaitedView = { spot, title };
       // The view shows only once its `when` clause holds: set the key first, then open it.
@@ -348,19 +348,25 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
    * refuses, leaves no player: the learner is told once, and the core is told the player closed,
    * as for a view that does not open (ADR 0049).
    */
-  private async float(
+  private async moveIntoFloatingWindow(
     host: Host,
     panel: vscode.WebviewPanel,
     startPage: () => void,
   ): Promise<void> {
-    const stillPlayer = (): boolean => this.host === host;
-    if (!stillPlayer()) {
+    const isStillThePlayer = (): boolean => this.host === host;
+    if (!isStillThePlayer()) {
       return;
     }
-    if (!(await this.becomesActive(panel)) || !stillPlayer()) {
+    const active = await this.whileOpen(panel, viewWaitMs, () => panel.active);
+    if (!isStillThePlayer()) {
+      return;
+    }
+    // Checked again right before the move: the command moves whichever editor is active, and the
+    // learner may have clicked back into the code meanwhile (review of #51).
+    if (!active || !panel.active) {
       this.cannotFloat(
         host,
-        `the player tab did not become active within ${String(viewWaitMs)} ms`,
+        `the player tab was not the active editor within ${String(viewWaitMs)} ms`,
       );
       return;
     }
@@ -371,8 +377,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       return;
     }
     // The new window takes the focus a moment after VS Code opened it.
-    await new Promise((resolve) => setTimeout(resolve, floatSettleMs));
-    if (!stillPlayer()) {
+    await this.whileOpen(panel, floatSettleMs, () => false);
+    if (!isStillThePlayer()) {
       return;
     }
     for (const command of [floatCommands.compact, floatCommands.onTop]) {
@@ -383,31 +389,39 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
         this.logger.log({ level: 'warn', message: `${command} failed: ${messageOf(error)}` });
       }
     }
-    if (!stillPlayer()) {
+    if (!isStillThePlayer()) {
       return;
     }
     startPage();
     await this.returnFocus();
   }
 
-  /** Whether `panel` is, or becomes within the safety wait, the active editor. */
-  private becomesActive(panel: vscode.WebviewPanel): Promise<boolean> {
-    if (panel.active) {
+  /**
+   * Waits up to `ms` for `done` to hold, checked whenever `panel`'s view state changes. Resolves
+   * `true` once it holds, `false` when the time is up or the panel goes: a float the learner moved
+   * on from must not hold up the spot changes queued after it (review of #51).
+   */
+  private whileOpen(panel: vscode.WebviewPanel, ms: number, done: () => boolean): Promise<boolean> {
+    if (done()) {
       return Promise.resolve(true);
     }
     return new Promise((resolve) => {
-      const finish = (active: boolean): void => {
-        clearTimeout(giveUp);
+      const finish = (result: boolean): void => {
+        clearTimeout(timer);
         watching.dispose();
-        resolve(active);
+        disposed.dispose();
+        resolve(result);
       };
-      const giveUp = setTimeout(() => {
+      const timer = setTimeout(() => {
         finish(false);
-      }, viewWaitMs);
+      }, ms);
       const watching = panel.onDidChangeViewState(() => {
-        if (panel.active) {
+        if (done()) {
           finish(true);
         }
+      });
+      const disposed = panel.onDidDispose(() => {
+        finish(false);
       });
     });
   }
@@ -425,6 +439,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     this.host = undefined;
     host.drop();
     this.playerGone();
+    // The tab took the focus to be moved: the code gets it back (ADR 0009).
+    void this.returnFocus();
   }
 
   /**
