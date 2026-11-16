@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 
 import type { Logger } from '../../core/logger.js';
 import type { Config, KeyValueStore, Storage, UiSink } from '../../core/ports.js';
+import type { LessonTreeView } from './lesson-tree-view.js';
 
 function store(memento: vscode.Memento): KeyValueStore {
   return {
@@ -33,7 +34,7 @@ export function createConfig(): Config {
   };
 }
 
-export function createUiSink(): UiSink {
+export function createUiSink(tree: LessonTreeView): UiSink {
   return {
     showMessage({ severity, text }) {
       const show = {
@@ -42,6 +43,9 @@ export function createUiSink(): UiSink {
         error: vscode.window.showErrorMessage,
       }[severity];
       void show(text);
+    },
+    showLessonTree(model) {
+      tree.show(model);
     },
   };
 }

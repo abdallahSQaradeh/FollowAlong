@@ -107,7 +107,7 @@ describe('play/pause command', () => {
   describe('when VS Code refuses a play the command sent', () => {
     const pressPlayMessage = {
       severity: 'info',
-      text: 'VS Code did not let “01 Intro” start by itself. Press play in the player to start it.',
+      text: 'VS Code did not let “01 Intro.webm” start by itself. Press play in the player to start it.',
     } as const;
 
     /** A Lesson whose autoplay VS Code refused; the learner has been told once. */
@@ -169,8 +169,8 @@ describe('play/pause command', () => {
       h.player.emit({ type: 'paused', lessonId: 'other.webm', byUser: false });
 
       expect(h.ui.messages.map((message) => message.text)).toEqual([
-        'VS Code did not let “other” start by itself. Press play in the player to start it.',
-        'VS Code did not let “other” start by itself. Press play in the player to start it.',
+        'VS Code did not let “other.webm” start by itself. Press play in the player to start it.',
+        'VS Code did not let “other.webm” start by itself. Press play in the player to start it.',
       ]);
     });
 

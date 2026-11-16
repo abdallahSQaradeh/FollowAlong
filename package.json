@@ -21,7 +21,8 @@
   "files": [
     "out/extension.js",
     "out/player/player.js",
-    "out/player/player.css"
+    "out/player/player.css",
+    "media/followalong.svg"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -34,6 +35,11 @@
       {
         "command": "followalong.openCourse",
         "title": "Open Course…",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.playLesson",
+        "title": "Play Lesson",
         "category": "FollowAlong"
       },
       {
@@ -55,7 +61,38 @@
         "mac": "cmd+' space",
         "when": "editorTextFocus || terminalFocus"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "followalong",
+          "title": "FollowAlong",
+          "icon": "media/followalong.svg"
+        }
+      ]
+    },
+    "views": {
+      "followalong": [
+        {
+          "id": "followalong.lessons",
+          "name": "Lessons"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "followalong.lessons",
+        "contents": "Open a Course folder to list its Lessons here.\n[Open Course…](command:followalong.openCourse)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "followalong.playLesson",
+          "when": "false"
+        }
+      ]
+    }
   },
   "scripts": {
     "prepare": "husky",
