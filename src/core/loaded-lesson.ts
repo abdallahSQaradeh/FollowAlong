@@ -6,6 +6,15 @@
  * (`follow-along.ts`) decides which Lesson to load and from which Course.
  */
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
+import {
+  autoPauseOff,
+  autoPauseView,
+  readAutoPauseMode,
+  stepAutoPause,
+  type AutoPauseEffect,
+  type AutoPauseInput,
+  type AutoPauseState,
+} from './auto-pause.js';
 import type { Lesson } from './course-model.js';
 import type { PreparedSound, SoundRequest } from './sidecar-sound.js';
 import type { Disposable, Ports } from './ports.js';
@@ -102,6 +111,8 @@ export interface LoadedLesson {
   speedStep(direction: SpeedDirection): void;
   /** Runs the command a status bar item names, then hands focus back (ADR 0009, ADR 0018). */
   statusBarClick(command: StatusBarCommand): void;
+  /** The learner typed in the Practice area: an edit auto-pause counts (ADR 0052). */
+  typed(): void;
   /** Stops listening to the player and the settings, and cancels the next save. */
   dispose(): void;
 }
@@ -180,6 +191,8 @@ interface Playback {
   readonly awaitingAutoplay: boolean;
   /** Set when the play/pause command sent `play`, until the player answers it. */
   readonly awaitingPlayAnswer: boolean;
+  /** Set when the play/pause command sent `pause`, until the player answers it. */
+  readonly awaitingPauseAnswer: boolean;
   /** Whether the learner was told, in this run of refusals, to press play in the player. */
   readonly toldToPressPlay: boolean;
 }
@@ -190,6 +203,7 @@ function freshPlayback(autoplay: boolean): Playback {
     ended: false,
     awaitingAutoplay: autoplay,
     awaitingPlayAnswer: false,
+    awaitingPauseAnswer: false,
     toldToPressPlay: false,
   };
 }
@@ -274,6 +288,28 @@ export function createLoadedLesson(
     zoom = 1;
   }
 
+  /** Auto-pause while typing (ADR 0052), as the `followalong.autoPause` setting starts it. */
+  let autoPause: AutoPauseState = stepAutoPause(autoPauseOff, {
+    type: 'modeChanged',
+    mode: readAutoPauseMode(config),
+  }).state;
+
+  /** How each thing auto-pause answers is done. */
+  const autoPauseEffects: Readonly<Record<AutoPauseEffect, () => void>> = {
+    pause: () => {
+      player.send({ type: 'pause' });
+    },
+  };
+
+  /** Feeds auto-pause one input, and does what it answers. */
+  function feedAutoPause(input: AutoPauseInput): void {
+    const step = stepAutoPause(autoPause, input);
+    autoPause = step.state;
+    for (const effect of step.effects) {
+      autoPauseEffects[effect]();
+    }
+  }
+
   /** What the status bar shows now; a new model is sent to the UI only when it differs. */
   let statusBar: StatusBarModel = hiddenStatusBar;
 
@@ -288,6 +324,7 @@ export function createLoadedLesson(
             rate,
             shortStep: stepSeconds('short'),
             zoom,
+            ...autoPauseView(autoPause),
             soundPercent: sound?.settled === false ? sound.percent : undefined,
           });
     if (JSON.stringify(next) === JSON.stringify(statusBar)) {
@@ -576,6 +613,9 @@ export function createLoadedLesson(
         // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         const after = afterPause(playback, event.byUser);
         playback = after.playback;
+        if (event.byUser) {
+          feedAutoPause({ type: 'learnerPaused' });
+        }
         if (after.tellToPressPlay) {
           ui.showMessage({ severity: 'info', text: pressPlayText(shown.lesson) });
         }
@@ -591,6 +631,7 @@ export function createLoadedLesson(
         if (shown !== undefined) {
           // Also ends a run of refusals: the player did what it was asked.
           playback = { ...freshPlayback(false), playing: true };
+          feedAutoPause({ type: 'played' });
           shown.engaged = true;
           stopCountingPlay(shown);
           startSaving();
@@ -602,6 +643,7 @@ export function createLoadedLesson(
         if (shown !== undefined) {
           // Ended: a resume then restarts the Lesson, so it is not rewound (ADR 0016).
           playback = { ...freshPlayback(false), ended: true };
+          feedAutoPause({ type: 'lessonOver' });
           stopSaving();
           shown.engaged = true;
           stopCountingPlay(shown);
@@ -712,6 +754,7 @@ export function createLoadedLesson(
 
   function leave(): Promise<void> {
     stopSaving();
+    feedAutoPause({ type: 'lessonOver' });
     // The sound under way is kept: the next `load` may be this Lesson again (picked once more), and
     // a `load` of another Lesson, or `unload`, stops it.
     // From now on its late events are ignored, so none is recorded into the next Course.
@@ -725,6 +768,7 @@ export function createLoadedLesson(
       player.send({ type: 'pause' });
     }
     current = undefined;
+    feedAutoPause({ type: 'lessonOver' });
     stopSound();
     resetPlayhead(false);
     refreshStatusBar();
@@ -750,6 +794,10 @@ export function createLoadedLesson(
       }
       if (playerReady && affects('resumeRewind')) {
         sendResumeRewind();
+      }
+      if (affects('autoPause')) {
+        feedAutoPause({ type: 'modeChanged', mode: readAutoPauseMode(config) });
+        refreshStatusBar();
       }
     }),
   ];
@@ -825,7 +873,9 @@ export function createLoadedLesson(
       return;
     }
     if (playback.playing) {
+      playback = { ...playback, awaitingPauseAnswer: true };
       player.send({ type: 'pause' });
+      feedAutoPause({ type: 'learnerPaused' });
       return;
     }
     resume(resumeRewindSeconds());
@@ -893,6 +943,16 @@ export function createLoadedLesson(
       // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
       // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
       ui.returnFocus();
+    },
+    typed() {
+      feedAutoPause({
+        type: 'typed',
+        // Only a Lesson the player reports playing is paused: a pause sent to a page that is still
+        // starting would be lost.
+        // A Lesson the learner is pausing already stays their pause: auto-pause did not cause it.
+        playing:
+          current !== undefined && playerReady && playback.playing && !playback.awaitingPauseAnswer,
+      });
     },
     progressReset(lessonIds) {
       if (current !== undefined && lessonIds.includes(current.lesson.id)) {
