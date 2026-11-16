@@ -23,6 +23,7 @@ import {
   type StepSize,
 } from './loaded-lesson.js';
 import type { StatusBarCommand } from './status-bar.js';
+import type { ZoomAction } from '../protocol/player-messages.js';
 import { openResources, type ResourceStore } from './resource-store.js';
 import {
   attachChoice,
@@ -96,6 +97,8 @@ export interface FollowAlong {
    * `followalong.shortStep` and `followalong.longStep` settings are when the command runs.
    */
   seekStep(size: StepSize, direction: StepDirection): void;
+  /** The zoom commands: asks the player to zoom in or out, to reset, or to draw an area. */
+  zoom(action: ZoomAction): void;
   /** The speed commands: moves the playback rate one rung up or down the speed ladder. */
   speedStep(direction: SpeedDirection): void;
   /**
@@ -1018,6 +1021,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     speedStep(direction) {
       loaded.speedStep(direction);
+    },
+    zoom(action) {
+      loaded.zoom(action);
     },
     statusBarClick(command) {
       loaded.statusBarClick(command);

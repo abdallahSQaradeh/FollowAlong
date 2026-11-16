@@ -68,6 +68,11 @@ export const commands = {
   /** `Ctrl+'` `↑` / `↓`: one rung up or down the speed ladder. */
   speedUp: 'followalong.speedUp',
   speedDown: 'followalong.speedDown',
+  /** `Ctrl+'` `Z` / `=` / `-` / `0`: area mode, zoom in, zoom out, and the whole picture. */
+  zoomArea: 'followalong.zoomArea',
+  zoomIn: 'followalong.zoomIn',
+  zoomOut: 'followalong.zoomOut',
+  zoomReset: 'followalong.zoomReset',
   /** Run by a click on a status bar item, with the name of the core command the item names. */
   statusBarClick: 'followalong.statusBarClick',
   /** `Ctrl+'` `N` / `P`: the next or previous Lesson in Course order. */
@@ -264,6 +269,18 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     }),
     register(commands.speedDown, () => {
       core.speedStep('down');
+    }),
+    register(commands.zoomArea, () => {
+      core.zoom('areaMode');
+    }),
+    register(commands.zoomIn, () => {
+      core.zoom('in');
+    }),
+    register(commands.zoomOut, () => {
+      core.zoom('out');
+    }),
+    register(commands.zoomReset, () => {
+      core.zoom('reset');
     }),
     register(commands.statusBarClick, (command) => {
       if (isStatusBarCommand(command)) {

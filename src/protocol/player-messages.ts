@@ -85,10 +85,17 @@ export type PlayerCommand =
   | { readonly type: 'restore'; readonly zoom: ZoomView };
 
 /**
- * What a `zoom` command does. `reset` shows the whole picture (the status bar item); #48 adds
- * `in`, `out` and `areaMode` for the keys.
+ * What a `zoom` command does: `reset` shows the whole picture (the status bar item, `0`), `in` and
+ * `out` step the zoom like the toolbar's ＋ and − (`=` and `-`), and `areaMode` turns the toolbar's
+ * area mode on or off (`Z`).
  */
-export type ZoomAction = 'reset';
+export const zoomActions = ['reset', 'in', 'out', 'areaMode'] as const;
+export type ZoomAction = (typeof zoomActions)[number];
+
+/** Whether `value` is a {@link ZoomAction}. */
+export function isZoomAction(value: unknown): value is ZoomAction {
+  return zoomActions.some((action) => action === value);
+}
 
 /**
  * What every event about a Lesson carries, so late events are recognisable: the Lesson's id, and
@@ -342,7 +349,7 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
     case 'noSidecar':
       return { type: 'noSidecar' };
     case 'zoom':
-      return raw.action === 'reset' ? { type: 'zoom', action: raw.action } : undefined;
+      return isZoomAction(raw.action) ? { type: 'zoom', action: raw.action } : undefined;
     case 'takeSnapshot':
       return { type: 'takeSnapshot' };
     case 'restore': {

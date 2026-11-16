@@ -95,6 +95,26 @@
         "category": "FollowAlong"
       },
       {
+        "command": "followalong.zoomArea",
+        "title": "Zoom area",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.zoomIn",
+        "title": "Zoom in",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.zoomOut",
+        "title": "Zoom out",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.zoomReset",
+        "title": "Zoom reset",
+        "category": "FollowAlong"
+      },
+      {
         "command": "followalong.nextLesson",
         "title": "Next Lesson",
         "category": "FollowAlong"
@@ -231,6 +251,30 @@
         "command": "followalong.speedDown",
         "key": "ctrl+' down",
         "mac": "cmd+' down",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomArea",
+        "key": "ctrl+' z",
+        "mac": "cmd+' z",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomIn",
+        "key": "ctrl+' =",
+        "mac": "cmd+' =",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomOut",
+        "key": "ctrl+' -",
+        "mac": "cmd+' -",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomReset",
+        "key": "ctrl+' 0",
+        "mac": "cmd+' 0",
         "when": "editorTextFocus || terminalFocus"
       },
       {
