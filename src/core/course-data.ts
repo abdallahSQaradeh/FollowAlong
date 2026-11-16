@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';
 
+import { isInsideFolder, keyOf } from './courses-roots.js';
 import { FileSystemError, type Ports } from './ports.js';
 
 export const courseDataFolderName = '.followalong';
@@ -93,6 +94,18 @@ type CourseDataPorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
  */
 export function fallbackRoot(storageFolder: string): string {
   return join(storageFolder, 'courses');
+}
+
+/**
+ * Whether `path` is a file FollowAlong writes itself: Course data in any Course's
+ * `.followalong` folder, or anything in the extension's `storageFolder` (the fallback Course data).
+ */
+export function isCourseDataFile(path: string, storageFolder: string): boolean {
+  const file = keyOf(path);
+  return (
+    file.split(/[\\/]/).includes(keyOf(courseDataFolderName)) ||
+    isInsideFolder(keyOf(storageFolder), file)
+  );
 }
 
 /** `<storage>/courses/<folder name>-<hash of the absolute path>`: readable, and unique per path. */
