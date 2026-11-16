@@ -80,4 +80,97 @@ describe('Go to Lesson…', () => {
 
     expect(h.player.sent).toEqual([]);
   });
+
+  it('tells the learner to open a Course first when none is open, and shows no picker', async () => {
+    const h = await createHarness();
+
+    await h.core.goToLesson();
+
+    expect(h.ui.picker).toBeUndefined();
+    expect(h.ui.messages).toEqual([
+      {
+        severity: 'info',
+        text: 'FollowAlong has no Course open. Run “FollowAlong: Open Course…” to pick one.',
+      },
+    ]);
+  });
+
+  it('plays nothing when another Course was opened while the picker was open', async () => {
+    const h = await createHarness();
+    const first = await h.folder('First', { 'Part 1/intro.webm': 'v' });
+    const second = await h.folder('Second', { 'Part 1/intro.webm': 'v', 'Part 1/other.webm': 'v' });
+    await h.core.openCourse(first);
+    h.player.ready();
+
+    const going = h.core.goToLesson();
+    await h.core.openCourse(second);
+    h.player.ready();
+    h.player.sent.length = 0;
+    h.ui.choose('intro.webm');
+    await going;
+
+    expect(h.player.sent).toEqual([]);
+  });
+
+  it('lists Lessons that sit in the Course folder first, without a Section', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'intro.mp4': 'v',
+      'lesson10.mp4': 'v',
+      'lesson2.mp4': 'v',
+      'Basics/01 Variables.mp4': 'v',
+    });
+    await h.core.openCourse(course);
+
+    void h.core.goToLesson();
+
+    expect(rows(h.ui.picker)).toEqual([
+      'intro.mp4',
+      'lesson2.mp4',
+      'lesson10.mp4',
+      '── Basics',
+      '01 Variables.mp4  ·  Basics',
+    ]);
+  });
+
+  it('names a nested Section by its path, keeping the name of a wrapper folder, and leaves out folders without Lessons', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'Part 1/Basics/01 Variables.mp4': 'v',
+      'Part 1/Basics/Deep/02 Types.mp4': 'v',
+      'Part 1/Basics/Images/readme.txt': 'text',
+      'Part 2/Wrapper/Only/03 Loops.mp4': 'v',
+      'Part 2/04 Recap.mp4': 'v',
+    });
+    await h.core.openCourse(course);
+
+    void h.core.goToLesson();
+
+    expect(rows(h.ui.picker)).toEqual([
+      '── Part 1',
+      '01 Variables.mp4  ·  Part 1',
+      '── Part 1 / Deep',
+      '02 Types.mp4  ·  Part 1 / Deep',
+      '── Part 2',
+      '04 Recap.mp4  ·  Part 2',
+      '── Part 2 / Wrapper',
+      '03 Loops.mp4  ·  Part 2 / Wrapper',
+    ]);
+  });
+
+  it('matches what the learner types against the Section name as well as the Lesson title', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'Closures/01 Scope.mp4': 'v',
+      'Types/02 Coercion.mp4': 'v',
+    });
+    await h.core.openCourse(course);
+
+    void h.core.goToLesson();
+
+    expect(h.ui.picker).toMatchObject({ matchOnDescription: true });
+    expect(h.ui.picker?.entries).toContainEqual(
+      expect.objectContaining({ description: 'Closures' }),
+    );
+  });
 });

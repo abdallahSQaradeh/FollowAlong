@@ -157,11 +157,23 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     playLesson,
     async goToLesson() {
       if (openedCourse === undefined) {
+        ui.showMessage({
+          severity: 'info',
+          text: 'FollowAlong has no Course open. Run “FollowAlong: Open Course…” to pick one.',
+        });
         return;
       }
-      const intent = await ui.pick(buildLessonPicker(openedCourse));
+      const course = openedCourse;
+      const intent = await ui.pick(buildLessonPicker(course));
       if (intent?.type === 'playLesson') {
-        playLesson(intent.lessonId);
+        if (course === openedCourse) {
+          playLesson(intent.lessonId);
+        } else {
+          logger.log({
+            level: 'info',
+            message: `Ignored ${intent.lessonId}: another Course was opened while the picker was open.`,
+          });
+        }
       }
     },
     dispose() {
