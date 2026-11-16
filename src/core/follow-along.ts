@@ -4,6 +4,7 @@
  */
 import { basename } from 'node:path';
 
+import type { DocumentEdit } from './auto-pause.js';
 import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
 import { fallbackRoot } from './course-data.js';
@@ -112,6 +113,11 @@ export interface FollowAlong {
   goToLesson(): Promise<void>;
   /** The Course picker: lists the Courses under the Courses roots, and opens the one picked. */
   pickCourse(): Promise<void>;
+  /**
+   * The text of a document open in VS Code changed: auto-pause's input (spec #12, Auto-pause).
+   * Cursor moves are not edits, so they never reach it.
+   */
+  documentEdited(edit: DocumentEdit): void;
   /** The window is closing: saves Progress, then stops. */
   close(): Promise<void>;
   /** Stops at once, without saving (tests use it as a crash). */
@@ -860,6 +866,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     },
     statusBarClick(command) {
       loaded.statusBarClick(command);
+    },
+    documentEdited() {
+      loaded.typed();
     },
     async close() {
       // An open under way leaves its Lesson and saves it first; then this window's Lesson.

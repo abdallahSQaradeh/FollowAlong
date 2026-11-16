@@ -6,6 +6,13 @@
  * (`follow-along.ts`) decides which Lesson to load and from which Course.
  */
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
+import {
+  readAutoPauseMode,
+  stepAutoPause,
+  type AutoPauseEffect,
+  type AutoPauseInput,
+  type AutoPauseState,
+} from './auto-pause.js';
 import type { Lesson } from './course-model.js';
 import type { PreparedSound } from './sidecar-sound.js';
 import type { Disposable, Ports } from './ports.js';
@@ -96,6 +103,8 @@ export interface LoadedLesson {
   speedStep(direction: SpeedDirection): void;
   /** Runs the command a status bar item names, then hands focus back (ADR 0009, ADR 0018). */
   statusBarClick(command: StatusBarCommand): void;
+  /** The learner typed in the Practice area: an edit auto-pause counts (ADR 0052). */
+  typed(): void;
   /** Stops listening to the player and the settings, and cancels the next save. */
   dispose(): void;
 }
@@ -256,6 +265,28 @@ export function createLoadedLesson(
     rate = normalRate;
     askedRates = [];
     zoom = 1;
+  }
+
+  /** Auto-pause while typing (ADR 0052), as the `followalong.autoPause` setting starts it. */
+  let autoPause: AutoPauseState = stepAutoPause('off', {
+    type: 'modeChanged',
+    mode: readAutoPauseMode(config),
+  }).state;
+
+  /** How each thing auto-pause answers is done. */
+  const autoPauseEffects: Readonly<Record<AutoPauseEffect, () => void>> = {
+    pause: () => {
+      player.send({ type: 'pause' });
+    },
+  };
+
+  /** Feeds auto-pause one input, and does what it answers. */
+  function feedAutoPause(input: AutoPauseInput): void {
+    const step = stepAutoPause(autoPause, input);
+    autoPause = step.state;
+    for (const effect of step.effects) {
+      autoPauseEffects[effect]();
+    }
   }
 
   /** What the status bar shows now; a new model is sent to the UI only when it differs. */
@@ -675,6 +706,9 @@ export function createLoadedLesson(
       if (playerReady && affects('resumeRewind')) {
         sendResumeRewind();
       }
+      if (affects('autoPause')) {
+        feedAutoPause({ type: 'modeChanged', mode: readAutoPauseMode(config) });
+      }
     }),
   ];
 
@@ -817,6 +851,14 @@ export function createLoadedLesson(
       // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
       // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
       ui.returnFocus();
+    },
+    typed() {
+      feedAutoPause({
+        type: 'typed',
+        // Only a Lesson the player reports playing is paused: a pause sent to a page that is still
+        // starting would be lost.
+        playing: current !== undefined && playerReady && playback.playing,
+      });
     },
     dispose() {
       saveTimer?.dispose();
