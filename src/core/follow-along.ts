@@ -369,6 +369,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       }
+      case 'userInteracted':
+        ui.returnFocus();
+        break;
     }
     refreshStatusBar();
   }
@@ -779,6 +782,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
           }
           break;
       }
+      // The click gives the status bar item keyboard focus (VS Code makes the label focusable):
+      // hand it back to the editor or terminal the learner used last (Focus return, ADR 0009).
+      ui.returnFocus();
     },
     nextLesson() {
       moveToLesson(1);

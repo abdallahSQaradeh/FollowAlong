@@ -80,6 +80,12 @@ export interface PlayerOptions {
    * at once, so this is how a test fixes what is buffered when something else happens.
    */
   readonly holdAt?: number;
+  /**
+   * `false`: the harness posts commands and reads state without a user gesture, as VS Code does.
+   * Chromium then refuses autoplay until the learner acts in the page (#12 D3). By default the
+   * harness runs as Playwright's `page.evaluate` does, as a user gesture, so autoplay is allowed.
+   */
+  readonly userGestures?: boolean;
 }
 
 export interface PlayerHarness {
@@ -259,15 +265,16 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
   );
   await page.goto(`${origin}/`);
 
-  const events = () => page.evaluate(() => (window.followalongSent ?? []) as PlayerEvent[]);
+  const evaluate = await evaluator(page, options.userGestures ?? true);
+  const events = () => evaluate(() => (window.followalongSent ?? []) as PlayerEvent[], undefined);
   return {
     async post(command) {
-      await page.evaluate((message) => {
+      await evaluate((message) => {
         window.postMessage(message, '*');
       }, command);
     },
     async postAll(commands) {
-      await page.evaluate((messages) => {
+      await evaluate((messages) => {
         for (const message of messages) {
           window.postMessage(message, '*');
         }
@@ -292,7 +299,11 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         .toBe(true);
     },
     video: () =>
-      page.locator('video').evaluate((element: HTMLVideoElement): VideoState => {
+      evaluate((): VideoState => {
+        const element = document.querySelector('video');
+        if (element === null) {
+          throw new Error('The player page has no <video> element.');
+        }
         const decoded = element as HTMLVideoElement & {
           webkitAudioDecodedByteCount: number;
           webkitVideoDecodedByteCount: number;
@@ -313,7 +324,30 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
             (_, index) => [element.buffered.start(index), element.buffered.end(index)] as const,
           ),
         };
-      }),
+      }, undefined),
+  };
+}
+
+type Evaluate = <Result, Arg>(run: (arg: Arg) => Result, arg: Arg) => Promise<Awaited<Result>>;
+
+/** Runs `run(arg)` in the page, as a user gesture (Playwright's way) or not (VS Code's). */
+async function evaluator(page: Page, userGestures: boolean): Promise<Evaluate> {
+  if (userGestures) {
+    return async (run, arg) =>
+      (await page.evaluate(run as (value: unknown) => unknown, arg as unknown)) as never;
+  }
+  const session = await page.context().newCDPSession(page);
+  return async (run, arg) => {
+    const { result, exceptionDetails } = (await session.send('Runtime.evaluate', {
+      expression: `(${run.toString()})(${arg === undefined ? '' : JSON.stringify(arg)})`,
+      awaitPromise: true,
+      returnByValue: true,
+      userGesture: false,
+    })) as { result: { value?: unknown }; exceptionDetails?: { text: string } };
+    if (exceptionDetails !== undefined) {
+      throw new Error(`evaluate in the player page failed: ${exceptionDetails.text}`);
+    }
+    return result.value as never;
   };
 }
 
@@ -321,4 +355,71 @@ function matches(event: PlayerEvent, expected: Partial<PlayerEvent>): boolean {
   return Object.entries(expected).every(
     ([key, value]) => (event as unknown as Record<string, unknown>)[key] === value,
   );
+}
+
+/**
+ * Where things are on the player page. Chromium's native control bar sits along the bottom of
+ * the video: its timeline about 22 px above the bottom edge, its buttons about 48 px above it
+ * (play on the left; mute, then fullscreen, on the right, as the page turns the overflow menu off).
+ */
+export async function spots(page: Page) {
+  const box = await page.locator('video').boundingBox();
+  if (box === null) {
+    throw new Error('the video is not on screen');
+  }
+  const bottom = box.y + box.height;
+  return {
+    picture: { x: box.x + box.width / 2, y: box.y + box.height / 3 },
+    playButton: { x: box.x + 24, y: bottom - 48 },
+    muteButton: { x: box.x + box.width - 72, y: bottom - 48 },
+    timeline: (fraction: number) => ({
+      x: box.x + 16 + (box.width - 32) * fraction,
+      y: bottom - 22,
+    }),
+  };
+}
+
+/**
+ * Whether Chromium's native control bar is on screen: its play/pause icon is drawn in white at
+ * the left end of the button row, where the fixture video has no white. Reads the pixels of a
+ * screenshot in a scratch page, so no image library is needed.
+ */
+export async function controlBarShown(page: Page): Promise<boolean> {
+  const box = await page.locator('video').boundingBox();
+  if (box === null) {
+    throw new Error('the video is not on screen');
+  }
+  const png = await page.screenshot({
+    clip: { x: box.x + 12, y: box.y + box.height - 60, width: 24, height: 24 },
+  });
+  const scratch = await page.context().newPage();
+  try {
+    return await scratch.evaluate(async (data) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${data}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d');
+      if (context === null) {
+        throw new Error('no 2d canvas');
+      }
+      context.drawImage(image, 0, 0);
+      const { data: pixels } = context.getImageData(0, 0, image.width, image.height);
+      let white = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (
+          (pixels[index] ?? 0) > 220 &&
+          (pixels[index + 1] ?? 0) > 220 &&
+          (pixels[index + 2] ?? 0) > 220
+        ) {
+          white += 1;
+        }
+      }
+      return white >= 10;
+    }, png.toString('base64'));
+  } finally {
+    await scratch.close();
+  }
 }
