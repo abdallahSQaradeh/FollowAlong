@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 
 import { createFollowAlong } from '../../core/follow-along.js';
+import type { Logger } from '../../core/logger.js';
 import { isStatusBarCommand } from '../../core/status-bar.js';
 import { isVideoSpot } from '../../core/video-placement.js';
 import type { PlayerEvent } from '../../protocol/player-messages.js';
@@ -107,6 +108,8 @@ export interface TestHooks {
   activeQuickPickItem(): string | undefined;
   /** The spot the player is in, and whether VS Code shows it; none while no player is open. */
   playerSpot(): PlayerPlace | undefined;
+  /** [DEBUG-49v] */
+  debugTrace(): readonly string[];
   /** Whether the quick pick shown last still shows its busy indicator: the core is still scanning. */
   quickPickBusy(): boolean;
 }
@@ -116,7 +119,20 @@ let closeCore: (() => Promise<void>) | undefined;
 
 export function activate(context: vscode.ExtensionContext): TestHooks | undefined {
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
-  const logger = createOutputLogger(channel);
+  const outputLogger = createOutputLogger(channel);
+  /** [DEBUG-49v] The spot-move trace, kept for the smoke test. */
+  const debugTrace: string[] = [];
+  const logger: Logger =
+    context.extensionMode === vscode.ExtensionMode.Test
+      ? {
+          log(entry) {
+            if (entry.message.startsWith('[DEBUG-49v]')) {
+              debugTrace.push(entry.message);
+            }
+            outputLogger.log(entry);
+          },
+        }
+      : outputLogger;
   const focus = new FocusReturn();
   const player = new PlayerPanel(context.extensionPath, logger, () => {
     void focus.returnFocus();
@@ -179,6 +195,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       quickPicksShown: () => quickPickStats.shown,
       activeQuickPickItem: () => quickPickStats.active,
       playerSpot: () => player.place,
+      debugTrace: () => debugTrace,
       quickPickBusy: () => quickPickStats.busy,
     };
   }
