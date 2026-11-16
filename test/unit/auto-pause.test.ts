@@ -611,6 +611,27 @@ describe('pause and resume after a quiet period', () => {
       expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
     });
 
+    it('drops the pause when the learner collapses the video, and never resumes it', async () => {
+      const h = await createHarness();
+      await pausedByTyping(h);
+      const collapsing = h.core.toggleVideo();
+      h.player.emit({
+        type: 'snapshot',
+        snapshot: {
+          rate: 1,
+          zoom: { level: 1, left: 0, top: 0 },
+          lesson: { lessonId, position: 1, playing: false },
+        },
+      });
+      await collapsing;
+
+      expect(after(h, 10_000)).toEqual([]);
+      expect(playPauseItem(h)).toMatchObject({ icon: 'play', text: '' });
+      await h.core.toggleVideo();
+      h.player.ready();
+      expect(after(h, 10_000)).not.toContainEqual({ type: 'play' });
+    });
+
     it('drops the pause when the player page reloads', async () => {
       const h = await createHarness();
       await pausedByTyping(h);

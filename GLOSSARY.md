@@ -160,6 +160,14 @@ _Avoid_: Replay, back-up
 An opt-in mode in which the learner's typing in the active editor pauses a playing Lesson; the play/pause status bar item shows a keyboard while it is on, and "Paused (typing)" while the pause it caused holds. Only the learner's own edits count: never cursor moves, other panels, or FollowAlong's own changes.
 _Avoid_: Typing detection, smart pause, auto-stop
 
+**Quiet period**:
+The seconds with no edit after which Auto-pause, in its pause-and-resume mode, resumes a Lesson it paused (2 s by default); each edit starts it again. A resume after it never Rewinds.
+_Avoid_: Idle timeout, debounce, typing delay
+
+**Play-through**:
+What follows when the learner plays a Lesson that Auto-pause paused: their typing no longer pauses it until the next pause of any kind.
+_Avoid_: Override (in learner-facing text), force play
+
 **Speed ladder**:
 The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
 _Avoid_: Speed slider, rate list
