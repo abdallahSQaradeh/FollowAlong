@@ -24,7 +24,7 @@ function pressStep(
 }
 
 describe('seek step commands', () => {
-  it('step forward by the short step, 5 s by default', async () => {
+  it('steps forward by the short step, 5 s by default', async () => {
     const h = await createHarness();
     await openLesson(h);
 

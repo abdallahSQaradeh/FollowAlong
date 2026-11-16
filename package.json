@@ -156,13 +156,13 @@
           "type": "number",
           "default": 5,
           "minimum": 1,
-          "markdownDescription": "Seconds the short step jumps back or forward: `Ctrl+Alt+←` / `→`, `Ctrl+'` then `,` / `.`."
+          "markdownDescription": "Seconds the short step moves back or forward: `Ctrl+Alt+←` / `→`, `Ctrl+'` then `,` / `.`."
         },
         "followalong.longStep": {
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "markdownDescription": "Seconds the long step jumps back or forward: `Ctrl+'` then `←` / `→`."
+          "markdownDescription": "Seconds the long step moves back or forward: `Ctrl+'` then `←` / `→`."
         }
       }
     }

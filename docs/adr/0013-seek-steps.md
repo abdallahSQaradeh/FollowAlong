@@ -13,7 +13,8 @@ choices, so the next playback commands (#18 speed, #22 status bar) follow the sa
 - **A bad setting value falls back to the default.** A value that is not a finite number above 0
   (`0`, a negative, `"10"`, `null`) means 5 s or 30 s. The manifest declares `minimum: 1`, so the
   Settings editor flags such values; the core still holds when a hand-edited `settings.json` holds
-  one. Fractions of a second are allowed.
+  one. The core is more lenient than the manifest on purpose: it accepts any positive number, so a
+  fraction of a second (flagged by the editor) works.
 - **The player reports `seeked {lessonId}`** for every seek that finished, a step or the seek bar,
   as the spec's protocol lists. The extension does not act on it yet; Progress (save on seek) will.
 - **Steps take the re-stream path.** The player sets `currentTime` as the native seek bar does, so a
@@ -21,14 +22,14 @@ choices, so the next playback commands (#18 speed, #22 status bar) follow the sa
 - **A WebM without a Duration element** (an unfinalised recording) leaves the MediaSource duration
   Infinity until the stream ends, and Chromium then limits `seekable` to the buffered end: a long
   forward step was cut short without a sound. The player calls `setLiveSeekableRange(0, 24 h)`
-  once the first append is done, so the seek goes through the normal path (the stream runs on to the
+  after the first append, so the seek goes through the normal path (the stream runs on to the
   target). When the stream ends, `endOfStream` fixes the duration and the clamp at the end applies.
-  This is the fix the orchestrator asked for in #17 if it lands before #25.
 - **Before there is something to step in,** a step says "no Lesson is open" (same message as
   play/pause) with no Lesson, and does nothing while the player page is still starting.
 - **Keys.** Windows/Linux as in the spec. On macOS the one-press keys are `Ctrl+Cmd+←/→`, which
   override the same _Move Editor into Previous/Next Group_ the spec overrides on purpose; Cmd+Alt+←/→
-  would override _Previous/Next Editor_, which the spec does not mention. The chords use `Cmd+'`.
+  would, as far as we know from VS Code's macOS defaults, override _Previous/Next Editor_, which
+  the spec does not mention. macOS is best-effort (spec #12) and not tested. The chords use `Cmd+'`.
 
 ## Considered options
 
