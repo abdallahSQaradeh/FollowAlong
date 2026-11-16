@@ -7,6 +7,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +52,20 @@ if (compile.status !== 0) {
 // VS Code loads the extension from package.json "main", the bundle in out/.
 await build();
 
+/** A free local port, so the suite can click in the player page over the DevTools protocol. */
+const devToolsPort = await /** @type {Promise<number>} */ (
+  new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      server.close(() => {
+        resolvePort(typeof address === 'object' && address !== null ? address.port : 0);
+      });
+    });
+  })
+);
+
 const workspace = mkdtempSync(join(tmpdir(), 'followalong-smoke-'));
 // A fresh user-data folder per run, so no setting or state leaks between runs. Proxy support is
 // off: with it on, VS Code's proxy agent wraps fetch() in the extension host and calls the
@@ -68,8 +83,12 @@ try {
     cachePath: join(root, '.vscode-test'),
     extensionDevelopmentPath: root,
     extensionTestsPath: join(root, 'out', 'smoke', 'suite', 'index.js'),
+    extensionTestsEnv: { FOLLOWALONG_SMOKE_DEVTOOLS_PORT: String(devToolsPort) },
     launchArgs: [
       workspace,
+      // A real click in the player page needs real input events: test/smoke/suite/index.ts
+      // sends them over the DevTools protocol, as a learner's mouse would.
+      `--remote-debugging-port=${String(devToolsPort)}`,
       `--user-data-dir=${userData}`,
       '--disable-extensions',
       '--disable-gpu',

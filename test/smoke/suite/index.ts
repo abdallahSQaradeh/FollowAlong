@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { chromium } from '@playwright/test';
 import * as vscode from 'vscode';
 
 /**
@@ -9,7 +10,8 @@ import * as vscode from 'vscode';
  * It checks only what Seam 1 and Seam 2 cannot: that VS Code loads and activates the extension,
  * registers its commands, shows the player in an editor group beside the code, and that the real
  * page plays the Lesson there (asWebviewUri through the CSP, localResourceRoots, Electron's
- * autoplay policy).
+ * autoplay policy). Then it clicks the picture with real input over the DevTools protocol, to see
+ * that VS Code counts it as a user gesture (#12 D3) and that focus comes back to the code.
  */
 
 /** The part of a player event this test reads (src/protocol/player-messages.ts). */
@@ -50,14 +52,93 @@ export async function run(): Promise<void> {
   );
   say('its commands are registered');
 
-  await opensACourseBesideTheCode(extension.extensionPath);
+  const code = await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
 
-  say(await theLessonStarts(hooks.playerEvents));
+  const autoplayRefused = await theLessonStarts(hooks.playerEvents);
+  say(
+    autoplayRefused
+      ? 'VS Code refused autoplay (paused {byUser: false}); the Lesson loaded'
+      : 'the Lesson plays in VS Code (played, then the playhead moved)',
+  );
+
+  await aClickOnThePicture(hooks.playerEvents, code, autoplayRefused);
 }
 
-/** Waits for the real player page to play the Lesson, or to report that autoplay was refused. */
-async function theLessonStarts(events: readonly SeenEvent[]): Promise<string> {
+/**
+ * Clicks the middle of the picture in the real player page, then checks that the Lesson started
+ * (or paused, if it was playing) and that keyboard focus went back to the code editor.
+ */
+async function aClickOnThePicture(
+  events: readonly SeenEvent[],
+  code: vscode.TextDocument,
+  autoplayRefused: boolean,
+): Promise<void> {
+  const lessonId = 'lesson.webm';
+  const port = process.env.FOLLOWALONG_SMOKE_DEVTOOLS_PORT;
+  assert.ok(port, 'scripts/run-smoke.mjs passes the DevTools port');
+  const activeEditors: (vscode.TextDocument | undefined)[] = [];
+  const watch = vscode.window.onDidChangeActiveTextEditor((editor) => {
+    activeEditors.push(editor?.document);
+  });
+  const before = events.length;
+  try {
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    const frames = () =>
+      browser
+        .contexts()
+        .flatMap((context) => context.pages())
+        .flatMap((page) => page.frames());
+    // The player page is a frame inside the webview's frame, inside the workbench page.
+    const overlay = await waitForAsync('the player page among the VS Code frames', async () => {
+      for (const frame of frames()) {
+        const found = frame.locator('.overlay');
+        if ((await found.count().catch(() => 0)) === 1) {
+          return found;
+        }
+      }
+      return undefined;
+    });
+    await overlay.click({ timeout: 10_000 });
+
+    const expected = autoplayRefused ? 'played' : 'paused';
+    await waitFor(`the player to report ${expected} after the click`, () =>
+      events
+        .slice(before)
+        .find(
+          (event) =>
+            event.lessonId === lessonId &&
+            event.type === expected &&
+            (expected === 'played' || event.byUser === true),
+        ),
+    );
+    say(
+      autoplayRefused
+        ? 'a click on the picture starts the Lesson VS Code would not autoplay (a user gesture)'
+        : 'a click on the picture pauses the Lesson, as the learner’s pause',
+    );
+    await waitFor('the player to post userInteracted', () =>
+      events.slice(before).find((event) => event.type === 'userInteracted'),
+    );
+    await waitFor('focus to come back to the code', () =>
+      activeEditors.at(-1) === code ? true : undefined,
+    );
+  } finally {
+    watch.dispose();
+  }
+  assert.ok(
+    activeEditors.includes(undefined),
+    'the click never made the player the active editor, so focus return was not exercised',
+  );
+  assert.equal(vscode.window.activeTextEditor?.document, code, 'focus did not come back');
+  say('the click moved focus to the player, and focus came back to the code editor');
+}
+
+/**
+ * Waits for the real player page to play the Lesson, or to report that autoplay was refused.
+ * Returns whether it was refused.
+ */
+async function theLessonStarts(events: readonly SeenEvent[]): Promise<boolean> {
   const lessonId = 'lesson.webm';
   const outcome = await waitFor(
     'the player to play the Lesson or to report a refused autoplay',
@@ -85,18 +166,20 @@ async function theLessonStarts(events: readonly SeenEvent[]): Promise<string> {
       !events.some((event) => event.type === 'error'),
       'the player reported an error after loading',
     );
-    return `VS Code refused autoplay (paused {byUser: false}); the Lesson loaded (length ${String(loaded.duration)} s)`;
+    assert.ok((loaded.duration ?? 0) > 0);
+    return true;
   }
-  const progress = await waitFor('the playhead to move', () =>
+  await waitFor('the playhead to move', () =>
     events.find(
       (event) =>
         event.type === 'timeUpdate' && event.lessonId === lessonId && (event.position ?? 0) > 0.2,
     ),
   );
-  return `the Lesson plays in VS Code (played, then timeUpdate at ${String(progress.position)} s)`;
+  return false;
 }
 
-async function opensACourseBesideTheCode(extensionPath: string): Promise<void> {
+/** Opens the fixture Course beside a code editor, and returns that editor's document. */
+async function opensACourseBesideTheCode(extensionPath: string): Promise<vscode.TextDocument> {
   const workspace = vscode.workspace.workspaceFolders?.[0];
   assert.ok(workspace, 'the smoke test runs with a workspace folder');
   const filesBefore = readdirSync(workspace.uri.fsPath);
@@ -132,12 +215,17 @@ async function opensACourseBesideTheCode(extensionPath: string): Promise<void> {
     [workspace.uri.fsPath],
   );
   assert.deepEqual(readdirSync(workspace.uri.fsPath), filesBefore);
+  return code;
 }
 
-async function waitFor<T>(what: string, find: () => T | undefined, timeoutMs = 10_000): Promise<T> {
+async function waitForAsync<T>(
+  what: string,
+  find: () => Promise<T | undefined>,
+  timeoutMs = 10_000,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const found = find();
+    const found = await find();
     if (found !== undefined) {
       return found;
     }
@@ -146,6 +234,10 @@ async function waitFor<T>(what: string, find: () => T | undefined, timeoutMs = 1
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+function waitFor<T>(what: string, find: () => T | undefined, timeoutMs = 10_000): Promise<T> {
+  return waitForAsync(what, () => Promise.resolve(find()), timeoutMs);
 }
 
 function say(line: string): void {
