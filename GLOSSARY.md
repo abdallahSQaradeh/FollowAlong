@@ -28,6 +28,10 @@ _Avoid_: Lesson search, jump list
 The order the Course presents its Lessons in: a folder's own Lessons first, then its Sections, each in natural order. The next and previous Lesson, and the Lesson tree, follow it. It stops at the first and the last Lesson and does not wrap.
 _Avoid_: Playlist order, queue
 
+**Next overlay**:
+The "Next: <title>" button the player shows over the last frame when a Lesson ends and another follows. Clicking it loads that Lesson; nothing moves on without the click. The last Lesson of a Course has none.
+_Avoid_: Autoplay next, up next, end card
+
 **Wrapper folder**:
 A folder inside a Course that holds no Lessons of its own and only one other folder with Lessons. It is not shown as a Section: its content is shown in its place.
 _Avoid_: Container folder, parent folder
