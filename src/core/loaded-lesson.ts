@@ -7,6 +7,8 @@
  */
 import type { AboutLesson, PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
 import {
+  autoPauseOff,
+  autoPauseView,
   readAutoPauseMode,
   stepAutoPause,
   type AutoPauseEffect,
@@ -268,7 +270,7 @@ export function createLoadedLesson(
   }
 
   /** Auto-pause while typing (ADR 0052), as the `followalong.autoPause` setting starts it. */
-  let autoPause: AutoPauseState = stepAutoPause('off', {
+  let autoPause: AutoPauseState = stepAutoPause(autoPauseOff, {
     type: 'modeChanged',
     mode: readAutoPauseMode(config),
   }).state;
@@ -303,6 +305,7 @@ export function createLoadedLesson(
             rate,
             shortStep: stepSeconds('short'),
             zoom,
+            autoPause: autoPauseView(autoPause).mode,
           });
     if (JSON.stringify(next) === JSON.stringify(statusBar)) {
       return;
@@ -709,6 +712,7 @@ export function createLoadedLesson(
       }
       if (affects('autoPause')) {
         feedAutoPause({ type: 'modeChanged', mode: readAutoPauseMode(config) });
+        refreshStatusBar();
       }
     }),
   ];

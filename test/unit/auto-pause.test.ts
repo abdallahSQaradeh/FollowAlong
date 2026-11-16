@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { DocumentEdit } from '../../src/core/auto-pause.js';
+import type { StatusBarItemModel } from '../../src/core/status-bar.js';
 import type { PlayerCommand } from '../../src/protocol/player-messages.js';
 import { createHarness, type Harness } from './harness.js';
 
@@ -28,6 +29,11 @@ function edit(h: Harness, documentEdit: DocumentEdit = typing): PlayerCommand[] 
   const before = h.player.sent.length;
   h.core.documentEdited(documentEdit);
   return h.player.sent.slice(before);
+}
+
+/** The play/pause status bar item, as the learner sees it now. */
+function playPauseItem(h: Harness): StatusBarItemModel | undefined {
+  return h.ui.statusBar.items.find((item) => item.id === 'playPause');
 }
 
 describe('auto-pause while typing', () => {
@@ -170,6 +176,59 @@ describe('auto-pause while typing', () => {
       h.config.set('autoPause', 'off');
 
       expect(edit(h)).toEqual([]);
+    });
+  });
+
+  describe('the status bar marker', () => {
+    it('shows on the play/pause item while auto-pause is on, its tooltip naming the mode', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pause');
+
+      expect(playPauseItem(h)).toMatchObject({
+        icon: 'play',
+        marker: 'autoPause',
+        tooltip: 'Play the Lesson · Auto-pause: pause',
+      });
+      h.player.emit({ type: 'played', lessonId });
+      expect(playPauseItem(h)).toMatchObject({
+        icon: 'pause',
+        marker: 'autoPause',
+        tooltip: 'Pause the Lesson · Auto-pause: pause',
+      });
+    });
+
+    it('names the pause-and-resume mode', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'pauseAndResume');
+
+      expect(playPauseItem(h)).toMatchObject({
+        marker: 'autoPause',
+        tooltip: 'Play the Lesson · Auto-pause: pause and resume',
+      });
+    });
+
+    it('does not show while auto-pause is off', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'off');
+
+      expect(playPauseItem(h)).toEqual({
+        id: 'playPause',
+        icon: 'play',
+        text: '',
+        tooltip: 'Play the Lesson',
+        command: 'playPause',
+      });
+    });
+
+    it('follows the setting at once, mid-Lesson', async () => {
+      const h = await createHarness();
+      await openLesson(h, 'off');
+
+      h.config.set('autoPause', 'pause');
+      expect(playPauseItem(h)).toMatchObject({ marker: 'autoPause' });
+
+      h.config.set('autoPause', 'off');
+      expect(playPauseItem(h)).not.toHaveProperty('marker');
     });
   });
 });

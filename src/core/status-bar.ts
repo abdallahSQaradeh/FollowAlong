@@ -6,6 +6,7 @@
  */
 import { zoomLabel } from '../protocol/player-messages.js';
 
+import type { AutoPauseMode } from './auto-pause.js';
 import { formatClock } from './clock-text.js';
 
 /** The commands a status bar item can run when clicked, named as the core knows them. */
@@ -26,6 +27,9 @@ export function isStatusBarCommand(value: unknown): value is StatusBarCommand {
   return typeof value === 'string' && Object.hasOwn(statusBarCommands, value);
 }
 
+/** A second symbol after the icon: `autoPause` while auto-pause is on (story 104). */
+export type StatusBarMarker = 'autoPause';
+
 export type StatusBarItemId = 'playPause' | 'time' | 'speed' | 'back' | 'zoom';
 
 export interface StatusBarItemModel {
@@ -33,6 +37,8 @@ export interface StatusBarItemModel {
   readonly id: StatusBarItemId;
   /** A symbol drawn before the text, named by what it shows; the adapter picks the picture. */
   readonly icon?: StatusBarIcon;
+  /** A symbol drawn after the icon, named by what it says; the adapter picks the picture. */
+  readonly marker?: StatusBarMarker;
   /** The text on the item; empty for an item that is only a symbol. */
   readonly text: string;
   readonly tooltip: string;
@@ -59,20 +65,40 @@ export interface StatusBarState {
   readonly shortStep: number;
   /** The player's zoom level: 1 is the whole picture (ADR 0037). */
   readonly zoom: number;
+  /** The `followalong.autoPause` setting (ADR 0052). */
+  readonly autoPause: AutoPauseMode;
 }
 
+/** How each mode of auto-pause is named in the play/pause item's tooltip. */
+const autoPauseNames: Readonly<Record<Exclude<AutoPauseMode, 'off'>, string>> = {
+  pause: 'pause',
+  pauseAndResume: 'pause and resume',
+};
+
 const unknownTime = '--:--';
+
+/** The play/pause item, with the auto-pause marker while auto-pause is on. */
+function playPauseItem(state: StatusBarState): StatusBarItemModel {
+  const action = state.playing ? 'Pause the Lesson' : 'Play the Lesson';
+  const common = {
+    id: 'playPause',
+    icon: state.playing ? 'pause' : 'play',
+    text: '',
+    command: 'playPause',
+  } as const;
+  return state.autoPause === 'off'
+    ? { ...common, tooltip: action }
+    : {
+        ...common,
+        marker: 'autoPause',
+        tooltip: `${action} · Auto-pause: ${autoPauseNames[state.autoPause]}`,
+      };
+}
 
 export function buildStatusBar(state: StatusBarState): StatusBarModel {
   return {
     items: [
-      {
-        id: 'playPause',
-        icon: state.playing ? 'pause' : 'play',
-        text: '',
-        tooltip: state.playing ? 'Pause the Lesson' : 'Play the Lesson',
-        command: 'playPause',
-      },
+      playPauseItem(state),
       {
         id: 'time',
         text: `${formatClock(state.position)} / ${state.duration > 0 ? formatClock(state.duration) : unknownTime}`,

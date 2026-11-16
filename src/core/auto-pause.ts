@@ -18,12 +18,21 @@ export function readAutoPauseMode(config: Pick<Config, 'get'>): AutoPauseMode {
   return value === 'pause' || value === 'pauseAndResume' ? value : 'off';
 }
 
+/** A mode in which auto-pause acts. */
+export type AutoPauseOnMode = Exclude<AutoPauseMode, 'off'>;
+
 /**
  * - `off`: the setting is off.
  * - `armed`: an edit while the Lesson plays pauses it.
  * - `autoPaused`: an edit paused the Lesson, and it has not played since.
+ *
+ * #60 adds `overridden` (the learner played while armed) and the quiet timer of `pauseAndResume`.
  */
-export type AutoPauseState = 'off' | 'armed' | 'autoPaused';
+export type AutoPauseState =
+  | { readonly kind: 'off' }
+  | { readonly kind: 'armed' | 'autoPaused'; readonly mode: AutoPauseOnMode };
+
+export const autoPauseOff: AutoPauseState = { kind: 'off' };
 
 export type AutoPauseInput =
   /** The setting changed, or is read for the first time. */
@@ -41,21 +50,44 @@ export interface AutoPauseStep {
   readonly effects: readonly AutoPauseEffect[];
 }
 
+/** The next state, and what to do, after `input`. Pure: the clock and the player are the caller's. */
 export function stepAutoPause(state: AutoPauseState, input: AutoPauseInput): AutoPauseStep {
   switch (input.type) {
     case 'modeChanged':
+      if (input.mode === 'off') {
+        return { state: autoPauseOff, effects: [] };
+      }
+      // Another mode keeps where it is: a pause it caused is still one it caused.
       return {
-        state: input.mode === 'off' ? 'off' : state === 'off' ? 'armed' : state,
+        state:
+          state.kind === 'off'
+            ? { kind: 'armed', mode: input.mode }
+            : { ...state, mode: input.mode },
         effects: [],
       };
     case 'typed':
-      return state === 'armed' && input.playing
-        ? { state: 'autoPaused', effects: ['pause'] }
+      return state.kind === 'armed' && input.playing
+        ? { state: { ...state, kind: 'autoPaused' }, effects: ['pause'] }
         : { state, effects: [] };
     case 'played':
       // Playing again, whoever started it: the next edit pauses it again.
-      return { state: state === 'autoPaused' ? 'armed' : state, effects: [] };
+      return {
+        state: state.kind === 'autoPaused' ? { ...state, kind: 'armed' } : state,
+        effects: [],
+      };
   }
+}
+
+/** What the learner is shown of auto-pause: the mode (the marker), and whether it paused the Lesson. */
+export interface AutoPauseView {
+  readonly mode: AutoPauseMode;
+  readonly pausedByTyping: boolean;
+}
+
+export function autoPauseView(state: AutoPauseState): AutoPauseView {
+  return state.kind === 'off'
+    ? { mode: 'off', pausedByTyping: false }
+    : { mode: state.mode, pausedByTyping: state.kind === 'autoPaused' };
 }
 
 /** A change to the text of a document open in VS Code, as the adapter forwards it. */
