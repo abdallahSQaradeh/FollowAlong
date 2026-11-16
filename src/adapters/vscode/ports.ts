@@ -88,8 +88,8 @@ export function createUiSink(
         openLabel,
         title,
       });
-      // VS Code spells a Windows drive letter in lower case (`d:\\Learning`); Windows and the
-      // learner write `D:\\Learning`. One spelling keeps the same root from being added twice.
+      // VS Code spells a Windows drive letter in lower case (`d:\Learning`); Windows and the
+      // learner write `D:\Learning`. One spelling keeps the same root from being added twice.
       return chosen?.[0]?.fsPath.replace(/^([a-z]):/, (drive) => drive.toUpperCase());
     },
     returnFocus() {
