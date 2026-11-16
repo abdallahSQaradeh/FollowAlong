@@ -113,6 +113,17 @@
         "command": "followalong.openResource",
         "title": "Open Resource",
         "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.detachResource",
+        "title": "Detach",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.relinkResource",
+        "title": "Relink…",
+        "category": "FollowAlong",
+        "icon": "$(link)"
       }
     ],
     "keybindings": [
@@ -243,6 +254,14 @@
         {
           "command": "followalong.openResource",
           "when": "false"
+        },
+        {
+          "command": "followalong.detachResource",
+          "when": "false"
+        },
+        {
+          "command": "followalong.relinkResource",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -250,6 +269,21 @@
           "command": "followalong.attachResource",
           "when": "view == followalong.lessons && viewItem == lesson",
           "group": "inline"
+        },
+        {
+          "command": "followalong.relinkResource",
+          "when": "view == followalong.lessons && viewItem == resourceMissing",
+          "group": "inline"
+        },
+        {
+          "command": "followalong.relinkResource",
+          "when": "view == followalong.lessons && viewItem == resourceMissing",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "followalong.detachResource",
+          "when": "view == followalong.lessons && viewItem =~ /^resource/",
+          "group": "1_manage@2"
         }
       ]
     },

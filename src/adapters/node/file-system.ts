@@ -79,6 +79,12 @@ export function createNodeFileSystem(): FileSystem {
 
     readText: (path) => wrap(path, () => readFile(path, 'utf8')),
 
+    exists: (path) =>
+      stat(path).then(
+        () => true,
+        (error: unknown) => reasonOf(error) !== 'notFound',
+      ),
+
     writeText: (path, content) =>
       wrap(path, async () => {
         // Write beside the target, then rename over it, so a reader never sees half a file.

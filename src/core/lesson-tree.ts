@@ -15,6 +15,8 @@ export interface ResourceNode {
   readonly label: string;
   /** The file's full path. */
   readonly path: string;
+  /** Whether the file is no longer where the Resource points: the tree shows it dimmed. */
+  readonly missing: boolean;
 }
 
 export type LessonTreeNode =
@@ -46,6 +48,8 @@ export interface LessonTreeModel {
 interface TreeSource {
   readonly folder: string;
   readonly resources: ResourcesData;
+  /** The ids of the Resources whose file is not where they point. */
+  readonly missing: ReadonlySet<string>;
 }
 
 function nodeOf(section: Section, source: TreeSource): LessonTreeNode {
@@ -65,13 +69,23 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
       label: lesson.title,
       resources: (source.resources.lessons[lesson.id] ?? []).map((record): ResourceNode => {
         const path = resourcePath(source.folder, record);
-        return { id: record.id, kind: 'resource', label: basename(path), path };
+        return {
+          id: record.id,
+          kind: 'resource',
+          label: basename(path),
+          path,
+          missing: source.missing.has(record.id),
+        };
       }),
     })),
     ...outline.sections.map((section) => nodeOf(section, source)),
   ];
 }
 
-export function buildLessonTree(course: Course, resources: ResourcesData): LessonTreeModel {
-  return { nodes: nodesOf(course, { folder: course.folder, resources }) };
+export function buildLessonTree(
+  course: Course,
+  resources: ResourcesData,
+  missing: ReadonlySet<string>,
+): LessonTreeModel {
+  return { nodes: nodesOf(course, { folder: course.folder, resources, missing }) };
 }

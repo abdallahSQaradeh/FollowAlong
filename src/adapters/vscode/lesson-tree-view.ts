@@ -10,6 +10,8 @@ import type { LessonTreeModel, LessonTreeNode } from '../../core/lesson-tree.js'
 export const lessonTreeViewId = 'followalong.lessons';
 export const playLessonCommand = 'followalong.playLesson';
 export const openResourceCommand = 'followalong.openResource';
+/** The scheme of the `resourceUri` of a missing Resource: the decoration below dims such rows. */
+const missingScheme = 'followalong-missing';
 
 /** What VS Code shows under a node: a Section's Lessons and Sections, a Lesson's Resources. */
 function childrenOf(node: LessonTreeNode): readonly LessonTreeNode[] {
@@ -47,12 +49,24 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
   private readonly changed = new vscode.EventEmitter<undefined>();
   private readonly view: vscode.TreeView<LessonTreeNode>;
   private readonly subscription: vscode.Disposable;
+  /** Dims the label of a Resource whose file is missing, as VS Code dims a disabled item. */
+  private readonly dimming: vscode.Disposable;
   /** The Lesson the core last asked to select. */
   private selectedLessonId: string | undefined;
   readonly onDidChangeTreeData = this.changed.event;
 
   constructor(private readonly logger: Logger) {
     this.view = vscode.window.createTreeView(lessonTreeViewId, { treeDataProvider: this });
+    this.dimming = vscode.window.registerFileDecorationProvider({
+      provideFileDecoration: (uri) =>
+        uri.scheme === missingScheme
+          ? new vscode.FileDecoration(
+              undefined,
+              'The file is missing',
+              new vscode.ThemeColor('disabledForeground'),
+            )
+          : undefined,
+    });
     this.subscription = this.view.onDidChangeVisibility((event) => {
       if (event.visible) {
         this.revealSelected();
@@ -119,9 +133,17 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
     if (node.kind === 'resource') {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.id = node.id;
-      item.contextValue = 'resource';
-      item.tooltip = node.path;
-      item.resourceUri = vscode.Uri.file(node.path);
+      item.tooltip = node.missing
+        ? `${node.path}\nThe file is missing. Use Relink… to point it at its new place.`
+        : node.path;
+      // A missing file shows dimmed, and only then offers Relink… (story 97).
+      item.contextValue = node.missing ? 'resourceMissing' : 'resource';
+      if (node.missing) {
+        item.description = 'missing';
+      }
+      item.resourceUri = node.missing
+        ? vscode.Uri.file(node.path).with({ scheme: missingScheme })
+        : vscode.Uri.file(node.path);
       item.command = { command: openResourceCommand, title: 'Open Resource', arguments: [node.id] };
       return item;
     }
@@ -141,6 +163,7 @@ export class LessonTreeView implements vscode.TreeDataProvider<LessonTreeNode>, 
 
   dispose(): void {
     this.subscription.dispose();
+    this.dimming.dispose();
     this.view.dispose();
     this.changed.dispose();
   }
