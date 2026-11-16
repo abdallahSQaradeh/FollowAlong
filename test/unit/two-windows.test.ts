@@ -258,6 +258,28 @@ describe('two windows on the same Course', () => {
     expect(await h.listFiles(join(course, '.followalong'))).toEqual(['progress.json']);
   });
 
+  it('keeps both Lessons when one window saves while the other is between its read and its write', async () => {
+    const { h, other, course } = await openInTwoWindows(0);
+    h.core.playLesson(intro);
+    playTo(h.player, intro, 100);
+    other.core.playLesson(setup);
+    playTo(other.player, setup, 200);
+    const write = h.holdFirstFileWrite(join(course, '.followalong', 'progress.json'));
+
+    pause(h.player, intro);
+    // This window has read the file and merged it, and is about to replace it.
+    await write.reached;
+    pause(other.player, setup);
+    // The other window's save runs meanwhile (or waits for its turn, about 0.3 s here).
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    write.release();
+
+    expect(await startsAfterRestart(h, course, [intro, setup], other)).toEqual({
+      [intro]: 95,
+      [setup]: 195,
+    });
+  });
+
   it('resets the Lessons the other window saved, when the Course is reset', async () => {
     const { h, other, course } = await openInTwoWindows(0);
     other.core.playLesson(setup);

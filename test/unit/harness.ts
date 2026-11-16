@@ -756,6 +756,12 @@ export interface Harness {
    */
   holdFileReads(path: string): { readonly reached: Promise<void>; release(): void };
   /**
+   * Holds the next write of the file at `path` until `release` is called; writes after it go
+   * through. `reached` settles once that write has started: the core has read what it needed and
+   * waits to replace the file, as a window paused between its read and its rename would.
+   */
+  holdFirstFileWrite(path: string): { readonly reached: Promise<void>; release(): void };
+  /**
    * Holds the next write to the workspace state (a Course open stores its folder there) until
    * `release` is called; `reached` settles once the write has started.
    */
@@ -831,6 +837,10 @@ export async function createHarness(): Promise<Harness> {
     string,
     { readonly reach: () => void; readonly released: Promise<void> }
   >();
+  const heldWrites = new Map<
+    string,
+    { readonly reach: () => void; readonly released: Promise<void> }
+  >();
   const heldFiles = new Map<
     string,
     { readonly reach: () => void; readonly released: Promise<void> }
@@ -883,7 +893,15 @@ export async function createHarness(): Promise<Harness> {
     stat: (path) => track(nodeFileSystem.stat(path)),
     startingFolders: () => Promise.resolve(startFolders),
     exists: (path) => track(nodeFileSystem.exists(path)),
-    writeText: (path, content) => track(nodeFileSystem.writeText(path, content)),
+    writeText(path, content) {
+      const hold = heldWrites.get(path);
+      if (hold === undefined) {
+        return track(nodeFileSystem.writeText(path, content));
+      }
+      heldWrites.delete(path);
+      hold.reach();
+      return track(hold.released.then(() => nodeFileSystem.writeText(path, content)));
+    },
     lock: (path) =>
       track(nodeFileSystem.lock(path).then((release) => (): Promise<void> => track(release()))),
     makeDirectory: (path, options) => track(nodeFileSystem.makeDirectory(path, options)),
@@ -979,6 +997,18 @@ export async function createHarness(): Promise<Harness> {
     },
     breakReads(folder, message) {
       broken.set(folder, message);
+    },
+    holdFirstFileWrite(path) {
+      let reach = (): void => undefined;
+      let release = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      heldWrites.set(path, { reach, released });
+      return { reached, release };
     },
     holdFileReads(path) {
       let reach = (): void => undefined;
