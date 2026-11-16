@@ -99,7 +99,40 @@ describe('resume with rewind', () => {
     ).toEqual([{ type: 'play' }]);
   });
 
+  it('rewinds once when the key is pressed again before the player answers', async () => {
+    const h = await createHarness();
+    await openPausedLesson(h);
+    h.config.set('resumeRewind', 3);
+    h.core.playPause();
+
+    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([{ type: 'play' }]);
+  });
+
+  it('rewinds a Lesson that was stepped back from its end', async () => {
+    const h = await createHarness();
+    await openPausedLesson(h);
+    h.config.set('resumeRewind', 3);
+    h.player.emit({ type: 'played', lessonId });
+    h.player.emit({ type: 'ended', lessonId });
+    h.core.seekStep('short', 'back');
+    h.player.emit({ type: 'seeked', lessonId });
+
+    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([
+      { type: 'seekBy', seconds: -3 },
+      { type: 'play' },
+    ]);
+  });
+
   describe('the automatic resume path', () => {
+    it('stays silent when no Lesson is open', async () => {
+      const h = await createHarness();
+
+      h.core.resumeWithoutRewind();
+
+      expect(h.ui.messages).toEqual([]);
+      expect(h.player.sent).toEqual([]);
+    });
+
     it('plays without a seek even when the setting is above 0', async () => {
       const h = await createHarness();
       await openPausedLesson(h);

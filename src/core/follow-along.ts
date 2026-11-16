@@ -216,6 +216,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       }
+      case 'seeked':
+        // A Lesson moved off its end (a step back, the seek bar) is no longer ended.
+        if (event.lessonId === current?.id && playback.ended) {
+          playback = { ...playback, ended: false };
+        }
+        break;
       case 'timeUpdate':
         break;
     }
@@ -280,8 +286,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   /** Sends `play`, after a `seekBy` back of `rewind` seconds when that is above 0. */
   function resume(rewind: number): void {
+    const wasAwaiting = playback.awaitingPlayAnswer;
     playback = { ...playback, awaitingPlayAnswer: true };
-    if (rewind > 0 && !playback.ended) {
+    // A second press before the player answers must not rewind again.
+    if (rewind > 0 && !playback.ended && !wasAwaiting) {
       player.send({ type: 'seekBy', seconds: -rewind });
     }
     player.send({ type: 'play' });
@@ -361,7 +369,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       resume(resumeRewindSeconds());
     },
     resumeWithoutRewind() {
-      if (!hasPlayableLesson('Resume') || playback.playing) {
+      // Silent: an automatic resume must not tell the learner anything they did not ask for.
+      if (current === undefined || !playerReady || playback.playing) {
         return;
       }
       resume(0);
