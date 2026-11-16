@@ -41,7 +41,7 @@ Two deliberate additions to the spec's shapes:
   stream's length is not yet known, so both numbers are always finite. For a WebM without a
   Duration element (a screen recording) that lasts until the whole file has streamed.
 - **`seeked`** is posted on every `seeked` of the media element: a seek command, a seek bar drag,
-  and also the seek that applies a `load`'s `startAt` (the core tells that one apart itself). It
+  and also the seek that applies a `load`'s `startAt`, which carries `startSeek: true` (every other seek carries `false`; ADR 0030). It
   carries no position: the media element fires `timeupdate` before `seeked`, so a `timeUpdate` at
   the new position always arrives first (Seam 2 checks the order), and the core reads it there.
 - **`userInteracted`** (no `lessonId`) is posted when the learner finishes an interaction with
@@ -56,6 +56,9 @@ Ticket #18 added `setRate {rate}` (extension → player) and `rateChanged` (play
 
 Ticket #21 added `showNext {title}` (extension → player) and `nextClicked {lessonId}` (player →
 extension); see ADR 0019.
+
+Ticket #26 added the optional `startSeek` flag to `seeked` (player → extension); a `seeked` without it
+is read as before (ADR 0030).
 
 Ticket #19 added `setResumeRewind {seconds}` (extension → player, 0 or more); see ADR 0016.
 

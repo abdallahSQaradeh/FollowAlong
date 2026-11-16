@@ -5,8 +5,8 @@ import { isFullPath } from '../../src/core/courses-roots.js';
 /**
  * Which setting entries name one folder wherever VS Code runs (ADR 0022), under each OS's path
  * rules, on every OS: CI runs the Windows rules only on Windows otherwise.
- * `\\?\d:\x` is left out: it is accepted today without upper-casing its drive letter, which #34
- * owns.
+ * The `\\?\` (verbatim) and `\\.\` (device) prefixes are not full paths on Windows: they would
+ * spell `D:\Learning` a second way, past the drive-letter normalisation (ADR 0033).
  */
 const cases = [
   { path: 'D:', win32: false, posix: false },
@@ -17,6 +17,15 @@ const cases = [
   { path: '\\\\server', win32: false, posix: false },
   { path: '\\\\server\\share', win32: true, posix: false },
   { path: '//server/share', win32: true, posix: true },
+  { path: '\\\\?\\d:\\Learning', win32: false, posix: false },
+  { path: '\\\\?\\D:\\Learning', win32: false, posix: false },
+  { path: '\\\\?\\UNC\\server\\share', win32: false, posix: false },
+  { path: '//?/d:/Learning', win32: false, posix: true },
+  { path: '\\\\.\\d:\\Learning', win32: false, posix: false },
+  { path: '\\\\.\\PhysicalDrive0', win32: false, posix: false },
+  { path: '//./pipe/x', win32: false, posix: true },
+  { path: '\\\\?', win32: false, posix: false },
+  { path: '\\\\.hidden\\share', win32: true, posix: false },
 ] as const;
 
 describe('a Courses root is a full path', () => {

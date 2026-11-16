@@ -76,8 +76,13 @@ export type PlayerEvent =
   | (AboutLesson & { readonly type: 'played' })
   | (AboutLesson & { readonly type: 'paused'; readonly byUser: boolean })
   | (AboutLesson & { readonly type: 'ended' })
-  /** The playhead has arrived at the place a seek asked for (also after a seek bar drag). */
-  | (AboutLesson & { readonly type: 'seeked' })
+  /**
+   * The playhead has arrived at the place a seek asked for (also after a seek bar drag).
+   * `startSeek` says whether it is the seek that applied the `load`'s `startAt` (true) or any
+   * other seek, the learner's included (false). A player that omits it leaves the core to take
+   * the first `seeked` after a `load` with a `startAt` for the start seek (ADR 0030).
+   */
+  | (AboutLesson & { readonly type: 'seeked'; readonly startSeek?: boolean })
   /** The playback rate is now `rate`, whoever changed it (today only `setRate`: ADR 0009). */
   | (AboutLesson & { readonly type: 'rateChanged'; readonly rate: number })
   | (AboutLesson & { readonly type: 'error'; readonly message: string })
@@ -211,9 +216,15 @@ export function parsePlayerEvent(raw: unknown): PlayerEvent | undefined {
         ? { type, ...about, position, duration }
         : undefined;
     }
+    case 'seeked':
+      if (raw.startSeek === undefined) {
+        return { type, ...about };
+      }
+      return typeof raw.startSeek === 'boolean'
+        ? { type, ...about, startSeek: raw.startSeek }
+        : undefined;
     case 'played':
     case 'ended':
-    case 'seeked':
     case 'nextClicked':
       return { type, ...about };
     case 'rateChanged':
