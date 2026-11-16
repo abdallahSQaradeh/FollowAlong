@@ -24,6 +24,12 @@ function pause(h: Harness): void {
   h.player.emit({ type: 'paused', lessonId, byUser: true });
 }
 
+/** The learner moves the playhead to `position`: the player reports where it is, then `seeked`. */
+function seekTo(h: Harness, position: number): void {
+  h.player.emit({ type: 'timeUpdate', lessonId, position, duration });
+  h.player.emit({ type: 'seeked', lessonId });
+}
+
 /** Opens `lessons` as a Course and loads its first Lesson; its player is ready. */
 async function openCourse(h: Harness): Promise<string> {
   const course = await h.folder('course', lessons);
@@ -39,6 +45,16 @@ function savedStatus(course: string, id = lessonId): string | undefined {
     data: { lessons: Record<string, { status?: string } | undefined> };
   };
   return file.data.lessons[id]?.status ?? 'notStarted';
+}
+
+/** VS Code starts again and the learner opens the Course; returns the `load` the player gets. */
+async function reopen(h: Harness, course: string) {
+  await h.settle();
+  h.restart();
+  h.clock.advance(60_000);
+  await h.core.openCourse(course);
+  h.player.ready();
+  return h.player.sent.at(-1);
 }
 
 describe('a Lesson is in progress after 10 s of play', () => {
@@ -60,5 +76,107 @@ describe('a Lesson is in progress after 10 s of play', () => {
     await h.settle();
 
     expect(savedStatus(course)).toBe('inProgress');
+  });
+});
+
+describe('a Lesson is done in its last 5 % or at its end', () => {
+  it('marks a Lesson done when the playhead reaches 95 % while it plays', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    playFor(h, 12, 562);
+    pause(h);
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('done');
+  });
+
+  it('marks a Lesson done when it plays to its end', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    playFor(h, 12, 575);
+    h.player.emit({ type: 'timeUpdate', lessonId, position: 575, duration });
+    h.player.emit({ type: 'ended', lessonId });
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('done');
+  });
+
+  it('marks a Lesson done when the learner seeks into its last 5 % before it ever played', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    seekTo(h, 580);
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('done');
+  });
+
+  it('keeps a Lesson done when the learner seeks back and plays on', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    seekTo(h, 590);
+    seekTo(h, 100);
+    playFor(h, 3, 100);
+    pause(h);
+    await h.settle();
+
+    expect(savedStatus(course)).toBe('done');
+  });
+
+  it('starts a done Lesson saved in its last 5 % again at 0:00', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    playFor(h, 12, 590);
+    pause(h);
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 0 });
+  });
+
+  it('starts a done Lesson the learner left earlier 5 s before its saved position', async () => {
+    const h = await createHarness();
+    const course = await openCourse(h);
+    seekTo(h, 590);
+    seekTo(h, 200);
+    pause(h);
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 195 });
+  });
+});
+
+describe('a learner seek while FollowAlong’s own start seek is pending', () => {
+  /** The Lesson was left at 100 s; reopening it makes the player seek to 95 s. */
+  async function reopenedAt95(h: Harness): Promise<string> {
+    const course = await openCourse(h);
+    playFor(h, 12, 88);
+    pause(h);
+    await reopen(h, course);
+    return course;
+  }
+
+  it('records the learner’s seek, not swallows it as the start seek', async () => {
+    const h = await createHarness();
+    const course = await reopenedAt95(h);
+    // Chromium aborts the slow start seek and reports one `seeked`, at the learner's position.
+    seekTo(h, 300);
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 295 });
+  });
+
+  it('marks the Lesson done when that seek lands in its last 5 %', async () => {
+    const h = await createHarness();
+    const course = await reopenedAt95(h);
+    seekTo(h, 590);
+    await h.core.close();
+
+    expect(savedStatus(course)).toBe('done');
+  });
+
+  it('still takes the seek to the start position as FollowAlong’s own', async () => {
+    const h = await createHarness();
+    const course = await reopenedAt95(h);
+    seekTo(h, 95.2);
+    await h.core.close();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId, startAt: 95 });
   });
 });

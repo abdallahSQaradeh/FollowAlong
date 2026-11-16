@@ -21,6 +21,13 @@ import {
 const saveIntervalMs = 5000;
 
 /**
+ * How far from `startAt` a `seeked` may land and still be FollowAlong's own start seek, in
+ * seconds. The player lands the start seek on its target (ADR 0006); anything farther is the
+ * learner's.
+ */
+const startSeekToleranceSeconds = 0.5;
+
+/**
  * The most the playhead may move between two `timeUpdate`s of a playing Lesson and still count as
  * play, in seconds. A bigger jump is a seek, which plays nothing. The player reports about every
  * 250 ms, a little more at 2× or while the page is in the background.
@@ -99,8 +106,9 @@ interface LessonLoad {
    */
   engaged: boolean;
   /**
-   * Set by a `load` with a start position, until the player's next `seeked`: that seek is the one
-   * applying `startAt`, FollowAlong's own, wherever it lands (gate review of #25, H1).
+   * Set by a `load` with a start position, until the player's next `seeked`: when that seek lands
+   * at `startAt`, it is the one applying it, FollowAlong's own. One landing elsewhere is the
+   * learner's (ADR 0030).
    */
   startSeekPending: boolean;
   /** Seconds of picture played since this `load`: the 10 s a Lesson needs to be in progress. */
@@ -400,6 +408,15 @@ export function createLoadedLesson(
           // Ended: a resume then restarts the Lesson, so it is not rewound (ADR 0016).
           playback = { ...freshPlayback(false), ended: true };
           stopSaving();
+          shown.engaged = true;
+          shown.lastPlayingPosition = undefined;
+          // At its end the playhead is at the Lesson's length, which a done Lesson restarts from.
+          const progress = course.progress();
+          progress?.record(shown.lesson.id, {
+            ...seenOf(shown, true),
+            position: duration > 0 ? duration : position,
+          });
+          void progress?.save();
           offerNextLesson(shown.lesson);
         }
         break;
@@ -428,9 +445,13 @@ export function createLoadedLesson(
           playback = { ...playback, ended: false };
         }
         if (shown.startSeekPending) {
-          // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
           shown.startSeekPending = false;
-          break;
+          if (Math.abs(position - shown.startAt) <= startSeekToleranceSeconds) {
+            // FollowAlong's own seek to `startAt`: saving it would move the Lesson's position.
+            break;
+          }
+          // Far from `startAt`: the learner sought while the start seek was still pending, and
+          // the browser dropped it for theirs. It is theirs to record (ADR 0030).
         }
         shown.engaged = true;
         shown.lastPlayingPosition = undefined;
