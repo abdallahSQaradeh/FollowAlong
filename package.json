@@ -544,15 +544,17 @@
           "enum": [
             "editorSplit",
             "bottomPanel",
-            "secondarySidebar"
+            "secondarySidebar",
+            "floatingWindow"
           ],
           "enumDescriptions": [
             "An editor group beside the code.",
             "The bottom panel, beside the terminal.",
-            "The secondary sidebar."
+            "The secondary sidebar.",
+            "A floating window, compact and always on top. A click in it moves the focus out of the main window."
           ],
           "default": "editorSplit",
-          "markdownDescription": "Where the video opens: an editor group beside the code, the bottom panel or the secondary sidebar. **FollowAlong: Move video to…** moves an open video to another spot, keeping its time, speed and zoom. A changed setting applies the next time the video opens."
+          "markdownDescription": "Where the video opens: an editor group beside the code, the bottom panel, the secondary sidebar or a floating always-on-top window. **FollowAlong: Move video to…** moves an open video to another spot, keeping its time, speed and zoom. A changed setting applies the next time the video opens."
         }
       }
     }
