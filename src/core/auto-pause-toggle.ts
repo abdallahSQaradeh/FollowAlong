@@ -1,0 +1,67 @@
+/**
+ * Toggle Auto-pause (spec #12, story 105; ADR 0098): switches `followalong.autoPause` between
+ * `off` and the last mode that was on. It writes only that setting; the quiet period is
+ * `followalong.autoPauseResumeAfter` (ADR 0089), and the Loaded Lesson reacts to the change of the
+ * mode as it does to the learner's own edit of the setting.
+ */
+import {
+  isAutoPauseOnMode,
+  readAutoPauseMode,
+  type AutoPauseMode,
+  type AutoPauseOnMode,
+} from './auto-pause.js';
+import { messageOf, type Logger } from './logger.js';
+import type { Config, Disposable, Storage } from './ports.js';
+
+/** The mode switched on when none was ever on. */
+const defaultMode: AutoPauseOnMode = 'pause';
+
+/** Where the last mode that was on is kept, in the global storage, so it outlives a restart. */
+const lastModeKey = 'lastAutoPauseMode';
+
+function lastMode(storage: Pick<Storage, 'global'>): AutoPauseOnMode {
+  const value = storage.global.get(lastModeKey);
+  return isAutoPauseOnMode(value) ? value : defaultMode;
+}
+
+/**
+ * Switches auto-pause off, or back to the last mode that was on (`pause` if none), and returns the
+ * mode it set. The mode that was on is already remembered: {@link rememberAutoPauseMode} keeps it.
+ */
+export async function toggleAutoPause(
+  config: Pick<Config, 'get' | 'update'>,
+  storage: Pick<Storage, 'global'>,
+): Promise<AutoPauseMode> {
+  const next = readAutoPauseMode(config) === 'off' ? lastMode(storage) : 'off';
+  await config.update('autoPause', next);
+  return next;
+}
+
+/**
+ * Keeps the last mode that was on, whoever turned it on: the toggle, or the learner in the
+ * settings. Reads the setting now, so a window that opens with a mode on knows it.
+ */
+export function rememberAutoPauseMode(
+  config: Pick<Config, 'get' | 'onDidChange'>,
+  storage: Pick<Storage, 'global'>,
+  logger: Logger,
+): Disposable {
+  const remember = (): void => {
+    const mode = readAutoPauseMode(config);
+    if (mode === 'off' || storage.global.get(lastModeKey) === mode) {
+      return;
+    }
+    storage.global.set(lastModeKey, mode).catch((error: unknown) => {
+      logger.log({
+        level: 'warn',
+        message: `Not remembering the auto-pause mode: ${messageOf(error)}`,
+      });
+    });
+  };
+  remember();
+  return config.onDidChange((affects) => {
+    if (affects('autoPause')) {
+      remember();
+    }
+  });
+}

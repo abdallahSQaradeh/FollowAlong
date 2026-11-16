@@ -6,6 +6,7 @@ import { basename } from 'node:path';
 
 import { messageOf } from './logger.js';
 import { createAudioCache } from './audio-cache.js';
+import { rememberAutoPauseMode, toggleAutoPause } from './auto-pause-toggle.js';
 import { isTyping, type DocumentEdit } from './auto-pause.js';
 import { findSection, lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { FileSystemError, type Ports } from './ports.js';
@@ -127,6 +128,11 @@ export interface FollowAlong {
   /** Collapses the video where it is, or brings it back in the same spot (ADR 0092). */
   toggleVideo(): Promise<void>;
   /**
+   * `Ctrl+'` `A` and `FollowAlong: Toggle Auto-pause`: switches `followalong.autoPause` off, or
+   * back to the last mode that was on (`pause` if none), and writes nothing else (ADR 0098).
+   */
+  toggleAutoPause(): Promise<void>;
+  /**
    * `FollowAlong: Unhide a Course…`: lists the Courses hidden from the Course picker and shows the
    * one the learner picks in it again (ADR 0072).
    */
@@ -200,6 +206,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       audioCache.prune();
     }
   });
+
+  // The last auto-pause mode that was on, so the toggle can bring it back (ADR 0098).
+  const modeWatch = rememberAutoPauseMode(config, storage, logger);
 
   /** The audio sidecars of the Course in `folder` replace the open Course's, which stop. */
   function openSoundOf(folder: string): void {
@@ -1059,6 +1068,17 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         await loaded.move(target);
       }
     },
+    async toggleAutoPause() {
+      const mode = await toggleAutoPause(config, storage);
+      if (loaded.spot() === undefined) {
+        // No status bar marker to show it: say what the key did.
+        const text =
+          mode === 'off'
+            ? 'FollowAlong: auto-pause is off.'
+            : `FollowAlong: auto-pause is on (${mode}).`;
+        ui.showMessage({ severity: 'info', text });
+      }
+    },
     async toggleVideo() {
       if (loaded.spot() === undefined) {
         ui.showMessage({ severity: 'info', text: noLessonText });
@@ -1077,6 +1097,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await loaded.leave();
       loaded.dispose();
       limitWatch.dispose();
+      modeWatch.dispose();
       sidecarSound?.stop();
     },
     nextLesson() {
@@ -1088,6 +1109,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     dispose() {
       loaded.dispose();
       limitWatch.dispose();
+      modeWatch.dispose();
       sidecarSound?.stop();
     },
   };

@@ -34,6 +34,10 @@ The list is grouped by Section, and typing a Section name narrows it to that Sec
 Press `Ctrl+'` then `V` (or run **FollowAlong: Toggle video**) to collapse the video and get space for
 code. Press it again to bring the video back in the same spot, at the same place.
 
+Press `Ctrl+'` then `A` (or run **FollowAlong: Toggle Auto-pause**) to switch auto-pause off, or back
+on in the mode you used last (`pause` the first time). Press `Ctrl+'` then `R` (or run
+**FollowAlong: Attach Resource**) to attach a file to the Lesson that plays.
+
 ## Develop
 
 Read `AGENTS.md` and `CODING_STANDARDS.md` first. `npm run build` bundles the extension into
