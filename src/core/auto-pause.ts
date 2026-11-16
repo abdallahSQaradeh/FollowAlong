@@ -16,7 +16,7 @@ export function readAutoPauseMode(config: Pick<Config, 'get'>): AutoPauseMode {
 }
 
 /** The quiet period setting of `pauseAndResume`, in seconds (spec #12, story 99). */
-export const resumeAfterSetting = 'autoPause.resumeAfter';
+export const resumeAfterSetting = 'autoPauseResumeAfter';
 const defaultResumeAfterSeconds = 2;
 
 /** The quiet period in ms: the setting, or 2 s when it is unset or not a number above 0. */

@@ -912,8 +912,8 @@ export function createLoadedLesson(
       if (playerReady && affects('resumeRewind')) {
         sendResumeRewind();
       }
-      // VS Code also reports a change of `autoPause.resumeAfter` as one of `autoPause`: the mode
-      // is read again and, being the same, changes nothing. The quiet period is read when it starts.
+      // Each auto-pause setting on its own: the quiet period (`autoPauseResumeAfter`) is read when
+      // it starts, so a change of it counts from the next edit and leaves the mode as it is.
       if (affects('autoPause')) {
         feedAutoPause({ type: 'modeChanged', mode: readAutoPauseMode(config) });
         refreshStatusBar();

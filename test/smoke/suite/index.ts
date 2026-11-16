@@ -519,13 +519,14 @@ async function typingPausesTheLesson(hooks: TestHooks, code: vscode.TextDocument
 }
 
 /** The quiet period setting of `pauseAndResume`, under `followalong.`. */
-const resumeAfterSetting = 'autoPause.resumeAfter';
+const resumeAfterSetting = 'autoPauseResumeAfter';
 
 /**
  * The two auto-pause settings live side by side in VS Code's configuration (routed note on #60):
  * each registers with its default, and each reads back what the learner set, the other one set
- * too. VS Code builds its settings into a tree of objects, where a setting whose name continues
- * another one's (`a.b` under a string `a`) can be dropped with only a log line.
+ * too. VS Code builds its settings into a tree of objects and drops a setting whose name continues
+ * another one's (`autoPause.resumeAfter` under the string `autoPause`) with only a log line, so the
+ * quiet period has a flat name (ADR 0089).
  */
 async function theAutoPauseSettingsReadBack(): Promise<string> {
   const settings = () => vscode.workspace.getConfiguration('followalong');

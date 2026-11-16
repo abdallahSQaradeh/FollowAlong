@@ -316,7 +316,7 @@ export class FakeConfig implements Config {
 
   /**
    * The learner changed a `followalong.*` setting. Like VS Code's `affectsConfiguration`, a change
-   * also affects every setting whose name it continues: `autoPause.resumeAfter` affects `autoPause`.
+   * also affects every setting whose name it continues: `a.b` affects `a`.
    */
   set(name: string, value: unknown): void {
     this.values.set(name, value);

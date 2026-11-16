@@ -10,7 +10,7 @@ import { createHarness, type Harness, type Tree } from './harness.js';
 const lessonId = '01 Intro.webm';
 
 /** The quiet period setting of `pauseAndResume`, in seconds. */
-const resumeAfter = 'autoPause.resumeAfter';
+const resumeAfter = 'autoPauseResumeAfter';
 
 /** A keystroke in the active editor's file: the edit auto-pause is for. */
 const typing: DocumentEdit = {
