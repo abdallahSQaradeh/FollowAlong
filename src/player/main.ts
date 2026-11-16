@@ -175,6 +175,8 @@ function fail(lesson: Lesson, message: string, media: HTMLVideoElement): void {
   lesson.stop.abort();
   post({ type: 'error', ...lesson.about, message });
   media.pause();
+  // Its sound must not play on alone, now or when it arrives (`soundSettled` and `play` check).
+  dropSound();
 }
 
 /** Stops the sidecar of the Lesson before and empties it, so it never plays over the next one. */
@@ -283,7 +285,7 @@ function alignSound(media: HTMLVideoElement): void {
  */
 function soundSettled(audioUri: string | undefined, media: HTMLVideoElement): void {
   const lesson = current;
-  if (lesson?.sound !== 'awaited') {
+  if (lesson?.sound !== 'awaited' || lesson.failed) {
     return;
   }
   if (audioUri === undefined) {
@@ -308,6 +310,10 @@ function startSound(media: HTMLVideoElement): Promise<void> {
 /** Starts the video, and its sidecar first when it has one. */
 function play(media: HTMLVideoElement): void {
   const lesson = current;
+  if (lesson?.failed === true) {
+    // The player posts nothing more for a failed Lesson (ADR 0003), and plays nothing of it.
+    return;
+  }
   if (lesson?.sound === 'awaited') {
     // Plays once the sound arrives (spec #12, story 70).
     lesson.playWhenSound = true;
@@ -345,6 +351,10 @@ function playVideo(media: HTMLVideoElement): void {
   playRequested = media.paused;
   media.play().catch((error: unknown) => {
     playRequested = false;
+    if (lesson === current) {
+      // The picture did not start: neither does its sound, which started first.
+      sidecar.pause();
+    }
     // Autoplay refused: the Lesson stays paused, and the extension is told. Other rejections
     // come from a new load (AbortError) or a failed Lesson, which reports its own `error`.
     if (lesson !== undefined && lesson === current && !lesson.failed && isRefusal(error)) {

@@ -353,3 +353,38 @@ test('hides the native control bar while the sound is awaited, also after a zoom
   await player.post(soundReady);
   await expect.poll(async () => (await player.video()).controls).toBe(true);
 });
+
+test('never plays the sound of a Lesson whose video failed', async ({ page }) => {
+  const player = await openPlayer(page, { aac: false });
+  // An MP4 the page cannot play (another codec, a broken file), while its sound was prepared.
+  await player.post(loadMp4({ videoUri: media.notAVideo }));
+  await player.waitForEvent({ type: 'error', lessonId });
+
+  await player.postAll([soundReady, { type: 'play' }]);
+  await aMoment();
+  await player.post({ type: 'play' });
+  await aMoment();
+
+  expect((await player.sound()).paused).toBe(true);
+  expect((await player.events()).map((event) => event.type)).not.toContain('played');
+});
+
+test('moves the sound back to the picture when it drifts more than 0.1 s away', async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
+  await player.postAll([loadMp4(), soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+  await expectSoundInStep(player);
+
+  // The sound jumps a second ahead of the picture, as a stalled or late decoder would leave it.
+  await page.evaluate(() => {
+    const audio = document.querySelector('audio');
+    const video = document.querySelector('video');
+    if (audio !== null && video !== null) {
+      audio.currentTime = video.currentTime + 1;
+    }
+  });
+
+  await expectSoundInStep(player);
+});

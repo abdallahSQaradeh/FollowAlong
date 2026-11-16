@@ -316,4 +316,32 @@ describe('sound for MP4 Lessons', () => {
 
     expect(h.converter.requests[0]?.request.signal.aborted).toBe(true);
   });
+
+  it('sends nothing for the sound of a Lesson the learner left, even when it is prepared after all', async () => {
+    const h = await createHarness();
+    const course = await h.folder('course', {
+      '01 Intro.mp4': 'first mp4',
+      '02 Setup.mp4': 'second mp4',
+    });
+    await h.core.openCourse(course);
+    h.player.ready(false);
+    await h.settle();
+    const left = h.converter.requests[0];
+
+    h.core.nextLesson();
+    await h.settle();
+    // ffmpeg had finished just as the learner moved on: the old conversion succeeds anyway.
+    await left?.succeed();
+    await h.settle();
+
+    expect(soundCommands(h)).toEqual([]);
+    await h.converter.requests[1]?.succeed();
+    await h.settle();
+    expect(soundCommands(h)).toEqual([
+      {
+        type: 'soundReady',
+        audioUri: h.player.resourceUri(h.converter.requests[1]?.request.output ?? ''),
+      },
+    ]);
+  });
 });
