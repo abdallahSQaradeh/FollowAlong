@@ -132,13 +132,20 @@ export interface UserMessage {
   readonly text: string;
 }
 
-/** What a Resource opens as. Later tickets add targets (a URL, a preview, a PDF) beside `file`. */
-export interface FileResourceTarget {
-  readonly kind: 'file';
+/**
+ * What a Resource opens as. The core picks the kind from the file's type (`resourceTarget`); the
+ * adapter turns each kind into a tab beside the code. A URL target comes with its own ticket.
+ */
+export interface ResourceTarget {
+  /**
+   * - `file`: text and code, and any type FollowAlong has no better opener for: the editor;
+   * - `image`: VS Code's image preview;
+   * - `markdown`, `html`: a rendered preview;
+   * - `pdf`: the FollowAlong PDF viewer.
+   */
+  readonly kind: 'file' | 'image' | 'markdown' | 'html' | 'pdf';
   readonly path: string;
 }
-
-export type ResourceTarget = FileResourceTarget;
 
 /** The two answers to a {@link Question}: the button that agrees, and the one that declines. */
 export type Answer = 'accept' | 'decline';

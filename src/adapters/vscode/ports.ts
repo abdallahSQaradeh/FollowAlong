@@ -7,6 +7,7 @@ import type { Logger } from '../../core/logger.js';
 import type { Config, KeyValueStore, Storage, TerminalSettings, UiSink } from '../../core/ports.js';
 import type { LessonTreeView } from './lesson-tree-view.js';
 import type { ResourcePlacement } from './resource-placement.js';
+import { openInEditor, type ResourceViewers } from './resource-viewers.js';
 import type { StatusBarView } from './status-bar-view.js';
 import { showQuickPick } from './quick-pick.js';
 import type { FocusReturn } from './focus-return.js';
@@ -42,6 +43,7 @@ export function createUiSink(
   tree: LessonTreeView,
   statusBar: StatusBarView,
   placement: ResourcePlacement,
+  viewers: ResourceViewers,
   focus: FocusReturn,
   logger: Logger,
 ): UiSink {
@@ -71,13 +73,23 @@ export function createUiSink(
       tree.select(lessonId);
     },
     async openResource(target) {
-      // VS Code picks the editor for the file (text and code in the text editor). The group is
-      // never the player's, so the video stays in sight, and focus stays where it was.
-      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(target.path), {
-        viewColumn: placement.column(),
-        preview: false,
-        preserveFocus: true,
-      });
+      // The group is never the player's, so the video stays in sight, and focus stays where it was.
+      const column = placement.column();
+      switch (target.kind) {
+        case 'markdown':
+        case 'html':
+          await viewers.openPreview(target.kind, target.path, column);
+          break;
+        case 'pdf':
+          await viewers.openPdf(target.path, column);
+          break;
+        case 'image':
+        case 'file':
+          // VS Code picks the editor for the file: text and code in the text editor, an image in
+          // its image preview.
+          await openInEditor(target.path, column);
+          break;
+      }
       placement.opened(target.path);
     },
     async pickFile() {
