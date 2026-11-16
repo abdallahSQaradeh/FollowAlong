@@ -1,7 +1,9 @@
-import { join } from 'node:path';
+import { isAbsolute, join, parse, sep } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { createNodeFileSystem } from '../../src/adapters/node/file-system.js';
+import { buildFolderBrowser } from '../../src/core/folder-browser.js';
 import type { QuickPickModel } from '../../src/core/quick-pick.js';
 import { createHarness, type Harness } from './harness.js';
 
@@ -444,5 +446,58 @@ describe('the Folder browser while the Courses roots are scanned', () => {
     });
 
     expect(rows(h.ui.picker)).toEqual(['Back to Courses', 'Learning']);
+  });
+});
+
+describe('the folder browser model', () => {
+  it('goes up to the top of the browser from the root of a drive, which has no folder above it', () => {
+    const driveRoot = parse(process.cwd()).root;
+
+    const model = buildFolderBrowser({
+      kind: 'folder',
+      folder: driveRoot,
+      folders: [],
+      videos: [],
+    });
+
+    expect(model.entries[0]).toMatchObject({
+      label: 'Up',
+      intent: { type: 'browseTo', folder: undefined },
+    });
+  });
+
+  it('offers Open as Course only on a folder that was looked at and holds videos', () => {
+    const model = buildFolderBrowser({
+      kind: 'folder',
+      folder: join(sep, 'courses'),
+      folders: [
+        { path: join(sep, 'courses', 'a'), holdsVideos: true },
+        { path: join(sep, 'courses', 'b'), holdsVideos: false },
+        { path: join(sep, 'courses', 'c') },
+      ],
+      videos: [],
+    });
+
+    const buttons = model.entries.flatMap((entry) =>
+      entry.kind === 'item' ? [[entry.label, (entry.buttons ?? []).map((b) => b.label)]] : [],
+    );
+    expect(buttons).toEqual([
+      ['Up', []],
+      ['a', ['Open as Course']],
+      ['b', []],
+      ['c', []],
+    ]);
+  });
+});
+
+describe('the File system port’s starting folders', () => {
+  it('are existing, absolute folders: the drives that are there, or the home folder', async () => {
+    const folders = await createNodeFileSystem().startingFolders();
+
+    expect(folders.length).toBeGreaterThan(0);
+    for (const folder of folders) {
+      expect(isAbsolute(folder)).toBe(true);
+      expect(await createNodeFileSystem().readDirectory(folder)).toBeDefined();
+    }
   });
 });
