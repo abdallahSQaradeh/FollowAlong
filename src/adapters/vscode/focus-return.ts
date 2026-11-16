@@ -1,6 +1,6 @@
 /**
  * Remembers whether the learner last used a text editor or a terminal, and hands keyboard focus
- * back to it when the core asks (ADR 0007). The stable VS Code API cannot read which part has
+ * back to it when the core asks (ADR 0009). The stable VS Code API cannot read which part has
  * focus, so this follows the signals it does give: an editor becoming active, a selection change
  * or an edit in an editor; a terminal becoming active, a command starting in it, or the first
  * input to it.

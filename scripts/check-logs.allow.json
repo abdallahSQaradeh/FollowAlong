@@ -18,7 +18,7 @@
     },
     {
       "pattern": "^Warning: 'remote-debugging-port' is not in the list of known options, but still passed to Electron/Chromium\\.$",
-      "reason": "scripts/run-smoke.mjs passes --remote-debugging-port on purpose, so the smoke suite can click in the player page with real input (ADR 0007). VS Code's command line knows only its own options and says so, then passes the switch to Chromium as needed. Seen in CI on Windows.",
+      "reason": "scripts/run-smoke.mjs passes --remote-debugging-port on purpose, so the smoke suite can click in the player page with real input (ADR 0009). VS Code's command line knows only its own options and says so, then passes the switch to Chromium as needed. Seen in CI on Windows.",
       "logs": ["test-smoke"]
     }
   ]

@@ -2,89 +2,95 @@
  * The FollowAlong core: the headless part of the extension, reached only through its ports
  * (ADR 0002). It decides which Lesson plays and drives the player through the message protocol.
  */
-import { basename, extname, join } from 'node:path';
+import { basename } from 'node:path';
 
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
-import { FileSystemError, type Disposable, type FileSystem, type Ports } from './ports.js';
+import { buildCourse, lessonsInOrder, type Course, type Lesson } from './course-model.js';
+import { FileSystemError, type Disposable, type Ports } from './ports.js';
+import { buildLessonTree } from './lesson-tree.js';
+import { readFolderListing } from './folder-listing.js';
 
 export interface FollowAlong {
-  /** Opens a Course folder and plays its first Lesson beside the code. */
+  /** Opens a Course folder, shows its Lessons in the tree and plays its first Lesson beside the code. */
   openCourse(folder: string): Promise<void>;
+  /** Plays a Lesson of the open Course, by its id, beside the code. */
+  playLesson(lessonId: string): void;
+  /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
+  playPause(): void;
   dispose(): void;
 }
 
-interface Lesson {
-  /** Path relative to the Course, with `/` separators. */
-  readonly id: string;
-  readonly path: string;
-  readonly title: string;
+/** What the player reported about the current Lesson since its last `load`. */
+interface Playback {
+  /** Whether the Lesson is playing. */
+  readonly playing: boolean;
+  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
+  readonly awaitingAutoplay: boolean;
+  /** Set when the play/pause command sent `play`, until the player answers it. */
+  readonly awaitingPlayAnswer: boolean;
+  /** Whether the learner was told, in this run of refusals, to press play in the player. */
+  readonly toldToPressPlay: boolean;
 }
 
-const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+function freshPlayback(autoplay: boolean): Playback {
+  return {
+    playing: false,
+    awaitingAutoplay: autoplay,
+    awaitingPlayAnswer: false,
+    toldToPressPlay: false,
+  };
+}
 
 /**
- * The first `.webm` in natural order, files before subfolders, at any depth. FollowAlong's own
- * folder and other hidden folders are left out. The Lesson tree ticket replaces this with the
- * full Course model.
+ * What a `paused` event does to the record, and whether the learner is to be told to press play.
+ * - A refused autoplay is told on its own: the `load` that asked for it started the run.
+ * - A refused `play` from the command is told once per run of refusals, so repeated keypresses
+ *   do not stack messages. A `played` or `ended` (see `onPlayerEvent`) or a `load` ends the run.
  */
-async function findFirstLesson(
-  fileSystem: FileSystem,
-  folder: string,
-  prefix = '',
-): Promise<Lesson | undefined> {
-  const entries = [...(await fileSystem.readDirectory(folder))].sort((a, b) =>
-    naturalOrder.compare(a.name, b.name),
-  );
-  const video = entries.find(
-    (entry) => entry.kind === 'file' && extname(entry.name).toLowerCase() === '.webm',
-  );
-  if (video !== undefined) {
-    return {
-      id: `${prefix}${video.name}`,
-      path: join(folder, video.name),
-      title: basename(video.name, extname(video.name)),
-    };
-  }
-  for (const entry of entries) {
-    if (entry.kind !== 'directory' || entry.name.startsWith('.')) {
-      continue;
-    }
-    const found = await findFirstLesson(
-      fileSystem,
-      join(folder, entry.name),
-      `${prefix}${entry.name}/`,
-    );
-    if (found !== undefined) {
-      return found;
-    }
-  }
-  return undefined;
+function afterPause(
+  playback: Playback,
+  byUser: boolean,
+): { readonly playback: Playback; readonly tellToPressPlay: boolean } {
+  const refused = !byUser;
+  const autoplayRefused = playback.awaitingAutoplay && refused;
+  const commandRefused = playback.awaitingPlayAnswer && refused && !playback.toldToPressPlay;
+  return {
+    tellToPressPlay: autoplayRefused || commandRefused,
+    playback: {
+      ...freshPlayback(false),
+      toldToPressPlay: playback.toldToPressPlay || commandRefused,
+    },
+  };
+}
+
+function pressPlayText(lesson: Lesson): string {
+  return `VS Code did not let “${lesson.title}” start by itself. Press play in the player to start it.`;
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, fileSystem, storage, ui, logger } = ports;
+  const { player, storage, ui, logger } = ports;
 
   /** The Lesson the player should show. */
   let current: Lesson | undefined;
   /** Whether the open player page has posted `ready` and takes commands. */
   let playerReady = false;
-  /** Set by a `load` with autoplay, until the Lesson plays or pauses. */
-  let awaitingAutoplay = false;
+  /** What the player last said about the current Lesson; starts again with every `load`. */
+  let playback = freshPlayback(false);
 
   function loadCurrent(): void {
     if (current === undefined) {
       return;
     }
-    const command: PlayerCommand = {
+    const command: Extract<PlayerCommand, { type: 'load' }> = {
       type: 'load',
       lessonId: current.id,
       videoUri: player.resourceUri(current.path),
-      container: 'webm',
+      container: current.container,
       startAt: 0,
       autoplay: true,
     };
     player.send(command);
-    awaitingAutoplay = command.autoplay;
+    playback = freshPlayback(command.autoplay);
   }
 
   function onPlayerEvent(event: PlayerEvent): void {
@@ -110,22 +116,21 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         }
         break;
       case 'paused':
-        // A pause before the Lesson ever played, not by the learner: VS Code refused autoplay.
-        // Without a word the learner would face a stopped video and not know why.
+        // A pause the learner did not ask for after a `load` with autoplay, or after the command's
+        // `play`: VS Code refused it. Without a word the learner would face a stopped video.
         if (event.lessonId === current?.id) {
-          if (awaitingAutoplay && !event.byUser) {
-            ui.showMessage({
-              severity: 'info',
-              text: `VS Code did not let “${current.title}” start by itself. Press play in the player to start it.`,
-            });
+          const after = afterPause(playback, event.byUser);
+          playback = after.playback;
+          if (after.tellToPressPlay) {
+            ui.showMessage({ severity: 'info', text: pressPlayText(current) });
           }
-          awaitingAutoplay = false;
         }
         break;
       case 'played':
       case 'ended':
         if (event.lessonId === current?.id) {
-          awaitingAutoplay = false;
+          // Also ends a run of refusals: the player did what it was asked.
+          playback = { ...freshPlayback(false), playing: event.type === 'played' };
         }
         break;
       case 'userInteracted':
@@ -138,36 +143,79 @@ export function createFollowAlong(ports: Ports): FollowAlong {
 
   const subscriptions: Disposable[] = [player.onEvent(onPlayerEvent)];
 
+  /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
+  let openedCourse: Course | undefined;
+
+  /** Shows `lesson` in the player beside the code, and loads it as soon as the player can. */
+  function play(course: Course, lesson: Lesson): void {
+    current = lesson;
+    logger.log({ level: 'info', message: `Playing ${lesson.id} of ${course.folder}` });
+    const shown = player.show({
+      title: lesson.title,
+      resourceRoots: [course.folder, storage.folder],
+    });
+    if (shown === 'created') {
+      playerReady = false;
+    } else if (playerReady) {
+      loadCurrent();
+    }
+  }
+
   return {
-    async openCourse(course) {
-      let lesson: Lesson | undefined;
+    async openCourse(folder) {
+      let course: Course;
       try {
-        lesson = await findFirstLesson(fileSystem, course);
+        course = buildCourse(await readFolderListing(ports, folder, basename(folder)));
       } catch (error) {
         if (FileSystemError.is(error, 'notFound')) {
           ui.showMessage({
             severity: 'error',
-            text: `FollowAlong cannot open “${basename(course)}”: the folder is missing.`,
+            text: `FollowAlong cannot open “${basename(folder)}”: the folder is missing.`,
           });
           return;
         }
         throw error;
       }
-      if (lesson === undefined) {
-        ui.showMessage({
-          severity: 'warning',
-          text: `FollowAlong found no WebM Lesson in “${basename(course)}”.`,
+      openedCourse = course;
+      const first = lessonsInOrder(course)[0];
+      if (first === undefined) {
+        const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
+        ui.showLessonTree({ message: text, nodes: [] });
+        ui.showMessage({ severity: 'warning', text });
+        return;
+      }
+      ui.showLessonTree(buildLessonTree(course));
+      logger.log({ level: 'info', message: `Opened Course ${folder}` });
+      play(course, first);
+    },
+    playLesson(lessonId) {
+      const course = openedCourse;
+      const lesson =
+        course && lessonsInOrder(course).find((candidate) => candidate.id === lessonId);
+      if (course === undefined || lesson === undefined) {
+        logger.log({
+          level: 'warn',
+          message: `Cannot play ${lessonId}: it is not a Lesson of the open Course.`,
         });
         return;
       }
-      current = lesson;
-      logger.log({ level: 'info', message: `Opened Course ${course}; playing ${lesson.id}` });
-      const shown = player.show({ title: lesson.title, resourceRoots: [course, storage.folder] });
-      if (shown === 'created') {
-        playerReady = false;
-      } else if (playerReady) {
-        loadCurrent();
+      play(course, lesson);
+    },
+    playPause() {
+      if (current === undefined) {
+        ui.showMessage({
+          severity: 'info',
+          text: 'FollowAlong: no Lesson is open. Open a Course first.',
+        });
+        return;
       }
+      if (!playerReady) {
+        // The page is still starting: it takes no command yet, and it plays the Lesson on `ready`.
+        logger.log({ level: 'debug', message: 'Play/pause ignored: the player is not ready yet.' });
+        return;
+      }
+      playback = { ...playback, awaitingPlayAnswer: !playback.playing };
+      player.send({ type: playback.playing ? 'pause' : 'play' });
     },
     dispose() {
       for (const subscription of subscriptions) {

@@ -9,6 +9,7 @@ import type { PlayerEvent } from '../../protocol/player-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
+import { LessonTreeView, playLessonCommand } from './lesson-tree-view.js';
 import { FocusReturn } from './focus-return.js';
 import { PlayerPanel } from './player-panel.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
@@ -16,6 +17,10 @@ import { createConfig, createOutputLogger, createStorage, createUiSink } from '.
 export const commands = {
   /** Temporary: opens a folder as the Course. The Course picker replaces the folder dialog. */
   openCourse: 'followalong.openCourse',
+  /** Run by a click on a Lesson in the tree, with the Lesson's id. */
+  playLesson: playLessonCommand,
+  /** A playback controller command: command in, player message out. Bound to keys in package.json. */
+  playPause: 'followalong.playPause',
 } as const;
 
 /**
@@ -31,6 +36,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
+  const lessonTree = new LessonTreeView();
   const focus = new FocusReturn();
   const core = createFollowAlong({
     player,
@@ -39,12 +45,12 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     clock: createSystemClock(),
     converter: createUnavailableConverter(),
     config: createConfig(),
-    ui: createUiSink(focus, logger),
+    ui: createUiSink(lessonTree, focus, logger),
     logger,
   });
 
   /** Runs a command, so an unexpected failure is logged and shown instead of lost. */
-  const register = (id: string, run: (...args: unknown[]) => Promise<void>) =>
+  const register = (id: string, run: (...args: unknown[]) => void | Promise<void>) =>
     vscode.commands.registerCommand(id, async (...args: unknown[]) => {
       try {
         await run(...args);
@@ -67,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   context.subscriptions.push(
     channel,
     player,
+    lessonTree,
     focus,
     {
       dispose: () => {
@@ -89,6 +96,15 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       if (target !== undefined) {
         await core.openCourse(target.fsPath);
       }
+    }),
+    register(commands.playLesson, (lessonId) => {
+      if (typeof lessonId === 'string') {
+        core.playLesson(lessonId);
+      }
+      return Promise.resolve();
+    }),
+    register(commands.playPause, () => {
+      core.playPause();
     }),
   );
   return testHooks;

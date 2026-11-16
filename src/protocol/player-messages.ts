@@ -5,8 +5,8 @@
  * because a message crosses a process boundary as plain JSON.
  */
 
-/** A Lesson's video container. MP4 joins with the sidecar sound tickets. */
-export type Container = 'webm';
+/** A Lesson's video container. */
+export type Container = 'mp4' | 'webm';
 
 /** Extension → player. */
 export type PlayerCommand =
@@ -39,7 +39,7 @@ export type PlayerEvent =
   | { readonly type: 'error'; readonly lessonId: string; readonly message: string }
   /**
    * The learner finished a click or a drag anywhere in the player page, so the extension hands
-   * keyboard focus back to the code (ADR 0007). Not about a Lesson: it carries no `lessonId`.
+   * keyboard focus back to the code (ADR 0009). Not about a Lesson: it carries no `lessonId`.
    */
   | { readonly type: 'userInteracted' };
 
@@ -68,7 +68,7 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
       if (
         isText(lessonId) &&
         isText(videoUri) &&
-        container === 'webm' &&
+        (container === 'mp4' || container === 'webm') &&
         isSeconds(startAt) &&
         typeof autoplay === 'boolean'
       ) {

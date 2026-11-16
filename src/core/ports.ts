@@ -4,6 +4,7 @@
  * tests pass fakes for everything except the file system, which is real.
  */
 import type { PlayerCommand, PlayerEvent } from '../protocol/player-messages.js';
+import type { LessonTreeModel } from './lesson-tree.js';
 import type { Logger } from './logger.js';
 
 export interface Disposable {
@@ -129,9 +130,11 @@ export interface UserMessage {
 
 export interface UiSink {
   showMessage(message: UserMessage): void;
+  /** Replaces the Lesson tree in the activity bar. */
+  showLessonTree(model: LessonTreeModel): void;
   /**
    * Hands keyboard focus back to the editor or terminal the learner used last, so a click in
-   * the player is not a Focus change (ADR 0007).
+   * the player is not a Focus change (ADR 0009).
    */
   returnFocus(): void;
 }

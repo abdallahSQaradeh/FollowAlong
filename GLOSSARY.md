@@ -20,6 +20,10 @@ _Avoid_: Episode, clip, lecture
 A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
 
+**Wrapper folder**:
+A folder inside a Course that holds no Lessons of its own and only one other folder with Lessons. It is not shown as a Section: its content is shown in its place.
+_Avoid_: Container folder, parent folder
+
 **Progress**:
 How far the learner has got through a Course: each Lesson is not started, in progress (with the position they left it at), or done.
 _Avoid_: History, completion
