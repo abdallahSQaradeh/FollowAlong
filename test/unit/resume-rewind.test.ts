@@ -25,7 +25,11 @@ describe('resume with rewind', () => {
     const h = await createHarness();
     await openPausedLesson(h);
 
-    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([{ type: 'play' }]);
+    expect(
+      sentBy(h, () => {
+        h.core.playPause();
+      }),
+    ).toEqual([{ type: 'play' }]);
   });
 
   it('seeks back by the setting, then plays, on a manual resume', async () => {
@@ -33,10 +37,11 @@ describe('resume with rewind', () => {
     await openPausedLesson(h);
     h.config.set('resumeRewind', 3);
 
-    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([
-      { type: 'seekBy', seconds: -3 },
-      { type: 'play' },
-    ]);
+    expect(
+      sentBy(h, () => {
+        h.core.playPause();
+      }),
+    ).toEqual([{ type: 'seekBy', seconds: -3 }, { type: 'play' }]);
   });
 
   it('reads the setting on every press', async () => {
@@ -45,10 +50,11 @@ describe('resume with rewind', () => {
     h.config.set('resumeRewind', 3);
     h.config.set('resumeRewind', 7.5);
 
-    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([
-      { type: 'seekBy', seconds: -7.5 },
-      { type: 'play' },
-    ]);
+    expect(
+      sentBy(h, () => {
+        h.core.playPause();
+      }),
+    ).toEqual([{ type: 'seekBy', seconds: -7.5 }, { type: 'play' }]);
   });
 
   it.each([0, -2, Number.NaN, Number.POSITIVE_INFINITY, '4', null])(
@@ -58,7 +64,11 @@ describe('resume with rewind', () => {
       await openPausedLesson(h);
       h.config.set('resumeRewind', value);
 
-      expect(sentBy(h, () => { h.core.playPause(); })).toEqual([{ type: 'play' }]);
+      expect(
+        sentBy(h, () => {
+          h.core.playPause();
+        }),
+      ).toEqual([{ type: 'play' }]);
     },
   );
 
@@ -68,7 +78,11 @@ describe('resume with rewind', () => {
     h.config.set('resumeRewind', 3);
     h.player.emit({ type: 'played', lessonId });
 
-    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([{ type: 'pause' }]);
+    expect(
+      sentBy(h, () => {
+        h.core.playPause();
+      }),
+    ).toEqual([{ type: 'pause' }]);
   });
 
   it('does not rewind a Lesson that ended: play starts it again', async () => {
@@ -78,7 +92,11 @@ describe('resume with rewind', () => {
     h.player.emit({ type: 'played', lessonId });
     h.player.emit({ type: 'ended', lessonId });
 
-    expect(sentBy(h, () => { h.core.playPause(); })).toEqual([{ type: 'play' }]);
+    expect(
+      sentBy(h, () => {
+        h.core.playPause();
+      }),
+    ).toEqual([{ type: 'play' }]);
   });
 
   describe('the automatic resume path', () => {
@@ -87,7 +105,11 @@ describe('resume with rewind', () => {
       await openPausedLesson(h);
       h.config.set('resumeRewind', 3);
 
-      expect(sentBy(h, () => { h.core.resumeWithoutRewind(); })).toEqual([{ type: 'play' }]);
+      expect(
+        sentBy(h, () => {
+          h.core.resumeWithoutRewind();
+        }),
+      ).toEqual([{ type: 'play' }]);
     });
 
     it('does nothing while the Lesson is playing', async () => {
@@ -95,7 +117,11 @@ describe('resume with rewind', () => {
       await openPausedLesson(h);
       h.player.emit({ type: 'played', lessonId });
 
-      expect(sentBy(h, () => { h.core.resumeWithoutRewind(); })).toEqual([]);
+      expect(
+        sentBy(h, () => {
+          h.core.resumeWithoutRewind();
+        }),
+      ).toEqual([]);
     });
   });
 });
