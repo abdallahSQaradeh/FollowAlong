@@ -42,13 +42,14 @@ async function openFirstLesson(): Promise<{ h: Harness; course: string }> {
   return { h, course };
 }
 
-/** VS Code starts again within the minute and the learner opens the Course. */
-async function reopen(h: Harness, course: string): Promise<void> {
+/** VS Code starts again within the minute and the learner opens the Course; returns the `load` the player gets. */
+async function reopen(h: Harness, course: string) {
   await h.settle();
   h.restart();
   h.clock.advance(60_000);
   await h.core.openCourse(course);
   h.player.ready();
+  return h.player.sent.at(-1);
 }
 
 describe('Mark done / not done with the chord key', () => {
@@ -70,13 +71,25 @@ describe('Mark done / not done with the chord key', () => {
     expect(glyphs(h)).toEqual({ [intro]: '○', [setup]: '○', [closures]: '○' });
   });
 
-  it('marks a Lesson that is in progress done, and not done takes the progress too', async () => {
-    const { h } = await openFirstLesson();
+  it('starts a Lesson that was marked done and then not done at 0:00', async () => {
+    const { h, course } = await openFirstLesson();
+    playUntil(h, intro, 300);
+
+    await h.core.toggleLessonDone();
+    await h.core.toggleLessonDone();
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: intro, startAt: 0 });
+  });
+
+  it('marks a Lesson that is in progress done, and it keeps its place', async () => {
+    const { h, course } = await openFirstLesson();
     playUntil(h, intro, 300);
     expect(glyphs(h)[intro]).toBe('◐');
 
     await h.core.toggleLessonDone();
     expect(glyphs(h)[intro]).toBe('✓');
+
+    expect(await reopen(h, course)).toMatchObject({ lessonId: intro, startAt: 295 });
   });
 
   it('clears the sticky done state: playing the start again does not bring it back', async () => {

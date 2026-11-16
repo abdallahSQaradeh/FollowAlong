@@ -22,14 +22,15 @@ leaves open and does not build a second path.
   position, as _Mark all done_ does.
 - **Every change goes through `markLessonsDone` / `resetLessons` with one id**, so the tree is
   refreshed and the change saved by `showAndSave`; the command resolves once it is saved.
-  `resetLessons` also restarts the 10 s of play of the Loaded Lesson when it is the one reset.
+  `resetLessons` also restarts the 10 s of play of the Loaded Lesson when it is the one reset
+  (ADR 0061).
 
 ## Considered options
 
 - **"Mark not done" keeps the position.** Rejected: ADR 0061 says "not done" is a reset unless the
   ticket decides otherwise, and #29 does not. A done mark with no position is simply a Lesson
   that was never played.
-- **One toggle item in the tree menu.** Rejected: the tree has no per-item state in its context
-  value, and two explicit items say what they do without the learner reading the glyph first.
+- **One toggle item in the tree menu.** Rejected: a Lesson's tree item has one `contextValue` (`lesson`) whatever its
+  state, and two explicit items say what they do without the learner reading the glyph first.
 - **The toggle acts on the Lesson selected in the tree.** Rejected: the tree selection follows the
   Loaded Lesson (`selectedLesson`), and the chord is a playback-time key.

@@ -651,7 +651,12 @@ function progressMenusAreDeclared(packageJson: unknown): void {
       `${command} is not hidden from the Command Palette`,
     );
   }
-  // Story 78: a Lesson's context menu offers Mark done and Mark not done.
+  // Story 78: the toggle is a Command Palette command; a Lesson's context menu offers Mark done
+  // and Mark not done.
+  assert.ok(
+    !palette.some((entry) => entry.command === 'followalong.toggleLessonDone'),
+    'followalong.toggleLessonDone is hidden from the Command Palette',
+  );
   for (const command of ['followalong.markLessonDone', 'followalong.markLessonNotDone']) {
     const inTree = (contributes?.menus?.['view/item/context'] ?? [])
       .filter((entry) => entry.command === command)
