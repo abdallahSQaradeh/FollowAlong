@@ -98,6 +98,9 @@ export async function run(): Promise<void> {
     'followalong.previousLesson',
     'followalong.goToLesson',
     'followalong.attachToLoadedLesson',
+    'followalong.markSectionDone',
+    'followalong.resetSection',
+    'followalong.resetCourseProgress',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
   }
@@ -147,6 +150,7 @@ export async function run(): Promise<void> {
   );
 
   resourceMenusAreDeclared(extension.packageJSON);
+  progressMenusAreDeclared(extension.packageJSON);
   say(
     'the tree offers Detach on a Resource and Relink… on a missing one, and hides both from the Palette',
   );
@@ -619,6 +623,34 @@ function resourceMenusAreDeclared(packageJson: unknown): void {
       `${command} is not hidden from the Command Palette`,
     );
   }
+}
+
+/**
+ * Stories 88 and 89: a Section's context menu offers Mark all done and Reset Section (neither is a
+ * Command Palette command, since both need the Section they were run on); Reset Course progress
+ * is a Command Palette command.
+ */
+function progressMenusAreDeclared(packageJson: unknown): void {
+  const { contributes } = packageJson as { contributes?: Contributes };
+  const palette = contributes?.menus?.commandPalette ?? [];
+  for (const command of ['followalong.markSectionDone', 'followalong.resetSection']) {
+    const inTree = (contributes?.menus?.['view/item/context'] ?? [])
+      .filter((entry) => entry.command === command)
+      .map((entry) => entry.when);
+    assert.deepEqual(inTree, ['view == followalong.lessons && viewItem == section']);
+    assert.ok(
+      palette.some((entry) => entry.command === command && entry.when === 'false'),
+      `${command} is not hidden from the Command Palette`,
+    );
+  }
+  assert.ok(
+    contributes?.commands?.some((entry) => entry.command === 'followalong.resetCourseProgress'),
+    'followalong.resetCourseProgress is not declared',
+  );
+  assert.ok(
+    !palette.some((entry) => entry.command === 'followalong.resetCourseProgress'),
+    'followalong.resetCourseProgress is hidden from the Command Palette',
+  );
 }
 
 /** Story 44: the learner controls the Lesson from the integrated terminal, so no key is editor-only. */
