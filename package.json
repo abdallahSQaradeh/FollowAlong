@@ -49,6 +49,11 @@
         "command": "followalong.playPause",
         "title": "Play/Pause",
         "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.goToLesson",
+        "title": "Go to Lesson…",
+        "category": "FollowAlong"
       }
     ],
     "keybindings": [
@@ -62,6 +67,12 @@
         "command": "followalong.playPause",
         "key": "ctrl+' space",
         "mac": "cmd+' space",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.goToLesson",
+        "key": "ctrl+' l",
+        "mac": "cmd+' l",
         "when": "editorTextFocus || terminalFocus"
       }
     ],

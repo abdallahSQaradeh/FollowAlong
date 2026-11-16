@@ -20,6 +20,8 @@ export const commands = {
   playLesson: playLessonCommand,
   /** A playback controller command: command in, player message out. Bound to keys in package.json. */
   playPause: 'followalong.playPause',
+  /** `Ctrl+'` `L`: the Lesson picker. */
+  goToLesson: 'followalong.goToLesson',
 } as const;
 
 /**
@@ -111,6 +113,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     register(commands.playPause, () => {
       core.playPause();
     }),
+    register(commands.goToLesson, () => core.goToLesson()),
   );
   // Reopening the workspace brings back the Course that was open in it (story 21).
   core.restoreCourse().catch((error: unknown) => {
