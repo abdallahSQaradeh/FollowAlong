@@ -56,8 +56,13 @@ it with what this window recorded.
 - **Only after the learner engaged with the Lesson:** it played (`played`), or the learner moved
   its playhead (`seeked`). Until then the playhead is where FollowAlong put it, so reopening a
   Lesson and leaving it would otherwise save `position − 5 s`, and every reopen would move it 5 s
-  further back. For the same reason the player does not post `seeked` for the seek that applies a
-  `load`'s `startAt` (ADR 0003).
+  further back.
+- **`seeked` has no position.** The player posts it for every seek, including the one that applies
+  a `load`'s `startAt` (the same definition as #17). The position is the `timeUpdate` the player
+  posts just before it (the HTML seek steps fire `timeupdate`, then `seeked`). A `seeked` before
+  the Lesson played that lands within 0.5 s of the load's `startAt` is that start seek: it saves
+  nothing and does not count as engagement. A WebM seek can land up to 0.1 s off its target (ADR
+  0006), hence the tolerance. Source: orchestrator answer on #25.
 - **Every 5 s while it plays:** a Clock timer runs from `played` until the Lesson pauses, ends,
   fails or is left. Each `timeUpdate` only notes the position; the timer writes it. A save writes
   only when something was noted since the last one.
