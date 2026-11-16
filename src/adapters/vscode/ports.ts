@@ -23,6 +23,12 @@ export function createStorage(context: vscode.ExtensionContext): Storage {
   return {
     global: store(context.globalState),
     workspace: store(context.workspaceState),
+    get workspaceIsEmpty() {
+      return (
+        (vscode.workspace.workspaceFolders?.length ?? 0) === 0 &&
+        vscode.workspace.workspaceFile === undefined
+      );
+    },
     folder: context.globalStorageUri.fsPath,
   };
 }
@@ -111,6 +117,9 @@ export function createUiSink(
           break;
       }
       placement.opened(target.path);
+    },
+    async openNewWindow() {
+      await vscode.commands.executeCommand('workbench.action.newWindow');
     },
     async chooseFolder({ title, openLabel }) {
       const chosen = await vscode.window.showOpenDialog({

@@ -126,6 +126,8 @@ export interface KeyValueStore {
 export interface Storage {
   readonly global: KeyValueStore;
   readonly workspace: KeyValueStore;
+  /** Whether this window has no folder and no workspace file open (a new empty window). */
+  readonly workspaceIsEmpty: boolean;
   /** The extension's own storage folder (absolute), shared by every workspace. */
   readonly folder: string;
 }
@@ -302,6 +304,11 @@ export interface UiSink {
    * the player is not a Focus change (ADR 0009).
    */
   returnFocus(): void;
+  /**
+   * Opens a new, empty window of the editor (no folder in it), so that a Course can be opened
+   * there without touching the Practice area. Rejects when the editor refuses.
+   */
+  openNewWindow(): Promise<void>;
   /** Asks the learner for one folder; resolves with its absolute path, or `undefined` on cancel. */
   chooseFolder(dialog: FolderDialog): Promise<string | undefined>;
   /**

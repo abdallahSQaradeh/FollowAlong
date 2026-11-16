@@ -42,6 +42,7 @@ import {
 import { readFolderListing } from './folder-listing.js';
 import { lessonStatus, openProgress, resumePosition, type ProgressRecorder } from './progress.js';
 import { openSidecarSound, type SidecarSound } from './sidecar-sound.js';
+import { leavePendingCourse, readPendingCourse, withdrawPendingCourse } from './pending-course.js';
 import { readRecent, recordOpened, removeRecent } from './recent-courses.js';
 import { createTerminalKeysOffer } from './terminal-keys.js';
 import { buildSpotPicker, type VideoSpot } from './video-placement.js';
@@ -174,7 +175,7 @@ export interface FollowAlong {
 export type { SpeedDirection, StepDirection, StepSize } from './loaded-lesson.js';
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { storage, ui, logger, config } = ports;
+  const { storage, ui, logger, config, clock } = ports;
 
   /** The open Course: what the Lesson tree shows, and where `playLesson` looks up a Lesson. */
   let openedCourse: Course | undefined;
@@ -602,8 +603,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     return true;
   }
 
-  /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
-  function playLesson(lessonId: string): void {
+  /**
+   * Plays a Lesson of the open Course, by its id, from where the start rule says (5 s before where
+   * the learner left it; 0:00 for a done Lesson saved at its end), or from 0:00 with `fromStart`.
+   */
+  function playLesson(lessonId: string, fromStart = false): void {
     if (refusedWhileOpening()) {
       logger.log({
         level: 'info',
@@ -624,7 +628,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     // The Lesson left shows where the learner left it, which is saved with it.
     refreshTree();
     const saved = progress?.current();
-    play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
+    const startAt = saved === undefined || fromStart ? 0 : resumePosition(saved, lesson.id);
+    play(course, lesson, startAt, true);
   }
 
   /** The Courses roots setting entries, and the roots, the learner was told about in this window. */
@@ -791,6 +796,9 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       case 'openCourse':
         await openInTurn(intent.folder, false);
         break;
+      case 'openCourseInNewWindow':
+        await openInNewWindow(intent.folder);
+        break;
       case 'playVideo':
         await openInTurn(intent.folder, false, intent.video);
         break;
@@ -818,6 +826,26 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /** Leaves a note for the new window, then opens it; this window's Course is not touched. */
+  async function openInNewWindow(folder: string): Promise<void> {
+    try {
+      await leavePendingCourse(storage.global, folder, clock.now());
+      await ui.openNewWindow();
+    } catch (error) {
+      logger.log({
+        level: 'error',
+        message: `Could not open “${folder}” in a new window: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      ui.showMessage({
+        severity: 'error',
+        text: `FollowAlong could not open “${basename(folder)}” in a new window.`,
+      });
+      await withdrawPendingCourse(storage.global).catch(() => {
+        // Nothing more to do: the note expires by itself after 30 seconds.
+      });
+    }
+  }
+
   /**
    * Asks for a folder and adds it to the Courses roots, after the ones already there. Resolves
    * with whether the learner chose one (it may already have been a root).
@@ -838,6 +866,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       return openInTurn(folder, false);
     },
     async restoreCourse() {
+      // Only a window with no workspace may be the new one another window asked for (ADR 0077):
+      // a window with a workspace never takes the Course hand-off, whatever it remembers.
+      if (storage.workspaceIsEmpty) {
+        const note = readPendingCourse(storage.global, clock.now());
+        if (note.present) {
+          // Cleared first, so the note is used once; a failure to clear does not stop the open.
+          await withdrawPendingCourse(storage.global).catch((error: unknown) => {
+            logger.log({
+              level: 'warn',
+              message: `Could not clear the Course hand-off: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          });
+          if (note.folder !== undefined) {
+            await openInTurn(note.folder, false);
+            return;
+          }
+        }
+      }
       const folder = storage.workspace.get(openCourseKey);
       if (typeof folder === 'string') {
         await openInTurn(folder, true);
@@ -856,10 +902,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const course = openedCourse;
-      const intent = await ui.pick(buildLessonPicker(course));
-      if (intent?.type === 'playLesson') {
+      const intent = await ui.pick(
+        buildLessonPicker(course, progress?.current() ?? { lessons: {} }),
+      );
+      if (intent !== undefined) {
         if (course === openedCourse) {
-          playLesson(intent.lessonId);
+          playLesson(intent.lessonId, intent.type === 'playLessonFromStart');
         } else {
           logger.log({
             level: 'info',
