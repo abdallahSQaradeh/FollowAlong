@@ -55,9 +55,8 @@ export function openQuickPick<Intent>(
     shownTitle = shown.title;
     quickPick.title = shown.title;
     if (anotherList) {
-      // What was typed filtered the list that is gone, and its scroll position means nothing here.
+      // What was typed filtered the list that is gone.
       quickPick.value = '';
-      quickPick.keepScrollPosition = false;
     }
     quickPick.placeholder = shown.placeholder;
     quickPick.busy = shown.busy === true;
@@ -76,11 +75,15 @@ export function openQuickPick<Intent>(
             intent: entry.intent,
           },
     );
-    quickPick.keepScrollPosition = true;
-    // The learner's highlighted item stays highlighted when the list is replaced under it.
-    const same = quickPick.items.find((item) => item.label === kept && item.intent !== undefined);
-    if (same !== undefined) {
-      quickPick.activeItems = [same];
+    // The learner's highlighted item and scroll position stay when the list is replaced under it;
+    // another list starts at its first item. VS Code keeps the highlight by position when it is
+    // told to keep the scroll position, so the first item is set, not left to chance.
+    quickPick.keepScrollPosition = !anotherList;
+    const wanted = anotherList
+      ? quickPick.items.find((item) => item.intent !== undefined)
+      : quickPick.items.find((item) => item.label === kept && item.intent !== undefined);
+    if (wanted !== undefined) {
+      quickPick.activeItems = [wanted];
     }
   };
   draw(model);
