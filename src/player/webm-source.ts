@@ -88,6 +88,12 @@ export class WebmSource {
   private streamFrom = 0;
   /** File offset up to which the running stream has appended (bytes after it are not buffered). */
   private appendedTo = 0;
+  /**
+   * File offset up to which the running stream has read the file into the index: `appendedTo`,
+   * plus the piece being appended, which can wait for room a long time. A Cluster the index found
+   * in that piece is on the stream's way.
+   */
+  private readTo = 0;
   /** Re-streams run one after another; only the latest seek's matters. */
   private restreams: Promise<void> = Promise.resolve();
   private latestSeek = 0;
@@ -192,13 +198,13 @@ export class WebmSource {
       return this.streaming ? undefined : 0;
     }
     const next = this.index.clusterAfter(from);
-    // The running stream is inside the target's Cluster: it appends the target next. Otherwise
-    // the target is behind the stream (dropped) or in a Cluster known from an earlier stream
-    // ahead of it, and a Range request from that Cluster gets there directly.
+    // The running stream has read the target's Cluster but not appended all of it: it appends
+    // the target next. Otherwise the target is behind the stream (dropped) or in a Cluster known
+    // from an earlier stream ahead of it, and a Range request from that Cluster gets there directly.
     const inside =
       this.streaming &&
       from.offset >= this.streamFrom &&
-      from.offset <= this.appendedTo &&
+      from.offset <= this.readTo &&
       (next === undefined || next.offset > this.appendedTo);
     return inside ? undefined : from.offset;
   }
@@ -252,6 +258,7 @@ export class WebmSource {
     this.streaming = true;
     this.streamFrom = offset;
     this.appendedTo = offset;
+    this.readTo = offset;
     try {
       const response = await fetch(this.uri, {
         signal,
@@ -279,6 +286,7 @@ export class WebmSource {
             const piece = bytes.slice(at, at + tuning.appendBytes);
             // The index only knows what is appended, so it never runs ahead of the buffer.
             this.index.feed(piece);
+            this.readTo += piece.length;
             await this.append(buffer, piece, signal);
             this.appendedTo += piece.length;
             this.landPendingSeek(buffer);
@@ -344,7 +352,8 @@ export class WebmSource {
   /** Drops media well behind the playhead, or waits for the playhead to move on. */
   /**
    * Frees room in a full buffer. While the Lesson plays, only media more than keepBehindSeconds
-   * behind the playhead goes. While the playhead waits for media the stream has not reached yet
+   * behind the playhead goes, and never the group of pictures the playhead is in (see
+   * `removableBefore`). While the playhead waits for media the stream has not reached yet
    * (a start position or a forward seek past it), nothing buffered can play before the target:
    * everything behind the playhead goes, then anything ahead of it, so the stream can always go
    * on appending toward the target instead of waiting for a playhead that cannot move.
@@ -356,7 +365,9 @@ export class WebmSource {
     // Waiting for media, or about to: less than a second left to play before the stream's next
     // append, which only fits once something goes.
     const waiting = playing === undefined || playing[1] - time < 1;
-    const keepFrom = waiting ? time : time - tuning.keepBehindSeconds;
+    const wanted = waiting ? time : time - tuning.keepBehindSeconds;
+    // The group of pictures the playhead is on (or the stream is on its way to it in) stays.
+    const keepFrom = Math.min(wanted, this.removableBefore(time));
     const first = ranges[0];
     const ahead = waiting ? ranges.find(([start]) => start > time) : undefined;
     if (first !== undefined && first[0] < keepFrom) {
@@ -372,6 +383,26 @@ export class WebmSource {
       // with a seek once the metadata is in, which may come after the buffer filled up).
       await once(this.video, ['timeupdate', 'seeking'], signal);
     }
+  }
+
+  /**
+   * The latest time a removal may end at and keep the frame at `time`, whether it is buffered or
+   * the stream is still on its way to it. MediaSource also drops the video frames after a
+   * removal's end, up to the next keyframe, so a removal ending inside the group of pictures at
+   * `time` takes that frame with it. A Cluster starts at or just before a keyframe (re-streaming
+   * relies on it too), but its timecode can belong to an audio block a few ms before the
+   * keyframe: the keyframe before `time` may be in the Cluster before the one at `time`, so
+   * removal stops at the start of that earlier Cluster. That keeps at most two Clusters behind
+   * the playhead: room runs out only if two Clusters and a second fill the whole quota.
+   */
+  private removableBefore(time: number): number {
+    const clusters = this.index.clusters;
+    const at = this.index.clusterAt(time);
+    // A broken index stops finding Clusters: the last one it found may be far behind `time`.
+    if (at === undefined || this.index.broken) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return (clusters[clusters.indexOf(at) - 1] ?? at).time;
   }
 
   private bufferedSeconds(buffer: SourceBuffer): number {
