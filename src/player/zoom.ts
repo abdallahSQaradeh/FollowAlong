@@ -32,11 +32,16 @@ function clamp(value: number, low: number, high: number): number {
 }
 
 /**
- * The view at `level`, centred as close to (`centreX`, `centreY`) as the picture's edges allow. A
- * level that would read `1×` is the whole picture: a box over nearly all of it zooms nothing,
- * rather than hiding the control bar at a zoom the learner cannot see.
+ * The view at `level` that shows the point (`pictureX`, `pictureY`) of the whole picture at
+ * (`playerX`, `playerY`) of the player, as close as the picture's edges allow. A level that would
+ * read `1×` is the whole picture: a box over nearly all of it zooms nothing, rather than hiding
+ * the control bar at a zoom the learner cannot see.
  */
-function centredView(level: number, centreX: number, centreY: number): ZoomView {
+function viewKeeping(
+  level: number,
+  picture: { readonly x: number; readonly y: number },
+  player: { readonly x: number; readonly y: number },
+): ZoomView {
   if (shownZoomLevel(level) <= 1) {
     return wholePicture;
   }
@@ -44,9 +49,14 @@ function centredView(level: number, centreX: number, centreY: number): ZoomView 
   const span = 1 / clamped;
   return {
     level: clamped,
-    left: clamp(centreX - span / 2, 0, 1 - span),
-    top: clamp(centreY - span / 2, 0, 1 - span),
+    left: clamp(picture.x - player.x * span, 0, 1 - span),
+    top: clamp(picture.y - player.y * span, 0, 1 - span),
   };
+}
+
+/** The view at `level`, centred as close to (`centreX`, `centreY`) as the picture's edges allow. */
+function centredView(level: number, centreX: number, centreY: number): ZoomView {
+  return viewKeeping(level, { x: centreX, y: centreY }, { x: 0.5, y: 0.5 });
 }
 
 /** The view that fills the player with what `box` covers in `view` now. */
@@ -60,6 +70,37 @@ export function zoomToBox(view: ZoomView, box: Box): ZoomView {
 export function zoomBy(view: ZoomView, factor: number): ZoomView {
   const span = 1 / view.level;
   return centredView(view.level * factor, view.left + span / 2, view.top + span / 2);
+}
+
+/**
+ * The view `factor` times closer (below 1: further) around `point`, a place on the player in
+ * fractions of its width and height: what is under `point` stays under it, as far as the picture's
+ * edges allow.
+ */
+export function zoomAt(
+  view: ZoomView,
+  factor: number,
+  point: { readonly x: number; readonly y: number },
+): ZoomView {
+  return viewKeeping(
+    view.level * factor,
+    { x: view.left + point.x / view.level, y: view.top + point.y / view.level },
+    point,
+  );
+}
+
+/**
+ * The view after the picture was dragged by (`dx`, `dy`), as fractions of the player's width and
+ * height: the picture follows the pointer, so the area shown moves the other way. It stays inside
+ * the picture.
+ */
+export function panBy(view: ZoomView, dx: number, dy: number): ZoomView {
+  const span = 1 / view.level;
+  return {
+    level: view.level,
+    left: clamp(view.left - dx * span, 0, 1 - span),
+    top: clamp(view.top - dy * span, 0, 1 - span),
+  };
 }
 
 /** The CSS transform of the video that shows `view` (its transform origin is its top left). */

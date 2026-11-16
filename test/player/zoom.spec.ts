@@ -121,6 +121,290 @@ test.describe('a zoom drag', () => {
   });
 });
 
+test.describe('a plain drag while zoomed', () => {
+  test('pans: the picture follows the pointer, and the level stays', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    // 200 px left and 100 px up: the picture moves with the pointer, so the shown area moves right
+    // and down by that much of the player (1/4 of the picture is shown, 4× from 1/4 in).
+    await drag(page, { x: 600, y: 300 }, { x: 400, y: 200 });
+
+    expectArea(await shownArea(page), {
+      left: 0.25 + (200 / 1280) * 0.25,
+      top: 0.25 + (100 / 720) * 0.25,
+      width: 0.25,
+      height: 0.25,
+    });
+    await expect(page.getByLabel('Zoom level')).toHaveText('4×');
+    await page.waitForTimeout(300);
+    expect((await player.events()).filter((event) => event.type === 'zoomChanged')).toHaveLength(1);
+  });
+
+  test('stops at the edges of the picture', async ({ page }) => {
+    await zoomedPaused(page);
+
+    // Each drag moves the shown area by 1260/1280 of a quarter (0.246): three reach the bottom
+    // right from a quarter in (0.25 + 0.738), and four reach the top left again from there.
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      await drag(page, { x: 1270, y: 700 }, { x: 10, y: 20 });
+    }
+    expectArea(await shownArea(page), { left: 0.75, top: 0.75, width: 0.25, height: 0.25 });
+
+    for (let repeat = 0; repeat < 4; repeat += 1) {
+      await drag(page, { x: 10, y: 20 }, { x: 1270, y: 700 });
+    }
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 0.25, height: 0.25 });
+  });
+
+  test('is not a click: it neither plays nor pauses, and hands focus back once', async ({
+    page,
+  }) => {
+    const player = await zoomedPaused(page);
+    const before = await interactions(player);
+
+    await drag(page, { x: 600, y: 300 }, { x: 400, y: 200 });
+    await page.waitForTimeout(600);
+
+    expect((await player.video()).paused).toBe(true);
+    const events = await player.events();
+    expect(count(events, 'played')).toBe(0);
+    expect(count(events, 'paused')).toBe(0);
+    expect(await interactions(player)).toBe(before + 1);
+  });
+
+  test('keeps its place when the page reloads', async ({ page }) => {
+    await zoomedPaused(page);
+    await drag(page, { x: 600, y: 300 }, { x: 400, y: 200 });
+    const panned = await shownArea(page);
+
+    await page.reload();
+    await expect(page.getByLabel('Zoom level')).toHaveText('4×');
+
+    expectArea(await shownArea(page), panned);
+  });
+});
+
+/** Drags with Shift held, as a learner drawing a box while zoomed does. */
+async function shiftDrag(
+  page: Page,
+  from: { readonly x: number; readonly y: number },
+  to: { readonly x: number; readonly y: number },
+): Promise<void> {
+  await page.keyboard.down('Shift');
+  await drag(page, from, to);
+  await page.keyboard.up('Shift');
+}
+
+test.describe('the cursor over the picture', () => {
+  async function cursor(page: Page): Promise<string> {
+    return page.locator('.overlay').evaluate((overlay) => getComputedStyle(overlay).cursor);
+  }
+
+  test('is a hand while zoomed, which closes during a pan, and a crosshair in area mode', async ({
+    page,
+  }) => {
+    await zoomedPaused(page);
+    expect(await cursor(page)).toBe('grab');
+
+    await page.mouse.move(600, 300);
+    await page.mouse.down();
+    await page.mouse.move(500, 250, { steps: 4 });
+    expect(await cursor(page)).toBe('grabbing');
+    await page.mouse.up();
+    expect(await cursor(page)).toBe('grab');
+
+    await page.getByRole('button', { name: 'Zoom to an area' }).click();
+    expect(await cursor(page)).toBe('crosshair');
+  });
+});
+
+test.describe('a Shift+drag while zoomed', () => {
+  test('draws a box and zooms to the area in it, instead of panning', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    // The middle half of the player in each direction: of the quarter shown, its middle half.
+    await shiftDrag(page, { x: 320, y: 180 }, { x: 960, y: 540 });
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 8 });
+    expectArea(await shownArea(page), { left: 0.3125, top: 0.3125, width: 0.125, height: 0.125 });
+  });
+
+  test('is not a click, and hands focus back once', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    const before = await interactions(player);
+
+    await shiftDrag(page, { x: 320, y: 180 }, { x: 960, y: 540 });
+    await player.waitForEvent({ type: 'zoomChanged', level: 8 });
+    await page.waitForTimeout(600);
+
+    expect((await player.video()).paused).toBe(true);
+    expect(count(await player.events(), 'played')).toBe(0);
+    expect(await interactions(player)).toBe(before + 1);
+  });
+});
+
+/** Turns the wheel with the pointer at (`x`, `y`) of the page. */
+async function wheel(page: Page, at: { readonly x: number; readonly y: number }, deltaY: number) {
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.wheel(0, deltaY);
+}
+
+test.describe('the wheel', () => {
+  test('zooms in toward the cursor, 1.25× a notch, and out again to the whole picture', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    // The point a quarter in each way stays where it is under the cursor.
+    await wheel(page, { x: 320, y: 180 }, -100);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+    expectArea(await shownArea(page), { left: 0.05, top: 0.05, width: 0.8, height: 0.8 });
+    await expect(page.getByLabel('Zoom level')).toHaveText('1.3×');
+    expect((await player.video()).controls).toBe(false);
+
+    await wheel(page, { x: 320, y: 180 }, 100);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    expect((await player.video()).controls).toBe(true);
+  });
+
+  test('zooms toward a point near the picture’s edge, which stays where it is', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    // At 1× the picture ends 72 px above the bottom, where the control bar is: 640 of 720 px is
+    // 8/9 of the way down, and a fifth of the zoomed-out part (0.2) lies above it and 8/9 of that
+    // is 0.1778.
+    await wheel(page, { x: 1279, y: 640 }, -100);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+    expectArea(await shownArea(page), { left: 0.2, top: 0.17778, width: 0.8, height: 0.8 });
+  });
+
+  test('zooms out of a zoomed picture toward the cursor, inside the picture', async ({ page }) => {
+    const player = await zoomedPaused(page);
+
+    // The point under (320, 180) is 0.3125 in; 4× out to 3.2×.
+    await wheel(page, { x: 320, y: 180 }, 100);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 3.2 });
+    expectArea(await shownArea(page), {
+      left: 0.234375,
+      top: 0.234375,
+      width: 0.3125,
+      height: 0.3125,
+    });
+  });
+
+  test('stops at 8×, and zooming out stops at the whole picture', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+
+    await wheel(page, { x: 1279, y: 640 }, -2000);
+    await player.waitForEvent({ type: 'zoomChanged', level: 8 });
+    // Eight of 9 down, and 1/8 of the picture shown: 8/9 - 8/9 / 8.
+    expectArea(await shownArea(page), { left: 0.875, top: 0.77778, width: 0.125, height: 0.125 });
+
+    await wheel(page, { x: 1279, y: 640 }, -500);
+    await page.waitForTimeout(300);
+    expect((await player.events()).filter((event) => event.type === 'zoomChanged')).toHaveLength(1);
+
+    await wheel(page, { x: 1279, y: 640 }, 5000);
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+  });
+
+  test('adds small turns of a trackpad up to a step, and forgets a turn left alone', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    await page.mouse.move(640, 360);
+
+    for (let turn = 0; turn < 9; turn += 1) {
+      await page.mouse.wheel(0, -10);
+    }
+    await page.waitForTimeout(300);
+    expect((await player.events()).some((event) => event.type === 'zoomChanged')).toBe(false);
+
+    // Nine turns long ago do not count: ten more are one step, not two.
+    for (let turn = 0; turn < 10; turn += 1) {
+      await page.mouse.wheel(0, -10);
+    }
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+    await page.waitForTimeout(300);
+    expect((await player.events()).filter((event) => event.type === 'zoomChanged')).toHaveLength(1);
+  });
+
+  test('neither plays nor pauses the Lesson, and does not take focus from the editor', async ({
+    page,
+  }) => {
+    const player = await zoomedPaused(page);
+    const before = await interactions(player);
+
+    await wheel(page, { x: 600, y: 300 }, -100);
+    await player.waitForEvent({ type: 'zoomChanged', level: 5 });
+    await page.waitForTimeout(600);
+
+    expect((await player.video()).paused).toBe(true);
+    expect(count(await player.events(), 'played')).toBe(0);
+    expect(await interactions(player)).toBe(before);
+  });
+});
+
+test.describe('the wheel while zoomed, at the edge of the picture', () => {
+  test('zooms out toward the cursor and stays inside the picture', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      await drag(page, { x: 1270, y: 700 }, { x: 10, y: 20 });
+    }
+    expectArea(await shownArea(page), { left: 0.75, top: 0.75, width: 0.25, height: 0.25 });
+
+    // The bottom right corner stays where it is: 4× out to 3.2×, whose view ends at the picture.
+    await wheel(page, { x: 1279, y: 719 }, 100);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 3.2 });
+    expectArea(await shownArea(page), { left: 0.6875, top: 0.6875, width: 0.3125, height: 0.3125 });
+  });
+
+  test('ignores a turn to the side, and does not lose the turns before it', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    await page.mouse.move(640, 360);
+
+    for (let turn = 0; turn < 5; turn += 1) {
+      await page.mouse.wheel(0, -10);
+    }
+    await page.mouse.wheel(30, 0);
+    for (let turn = 0; turn < 5; turn += 1) {
+      await page.mouse.wheel(0, -10);
+    }
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+  });
+});
+
+test.describe('the wheel during a drag', () => {
+  test('changes nothing: the drag keeps its view', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    await page.mouse.move(600, 300);
+    await page.mouse.down();
+    await page.mouse.move(400, 200, { steps: 8 });
+
+    await page.mouse.wheel(0, -300);
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+
+    expect((await player.events()).filter((event) => event.type === 'zoomChanged')).toHaveLength(1);
+    await expect(page.getByLabel('Zoom level')).toHaveText('4×');
+  });
+});
+
 test.describe('while zoomed', () => {
   test('the native control bar is off, since it would be enlarged with the picture', async ({
     page,
@@ -396,6 +680,21 @@ test.describe('area mode', () => {
     expect((await player.events()).some((event) => event.type === 'zoomChanged')).toBe(false);
   });
 
+  test('makes a plain drag draw a box while zoomed, and then ends', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    await areaButton(page).click();
+
+    await drag(page, { x: 320, y: 180 }, { x: 960, y: 540 });
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 8 });
+    expectArea(await shownArea(page), { left: 0.3125, top: 0.3125, width: 0.125, height: 0.125 });
+    await expect(areaButton(page)).toHaveAttribute('aria-pressed', 'false');
+
+    // Area mode is over: the next plain drag pans.
+    await drag(page, { x: 600, y: 300 }, { x: 400, y: 200 });
+    await expect(page.getByLabel('Zoom level')).toHaveText('8×');
+  });
+
   test('ends with a reset', async ({ page }) => {
     const player = await zoomedPaused(page);
     await areaButton(page).click();
@@ -441,9 +740,11 @@ test.describe('a box drag that does not end normally', () => {
 
   test('zooms nothing when a reset comes while the box is drawn', async ({ page }) => {
     const player = await zoomedPaused(page);
+    await page.keyboard.down('Shift');
     await page.mouse.move(100, 100);
     await page.mouse.down();
     await page.mouse.move(300, 300, { steps: 8 });
+    await page.keyboard.up('Shift');
 
     await player.post({ type: 'zoom', action: 'reset' });
     await player.waitForEvent({ type: 'zoomChanged', level: 1 });
@@ -453,6 +754,26 @@ test.describe('a box drag that does not end normally', () => {
     expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
     await expect(page.locator('.zoom-box')).toBeHidden();
     expect((await player.video()).paused).toBe(true);
+  });
+});
+
+test.describe('a pan that a reset interrupts', () => {
+  test('ends: the release that follows moves nothing and does not play', async ({ page }) => {
+    const player = await zoomedPaused(page);
+    await page.mouse.move(600, 300);
+    await page.mouse.down();
+    await page.mouse.move(400, 200, { steps: 8 });
+
+    await player.post({ type: 'zoom', action: 'reset' });
+    await player.waitForEvent({ type: 'zoomChanged', level: 1 });
+    await page.mouse.move(100, 100, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+
+    expectArea(await shownArea(page), { left: 0, top: 0, width: 1, height: 1 });
+    expect((await player.video()).paused).toBe(true);
+    // No pan is under way: the hand is not closed.
+    await expect(page.locator('.overlay')).not.toHaveCSS('cursor', 'grabbing');
   });
 });
 

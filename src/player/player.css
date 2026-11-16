@@ -37,9 +37,17 @@ video {
   inset: 0 0 72px;
 }
 
-/* While zoomed the control bar is off (ADR 0037): the whole player is picture. */
+/*
+ * While zoomed the control bar is off (ADR 0037): the whole player is picture. A drag moves it
+ * (ADR 0087), so the pointer is a hand.
+ */
 .zoomed .overlay {
   inset: 0;
+  cursor: grab;
+}
+
+.zoomed.panning .overlay {
+  cursor: grabbing;
 }
 
 /*
@@ -209,7 +217,7 @@ body:hover .zoom-tools,
   height: 16px;
 }
 
-/* In area mode the next drag draws a box. */
+/* In area mode the next drag draws a box, at any zoom (ADR 0087). */
 .area-mode .overlay {
   cursor: crosshair;
 }

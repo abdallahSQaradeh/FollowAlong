@@ -57,10 +57,11 @@ Q1–Q4 on it, which accepted each default below.
   (kept, gate round 1: it is a fresh click after the reset, and to swallow it the player would
   have to delay clicks at 1× too).
 - **A plain drag draws a box at any zoom, for now** (Q3). While zoomed it zooms further into the
-  shown area. #47 changes this: a plain drag while zoomed pans, and Shift+drag draws a new box.
-  **Area mode** (the toolbar's area button, `aria-pressed`) means the next drag draws a box,
-  whatever the zoom. It ends on a second press, with that drag (whether its box zooms or is too
-  small), and with any reset. Until #47 it changes only the cursor, since every drag draws a box.
+  shown area. **Area mode** (the toolbar's area button, `aria-pressed`) means the next drag draws a
+  box, whatever the zoom. It ends on a second press, with that drag (whether its box zooms or is
+  too small), and with any reset. _Amended by ADR 0087: while zoomed a plain drag pans and
+  Shift+drag draws the box, so area mode is then how a drag draws one without Shift. ADR 0088 adds
+  the wheel._
 - **A drag that does not end with a release over the picture zooms nothing.** A `pointercancel`,
   or a lost pointer capture with no `pointerup` (a blur), ends it and its gesture, so the next
   click still hands focus back. A reset while a box is drawn drops the box: it was drawn over the
