@@ -31,6 +31,13 @@ interface SeenEvent {
 interface TestHooks {
   readonly playerEvents: readonly SeenEvent[];
   lessonTree(): { readonly nodes: readonly TreeNode[] };
+  /** The status bar items VS Code shows, with the command each one runs. */
+  statusBar(): readonly {
+    readonly id: string;
+    readonly text: string;
+    readonly command?: { readonly id: string; readonly argument: unknown };
+  }[];
+  selectedLesson(): string | undefined;
 }
 
 /** The part of a Lesson tree node this test reads (src/core/lesson-tree.ts). */
@@ -70,6 +77,9 @@ export async function run(): Promise<void> {
     'followalong.seekForwardLong',
     'followalong.speedUp',
     'followalong.speedDown',
+    'followalong.statusBarClick',
+    'followalong.nextLesson',
+    'followalong.previousLesson',
     'followalong.goToLesson',
   ]) {
     assert.ok(registered.includes(command), `${command} is not registered`);
@@ -87,8 +97,19 @@ export async function run(): Promise<void> {
   goToLessonIsBoundToItsChord(extension.packageJSON);
   say("FollowAlong: Go to Lesson… is in the Command Palette and bound to Ctrl+' L");
 
-  speedIsBoundToItsKeys(extension.packageJSON);
+  chordCommandsAreBound(extension.packageJSON, [
+    ['speedUp', 'Speed up', "ctrl+' up"],
+    ['speedDown', 'Speed down', "ctrl+' down"],
+  ]);
   say("FollowAlong: Speed up / Speed down are in the Command Palette, bound to Ctrl+' ↑ / ↓");
+
+  chordCommandsAreBound(extension.packageJSON, [
+    ['nextLesson', 'Next Lesson', "ctrl+' n"],
+    ['previousLesson', 'Previous Lesson', "ctrl+' p"],
+  ]);
+  say(
+    "FollowAlong: Next Lesson / Previous Lesson are in the Command Palette, bound to Ctrl+' N / P",
+  );
 
   stepsAreBoundToTheirKeys(extension.packageJSON);
   say(
@@ -103,12 +124,60 @@ export async function run(): Promise<void> {
   await aClickOnThePicture(hooks.playerEvents, code);
   say(await playFromTheEditorAfterAClick(hooks.playerEvents));
 
+  say(await theStatusBarRunsTheCommands(hooks));
+
   // A click on a Lesson in the tree runs this command with the Lesson's id.
   await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
   say(await theLessonStarts(hooks.playerEvents, 'long.webm'));
 
+  // The Lesson tree is on screen, and the selection follows the Lesson the keys load.
+  await vscode.commands.executeCommand('followalong.lessons.focus');
+  await vscode.commands.executeCommand('followalong.previousLesson');
+  await waitFor('the tree selecting the previous Lesson', () =>
+    hooks.selectedLesson() === 'lesson.webm' ? true : undefined,
+  );
+  await vscode.commands.executeCommand('followalong.nextLesson');
+  await waitFor('the tree selecting the next Lesson', () =>
+    hooks.selectedLesson() === 'long.webm' ? true : undefined,
+  );
+  say('Previous Lesson and Next Lesson load their Lesson, and the tree selection follows it');
+
   await aResourceOpensBesideTheCode(extension.extensionPath, hooks);
   say('a file attached to a Lesson shows under it and opens beside the code, next to the player');
+}
+
+/**
+ * While a Lesson is loaded the status bar has its four items, and each clickable one runs the
+ * click command with the name of a core command. A click is what VS Code runs through the command
+ * service, so the test runs the same command. What the items say at each state, and what each
+ * core command does, is covered at Seam 1.
+ */
+async function theStatusBarRunsTheCommands(hooks: TestHooks): Promise<string> {
+  const click = 'followalong.statusBarClick';
+  const items = hooks.statusBar();
+  assert.deepEqual(
+    items.map(({ id, command }) => ({ id, command })),
+    [
+      { id: 'playPause', command: { id: click, argument: 'playPause' } },
+      { id: 'time', command: undefined },
+      { id: 'speed', command: { id: click, argument: 'speedCycle' } },
+      { id: 'back', command: { id: click, argument: 'seekBackShort' } },
+    ],
+    'the status bar items of a loaded Lesson',
+  );
+  assert.ok(
+    (await vscode.commands.getCommands(true)).includes(click),
+    `${click} is not registered`,
+  );
+
+  // A click runs its command through VS Code. What the click does to the items is covered at
+  // Seam 1; that the click really leaves the keyboard in the code needs a mouse (Manual QA).
+  const code = vscode.window.activeTextEditor?.document;
+  assert.ok(code, 'the code editor is not active');
+  await vscode.commands.executeCommand(click, 'speedCycle');
+  await vscode.commands.executeCommand('followalong.speedDown');
+  assert.equal(vscode.window.activeTextEditor?.document, code, 'a click moved the focus');
+  return 'the status bar shows play/pause, time, speed and back, each wired to the click command';
 }
 
 /** Attaches a text file to a Lesson of a scratch Course, then opens it from the tree. */
@@ -130,6 +199,9 @@ async function aResourceOpensBesideTheCode(extensionPath: string, hooks: TestHoo
     });
     await vscode.window.showTextDocument(code, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('followalong.openCourse', vscode.Uri.file(course));
+    // Another Course gets a new player panel; letting go of the old one is not a close, so the
+    // status bar items stay (what the panel adapter must not fire `onDidClose` for).
+    assert.equal(hooks.statusBar().length, 4, 'the status bar items went when the Course changed');
 
     // The "+" on the Lesson runs this command with the Lesson's tree node.
     const lesson = hooks.lessonTree().nodes.find((node) => node.id === 'lesson.webm');
@@ -267,13 +339,13 @@ function stepsAreBoundToTheirKeys(packageJson: unknown): void {
   assert.equal(settings.get('longStep'), 30, 'the long step defaults to 30 s');
 }
 
-/** The speed commands' Palette entries and chord keys. */
-function speedIsBoundToItsKeys(packageJson: unknown): void {
+/** Each command has its `FollowAlong: <title>` Palette entry and exactly one chord key. */
+function chordCommandsAreBound(
+  packageJson: unknown,
+  expected: readonly (readonly [name: string, title: string, key: string])[],
+): void {
   const { contributes } = packageJson as { contributes?: Contributes };
-  for (const [name, title, key] of [
-    ['speedUp', 'Speed up', "ctrl+' up"],
-    ['speedDown', 'Speed down', "ctrl+' down"],
-  ] as const) {
+  for (const [name, title, key] of expected) {
     const id = `followalong.${name}`;
     const command = contributes?.commands?.find((entry) => entry.command === id);
     assert.deepEqual(

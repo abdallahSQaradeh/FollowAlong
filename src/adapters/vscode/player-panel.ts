@@ -29,6 +29,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private roots: readonly string[] = [];
   private page: { readonly script: string; readonly style: string } | undefined;
   private readonly events = new vscode.EventEmitter<PlayerEvent>();
+  private readonly closed = new vscode.EventEmitter<undefined>();
 
   constructor(
     private readonly extensionPath: string,
@@ -51,7 +52,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       return 'revealed';
     }
     // localResourceRoots are fixed when a webview is created, so a new Course gets a new panel.
-    this.panel?.dispose();
+    // The old one is let go first: its `onDidDispose` fires inside `dispose()` and must not look
+    // like the learner closing the player.
+    const replaced = this.panel;
+    this.panel = undefined;
+    this.roots = [];
+    replaced?.dispose();
     const panel = vscode.window.createWebviewPanel(
       playerViewType,
       title,
@@ -66,9 +72,11 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     this.panel = panel;
     this.roots = resourceRoots;
     panel.onDidDispose(() => {
+      // A panel replaced by `show` for another Course is not a close: the Lesson is still there.
       if (this.panel === panel) {
         this.panel = undefined;
         this.roots = [];
+        this.closed.fire(undefined);
       }
     });
     panel.webview.onDidReceiveMessage((raw: unknown) => {
@@ -107,9 +115,16 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     return this.events.event(listener);
   }
 
+  onDidClose(listener: () => void): Disposable {
+    return this.closed.event(() => {
+      listener();
+    });
+  }
+
   dispose(): void {
     this.panel?.dispose();
     this.events.dispose();
+    this.closed.dispose();
   }
 
   private loadPage(): { readonly script: string; readonly style: string } {

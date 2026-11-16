@@ -24,6 +24,10 @@ _Avoid_: Module, chapter, part
 The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing.
 _Avoid_: Lesson search, jump list
 
+**Course order**:
+The order the Course presents its Lessons in: a folder's own Lessons first, then its Sections, each in natural order. The next and previous Lesson, and the Lesson tree, follow it. It stops at the first and the last Lesson and does not wrap.
+_Avoid_: Playlist order, queue
+
 **Wrapper folder**:
 A folder inside a Course that holds no Lessons of its own and only one other folder with Lessons. It is not shown as a Section: its content is shown in its place.
 _Avoid_: Container folder, parent folder
@@ -59,6 +63,10 @@ _Avoid_: Skip, jump, scrub
 **Speed ladder**:
 The fixed rungs the playback rate moves through, one keypress per rung: 0.75×, 1×, 1.25×, 1.5×, 2×. It stops at both ends.
 _Avoid_: Speed slider, rate list
+
+**Loaded Lesson**:
+The Lesson the player holds: it is set when the learner picks a Lesson or opens a Course, and gone when the learner closes the player. Controls that only make sense with a Lesson, such as the status bar items, show only while one is loaded.
+_Avoid_: Active Lesson, current video
 
 **Focus change**:
 Any moment the learner must move their attention or input focus out of the Practice area to control the Course. The thing FollowAlong exists to eliminate.
