@@ -112,6 +112,21 @@ export class ZoomControls {
     this.show(wholePicture);
   }
 
+  /** What part of the picture the page shows now. */
+  get shown(): ZoomView {
+    return this.view;
+  }
+
+  /**
+   * Shows `view`: the zoom of the page this one replaces in another spot (ADR 0049). It ends
+   * area mode and drops a box being drawn, as a reset does.
+   */
+  showView(view: ZoomView): void {
+    this.endPress(true);
+    this.setAreaMode(false);
+    this.show(view);
+  }
+
   /** Shows the zoom a page before this one left in the webview state, if any. */
   restore(): void {
     const state = this.options.state.getState();
