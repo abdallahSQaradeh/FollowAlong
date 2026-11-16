@@ -5,9 +5,10 @@
  * Course; any other file is stored by its absolute path.
  */
 import { randomUUID } from 'node:crypto';
-import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, extname, join, relative, resolve, sep } from 'node:path';
 
 import type { CourseDataFile } from './course-data.js';
+import { isInsideFolder } from './courses-roots.js';
 import type { FileSystem, ResourceTarget } from './ports.js';
 import type { QuickPickModel } from './quick-pick.js';
 
@@ -186,7 +187,7 @@ export const resourcesFile: CourseDataFile<ResourcesData> = {
 /** Makes the stored reference to `absolutePath` for a Course in `courseFolder`. */
 export function newResource(courseFolder: string, absolutePath: string): FileResourceRecord {
   const inCourse = relative(courseFolder, absolutePath);
-  const isInside = inCourse !== '' && !isAbsolute(inCourse) && inCourse.split(sep)[0] !== '..';
+  const isInside = isInsideFolder(courseFolder, absolutePath);
   return {
     id: randomUUID(),
     kind: 'file',

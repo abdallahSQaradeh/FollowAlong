@@ -4,6 +4,7 @@
  */
 import { basename } from 'node:path';
 
+import { isTyping, type DocumentEdit } from './auto-pause.js';
 import {
   buildCourse,
   findSection,
@@ -124,6 +125,11 @@ export interface FollowAlong {
    * speed, play or pause, and zoom. Without `to` it asks which spot with a quick pick.
    */
   moveVideo(to?: VideoSpot): Promise<void>;
+  /**
+   * The text of a document open in VS Code changed: auto-pause's input (spec #12, Auto-pause).
+   * Cursor moves are not edits, so they never reach it.
+   */
+  documentEdited(edit: DocumentEdit): void;
   /**
    * `Ctrl+'` `D` and `FollowAlong: Mark done / not done`: marks the Loaded Lesson done, or, when it
    * is done already, not done (a reset, ADR 0061). Resolves once the change is saved.
@@ -1046,6 +1052,11 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       const target = to ?? (await ui.pick(buildSpotPicker(from)));
       if (target !== undefined) {
         await loaded.move(target);
+      }
+    },
+    documentEdited(edit) {
+      if (isTyping(edit, storage.folder)) {
+        loaded.typed();
       }
     },
     async close() {

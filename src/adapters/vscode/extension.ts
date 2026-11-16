@@ -14,6 +14,7 @@ import { createFfmpegConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
 import { courseNodeId, type LessonTreeModel } from '../../core/lesson-tree.js';
 import { LessonTreeView, openResourceCommand, playLessonCommand } from './lesson-tree-view.js';
+import { watchDocumentEdits } from './document-edits.js';
 import { FocusReturn } from './focus-return.js';
 import { PlayerPanel, type PlayerPlace } from './player-panel.js';
 import { quickPickStats } from './quick-pick.js';
@@ -193,6 +194,10 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
         core.dispose();
       },
     },
+    // Auto-pause's input: the learner's edits (ADR 0052).
+    watchDocumentEdits((edit) => {
+      core.documentEdited(edit);
+    }),
     register(commands.openCourse, (folder) =>
       folder instanceof vscode.Uri ? core.openCourse(folderPath(folder)) : core.pickCourse(),
     ),
