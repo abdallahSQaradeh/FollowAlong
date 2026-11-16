@@ -44,3 +44,6 @@ Two deliberate additions to the spec's shapes:
   and also the seek that applies a `load`'s `startAt` (the core tells that one apart itself). It
   carries no position: the media element fires `timeupdate` before `seeked`, so a `timeUpdate` at
   the new position always arrives first (Seam 2 checks the order), and the core reads it there.
+
+Ticket #17 added `seekBy {seconds}` (extension → player, signed) and `seeked` (player → extension, with
+`lessonId`); see ADR 0013.

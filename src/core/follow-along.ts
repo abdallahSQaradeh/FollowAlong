@@ -27,6 +27,11 @@ export interface FollowAlong {
   playLesson(lessonId: string): void;
   /** The play/pause command: pauses the Lesson if the player reports it playing, else plays it. */
   playPause(): void;
+  /**
+   * The step commands: moves the playhead back or forward by the short or the long step, as the
+   * `followalong.shortStep` and `followalong.longStep` settings are when the command runs.
+   */
+  seekStep(size: StepSize, direction: StepDirection): void;
   /** Lists the open Course's Lessons by Section in a quick pick, and plays the one picked. */
   goToLesson(): Promise<void>;
   /** The window is closing: saves Progress, then stops. */
@@ -55,6 +60,13 @@ interface CurrentLesson {
  * player moves a WebM seek onto the first buffered frame, under 0.1 s away; ADR 0006).
  */
 const startSeekToleranceSeconds = 0.5;
+
+export type StepSize = 'short' | 'long';
+export type StepDirection = 'back' | 'forward';
+
+/** The settings' defaults, in seconds (spec #12, Settings). */
+const defaultStepSeconds = { short: 5, long: 30 } as const;
+const stepSettings = { short: 'shortStep', long: 'longStep' } as const;
 
 /** What the player reported about the current Lesson since its last `load`. */
 interface Playback {
@@ -104,7 +116,7 @@ function pressPlayText(lesson: Lesson): string {
 }
 
 export function createFollowAlong(ports: Ports): FollowAlong {
-  const { player, storage, clock, ui, logger } = ports;
+  const { player, storage, clock, ui, logger, config } = ports;
 
   let current: CurrentLesson | undefined;
   /** The open Course's Progress. */
@@ -339,6 +351,34 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     }
   }
 
+  /**
+   * Whether a playback command can be sent now. Tells the learner when no Lesson is open; ignores
+   * the command while the page is still starting, because it takes no command yet and plays the
+   * Lesson when it is ready.
+   */
+  function hasPlayableLesson(command: string): boolean {
+    if (current === undefined) {
+      ui.showMessage({
+        severity: 'info',
+        text: 'FollowAlong: no Lesson is open. Open a Course first.',
+      });
+      return false;
+    }
+    if (!playerReady) {
+      logger.log({ level: 'debug', message: `${command} ignored: the player is not ready yet.` });
+      return false;
+    }
+    return true;
+  }
+
+  /** The step in seconds, read when the command runs so a changed setting counts at once. */
+  function stepSeconds(size: StepSize): number {
+    const value = config.get(stepSettings[size]);
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? value
+      : defaultStepSeconds[size];
+  }
+
   /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
   function playLesson(lessonId: string): void {
     const course = openedCourse;
@@ -396,16 +436,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       }
     },
     playPause() {
-      if (current === undefined) {
-        ui.showMessage({
-          severity: 'info',
-          text: 'FollowAlong: no Lesson is open. Open a Course first.',
-        });
-        return;
-      }
-      if (!playerReady) {
-        // The page is still starting: it takes no command yet, and it plays the Lesson on `ready`.
-        logger.log({ level: 'debug', message: 'Play/pause ignored: the player is not ready yet.' });
+      if (!hasPlayableLesson('Play/pause')) {
         return;
       }
       playback = { ...playback, awaitingPlayAnswer: !playback.playing };
@@ -416,6 +447,13 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       await opening;
       await leaveCurrent();
       dispose();
+    },
+    seekStep(size, direction) {
+      if (!hasPlayableLesson('Seek step')) {
+        return;
+      }
+      const seconds = stepSeconds(size);
+      player.send({ type: 'seekBy', seconds: direction === 'back' ? -seconds : seconds });
     },
     dispose,
   };

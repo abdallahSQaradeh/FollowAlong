@@ -22,7 +22,9 @@ export type PlayerCommand =
       readonly autoplay: boolean;
     }
   | { readonly type: 'play' }
-  | { readonly type: 'pause' };
+  | { readonly type: 'pause' }
+  /** Moves the playhead by `seconds` (negative: back), stopping at the start or the end. */
+  | { readonly type: 'seekBy'; readonly seconds: number };
 
 /** Player → extension. Events about a Lesson carry its `lessonId`, so late events are recognisable. */
 export type PlayerEvent =
@@ -76,6 +78,10 @@ export function parsePlayerCommand(raw: unknown): PlayerCommand | undefined {
     case 'play':
     case 'pause':
       return { type: raw.type };
+    case 'seekBy':
+      return typeof raw.seconds === 'number' && Number.isFinite(raw.seconds)
+        ? { type: 'seekBy', seconds: raw.seconds }
+        : undefined;
     default:
       return undefined;
   }

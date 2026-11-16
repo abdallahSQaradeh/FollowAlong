@@ -1,6 +1,9 @@
+import type { Page } from '@playwright/test';
+
+import type { PlayerTuning } from '../../src/player/tuning.js';
 import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
-import { media, mp4Duration, openPlayer, webmDuration } from './player-page.js';
+import { media, mp4Duration, openPlayer, webmDuration, type PlayerHarness } from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
 
@@ -393,6 +396,267 @@ test.describe('the player', () => {
     });
 
     await player.waitForEvent({ type: 'error', lessonId });
+  });
+
+  test.describe('seekBy', () => {
+    /** Loads the 8 s fixture paused and waits until all of it is buffered. */
+    async function loadLong(page: Page, tuning?: PlayerTuning) {
+      const player = await openPlayer(page, tuning === undefined ? {} : { tuning });
+      await player.post(load({ videoUri: media.long, autoplay: false }));
+      await expect
+        .poll(async () => (await player.video()).buffered.at(-1)?.[1] ?? 0, {
+          message: 'the whole Lesson is buffered',
+        })
+        .toBeGreaterThan(7.5);
+      return player;
+    }
+
+    /** How many `seeked` events the player has sent. */
+    async function seekedCount(player: PlayerHarness): Promise<number> {
+      return (await player.events()).filter((event) => event.type === 'seeked').length;
+    }
+
+    test('moves the playhead by the given seconds and reports seeked', async ({ page }) => {
+      const player = await loadLong(page);
+
+      await player.post({ type: 'seekBy', seconds: 2 });
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      expect((await player.video()).currentTime).toBeCloseTo(2, 1);
+
+      await player.post({ type: 'seekBy', seconds: -1.5 });
+      await expect.poll(() => seekedCount(player)).toBe(2);
+      expect((await player.video()).currentTime).toBeCloseTo(0.5, 1);
+    });
+
+    test('stops at the start of the Lesson when stepping back past it', async ({ page }) => {
+      const player = await loadLong(page);
+
+      await player.post({ type: 'seekBy', seconds: -30 });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      expect((await player.video()).currentTime).toBe(0);
+    });
+
+    test('stops at the end of the Lesson when stepping forward past it', async ({ page }) => {
+      const player = await loadLong(page);
+      const { duration } = await player.video();
+
+      await player.post({ type: 'seekBy', seconds: 30 });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      expect((await player.video()).currentTime).toBe(duration);
+    });
+
+    test('works for an MP4 Lesson', async ({ page }) => {
+      const player = await openPlayer(page);
+      const mp4Id = 'sample.mp4';
+      await player.post(
+        load({ lessonId: mp4Id, videoUri: media.mp4, container: 'mp4', autoplay: false }),
+      );
+      await player.waitForEvent({ type: 'timeUpdate', lessonId: mp4Id });
+
+      await player.post({ type: 'seekBy', seconds: 1 });
+
+      await player.waitForEvent({ type: 'seeked', lessonId: mp4Id });
+      expect((await player.video()).currentTime).toBeCloseTo(1, 1);
+    });
+
+    test('steps forward past the buffered end of a WebM that states no length', async ({
+      page,
+    }) => {
+      // The 3 s quota stops the stream before its end, as a Lesson larger than the MediaSource
+      // quota does, so the file's length is still unknown (it has no Duration element).
+      const player = await openPlayer(page, {
+        tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+      });
+      await player.post(load({ videoUri: media.noDuration, autoplay: false }));
+      await expect
+        .poll(async () => (await player.video()).buffered.at(-1)?.[1] ?? 0, { timeout: 10_000 })
+        .toBeGreaterThan(2.5);
+      expect(Number.isFinite((await player.video()).duration)).toBe(false);
+
+      await player.post({ type: 'seekBy', seconds: 5 });
+      await player.post({ type: 'play' });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      await expect
+        .poll(
+          async () =>
+            (await player.events()).some(
+              (event) => event.type === 'timeUpdate' && event.position > 5.3,
+            ),
+          { message: 'the playhead plays on from 0:05', timeout: 10_000 },
+        )
+        .toBe(true);
+      expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+
+    test('steps past the buffered end of a WebM that states no length, also when its header arrives in pieces', async ({
+      page,
+    }) => {
+      // 64-byte appends: the first append ends before the header says whether there is a length.
+      const player = await openPlayer(page, {
+        tuning: { appendBytes: 64, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+      });
+      await player.post(load({ videoUri: media.noDuration, autoplay: false }));
+      await expect
+        .poll(async () => (await player.video()).buffered.at(-1)?.[1] ?? 0, { timeout: 10_000 })
+        .toBeGreaterThan(2.5);
+
+      await player.post({ type: 'seekBy', seconds: 5 });
+      await player.post({ type: 'play' });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      await expect
+        .poll(
+          async () =>
+            (await player.events()).some(
+              (event) => event.type === 'timeUpdate' && event.position > 5.3,
+            ),
+          { message: 'the playhead plays on from 0:05', timeout: 20_000 },
+        )
+        .toBe(true);
+    });
+
+    test('stops at the end of a WebM that states no length once all of it has streamed', async ({
+      page,
+    }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: media.noDuration, autoplay: false }));
+      await expect
+        .poll(async () => Number.isFinite((await player.video()).duration), {
+          message: 'the stream ended, so the length is known',
+        })
+        .toBe(true);
+      const { duration } = await player.video();
+
+      await player.post({ type: 'seekBy', seconds: 30 });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      expect((await player.video()).currentTime).toBe(duration);
+    });
+
+    test('adds up steps pressed in a row', async ({ page }) => {
+      const player = await loadLong(page);
+
+      await player.postAll([
+        { type: 'seekBy', seconds: 2 },
+        { type: 'seekBy', seconds: 2 },
+        { type: 'seekBy', seconds: -1 },
+      ]);
+
+      await expect.poll(() => seekedCount(player)).toBeGreaterThan(0);
+      await expect.poll(async () => (await player.video()).currentTime).toBeCloseTo(3, 1);
+    });
+
+    test('ignores a seekBy whose seconds are not a number', async ({ page }) => {
+      const player = await loadLong(page);
+
+      await page.evaluate(() => {
+        window.postMessage({ type: 'seekBy', seconds: '5' }, '*');
+        window.postMessage({ type: 'seekBy', seconds: Number.NaN }, '*');
+        window.postMessage({ type: 'seekBy' }, '*');
+      });
+      await player.post({ type: 'seekBy', seconds: 1 });
+
+      // Only the well-formed step after them moves the playhead.
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      expect((await player.video()).currentTime).toBeCloseTo(1, 1);
+      expect(await seekedCount(player)).toBe(1);
+    });
+
+    test('steps again while the re-stream of an earlier step is under way', async ({ page }) => {
+      const player = await openPlayer(page, {
+        tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+      });
+      await player.post(load({ videoUri: media.long, startAt: 6, autoplay: false }));
+      await expect
+        .poll(
+          async () => {
+            const video = await player.video();
+            return video.buffered.some(
+              ([from, to]) => from <= video.currentTime && to > video.currentTime + 0.5,
+            );
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+
+      // Back past the dropped media, then back again before that re-stream is done.
+      await player.postAll([
+        { type: 'seekBy', seconds: -3 },
+        { type: 'seekBy', seconds: -2 },
+        { type: 'play' },
+      ]);
+
+      await player.waitForEvent({ type: 'played', lessonId });
+      await expect
+        .poll(
+          async () =>
+            (await player.events()).some(
+              (event) => event.type === 'timeUpdate' && event.position > 1.6 && event.position < 4,
+            ),
+          { message: 'the playhead moves on from 0:01', timeout: 10_000 },
+        )
+        .toBe(true);
+      expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+
+    test('a long forward step on a WebM that states no length ends at its end', async ({
+      page,
+    }) => {
+      const player = await openPlayer(page, {
+        tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+      });
+      await player.post(load({ videoUri: media.noDuration, autoplay: false }));
+      await expect
+        .poll(async () => (await player.video()).buffered.at(-1)?.[1] ?? 0, { timeout: 10_000 })
+        .toBeGreaterThan(2.5);
+
+      // Further than the Lesson is long, while its end is still unknown.
+      await player.post({ type: 'seekBy', seconds: 60 });
+      await player.post({ type: 'play' });
+
+      await player.waitForEvent({ type: 'ended', lessonId });
+      expect((await player.video()).currentTime).toBeCloseTo(8, 0);
+      expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
+
+    test('steps back past media the buffer evicted, and plays on from there', async ({ page }) => {
+      // A 3 s quota makes the 8 s fixture behave like a Lesson larger than Chromium's MSE quota.
+      const player = await openPlayer(page, {
+        tuning: { appendBytes: 4096, quotaSeconds: 3, keepBehindSeconds: 0.5 },
+      });
+      await player.post(load({ videoUri: media.long, startAt: 6, autoplay: false }));
+      await expect
+        .poll(
+          async () => {
+            const video = await player.video();
+            return video.buffered.some(
+              ([from, to]) => from <= video.currentTime && to > video.currentTime + 0.5,
+            );
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+      expect((await player.video()).buffered.some(([from]) => from < 2)).toBe(false);
+
+      await player.post({ type: 'seekBy', seconds: -5 });
+      await player.post({ type: 'play' });
+
+      await player.waitForEvent({ type: 'seeked', lessonId });
+      await player.waitForEvent({ type: 'played', lessonId });
+      await expect
+        .poll(
+          async () =>
+            (await player.events()).some(
+              (event) => event.type === 'timeUpdate' && event.position > 1.6 && event.position < 4,
+            ),
+          { message: 'the playhead moves on from 0:01', timeout: 10_000 },
+        )
+        .toBe(true);
+      expect((await player.events()).map((event) => event.type)).not.toContain('error');
+    });
   });
 
   test('ignores messages that are not protocol commands', async ({ page }) => {
