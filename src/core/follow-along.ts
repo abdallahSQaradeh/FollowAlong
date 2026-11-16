@@ -600,7 +600,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   }
 
   /** Plays a Lesson of the open Course, by its id, from 5 s before where the learner left it. */
-  function playLesson(lessonId: string): void {
+  function playLesson(lessonId: string, fromStart = false): void {
     if (refusedWhileOpening()) {
       logger.log({
         level: 'info',
@@ -621,7 +621,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     // The Lesson left shows where the learner left it, which is saved with it.
     refreshTree();
     const saved = progress?.current();
-    play(course, lesson, saved === undefined ? 0 : resumePosition(saved, lesson.id), true);
+    const startAt = saved === undefined || fromStart ? 0 : resumePosition(saved, lesson.id);
+    play(course, lesson, startAt, true);
   }
 
   /** The Courses roots setting entries, and the roots, the learner was told about in this window. */
@@ -853,10 +854,12 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const course = openedCourse;
-      const intent = await ui.pick(buildLessonPicker(course));
-      if (intent?.type === 'playLesson') {
+      const intent = await ui.pick(
+        buildLessonPicker(course, progress?.current() ?? { lessons: {} }),
+      );
+      if (intent !== undefined) {
         if (course === openedCourse) {
-          playLesson(intent.lessonId);
+          playLesson(intent.lessonId, intent.type === 'playLessonFromStart');
         } else {
           logger.log({
             level: 'info',
