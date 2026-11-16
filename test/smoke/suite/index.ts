@@ -44,21 +44,29 @@ export async function run(): Promise<void> {
   say('the FollowAlong extension activates');
 
   const registered = await vscode.commands.getCommands(true);
+  for (const command of ['followalong.openCourse', 'followalong.playLesson']) {
+    assert.ok(registered.includes(command), `${command} is not registered`);
+  }
+  // VS Code adds a `.focus` command for every view it accepted from package.json: the FollowAlong
+  // activity bar container and its Lessons tree.
   assert.ok(
-    registered.includes('followalong.openCourse'),
-    'followalong.openCourse is not registered',
+    registered.includes('followalong.lessons.focus'),
+    'VS Code did not register the followalong.lessons view',
   );
-  say('its commands are registered');
+  say('its commands and the Lessons tree view are registered');
 
   await opensACourseBesideTheCode(extension.extensionPath);
   say('a Course opens in an editor group beside the code, and the open folder is unchanged');
 
-  say(await theLessonStarts(hooks.playerEvents));
+  say(await theLessonStarts(hooks.playerEvents, 'lesson.webm'));
+
+  // A click on a Lesson in the tree runs this command with the Lesson's id.
+  await vscode.commands.executeCommand('followalong.playLesson', 'long.webm');
+  say(await theLessonStarts(hooks.playerEvents, 'long.webm'));
 }
 
 /** Waits for the real player page to play the Lesson, or to report that autoplay was refused. */
-async function theLessonStarts(events: readonly SeenEvent[]): Promise<string> {
-  const lessonId = 'lesson.webm';
+async function theLessonStarts(events: readonly SeenEvent[], lessonId: string): Promise<string> {
   const outcome = await waitFor(
     'the player to play the Lesson or to report a refused autoplay',
     () =>

@@ -9,12 +9,15 @@ import type { PlayerEvent } from '../../protocol/player-messages.js';
 import { createSystemClock } from '../node/clock.js';
 import { createUnavailableConverter } from '../node/converter.js';
 import { createNodeFileSystem } from '../node/file-system.js';
+import { LessonTreeView, playLessonCommand } from './lesson-tree-view.js';
 import { PlayerPanel } from './player-panel.js';
 import { createConfig, createOutputLogger, createStorage, createUiSink } from './ports.js';
 
 export const commands = {
   /** Temporary: opens a folder as the Course. The Course picker replaces the folder dialog. */
   openCourse: 'followalong.openCourse',
+  /** Run by a click on a Lesson in the tree, with the Lesson's id. */
+  playLesson: playLessonCommand,
 } as const;
 
 /**
@@ -30,6 +33,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   const channel = vscode.window.createOutputChannel('FollowAlong', { log: true });
   const logger = createOutputLogger(channel);
   const player = new PlayerPanel(context.extensionPath, logger);
+  const lessonTree = new LessonTreeView();
   const core = createFollowAlong({
     player,
     fileSystem: createNodeFileSystem(),
@@ -37,7 +41,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
     clock: createSystemClock(),
     converter: createUnavailableConverter(),
     config: createConfig(),
-    ui: createUiSink(),
+    ui: createUiSink(lessonTree),
     logger,
   });
 
@@ -65,6 +69,7 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
   context.subscriptions.push(
     channel,
     player,
+    lessonTree,
     {
       dispose: () => {
         core.dispose();
@@ -86,6 +91,12 @@ export function activate(context: vscode.ExtensionContext): TestHooks | undefine
       if (target !== undefined) {
         await core.openCourse(target.fsPath);
       }
+    }),
+    register(commands.playLesson, (lessonId) => {
+      if (typeof lessonId === 'string') {
+        core.playLesson(lessonId);
+      }
+      return Promise.resolve();
     }),
   );
   return testHooks;
