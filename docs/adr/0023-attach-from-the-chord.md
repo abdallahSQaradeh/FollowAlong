@@ -5,7 +5,8 @@ attach a Resource to the Loaded Lesson while it plays. ADR 0012 kept the file di
 adapter, so `attachResource(lessonId, path)` stays the tree's "+" route. The chord has no tree
 node to name the Lesson, so these are the choices the spec leaves open.
 
-- **The letter is `A`** (`Ctrl+'` `A`, `Cmd+'` `A` on macOS). Taken before: `Space`, `,`, `.`,
+- **The letter is `R`** (`Ctrl+'` `R`, `Cmd+'` `R` on macOS; revised by ADR 0098: it was `A`, which
+  went to Toggle Auto-pause). Taken before: `Space`, `,`, `.`,
   `←`, `→`, `↑`, `↓`, `N`, `P`, `L`. Mark done / not done (#29) takes another letter.
 - **A new command, `followalong.attachToLoadedLesson`**, is the Palette's "FollowAlong: Attach
   Resource". The existing `followalong.attachResource` (the tree's "+", run with a node) stays
