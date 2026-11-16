@@ -18,6 +18,7 @@ import {
   newResource,
   noResources,
   resourcesFile,
+  withCourseResource,
   withRelinkedResource,
   withoutResource,
   withResource,
@@ -41,6 +42,8 @@ export interface ResourceStore {
    * be written (the learner has been told), or when it no longer applies (the Resource is gone).
    */
   attach(lessonId: string, absolutePath: string): Promise<boolean>;
+  /** Attaches a file to the whole Course. */
+  attachToCourse(absolutePath: string): Promise<boolean>;
   detach(resourceId: string): Promise<boolean>;
   /** Points the Resource at another file: it keeps its id and its place in its Lesson. */
   relink(resourceId: string, absolutePath: string): Promise<boolean>;
@@ -155,6 +158,10 @@ export async function openResources(
     attach: (lessonId, absolutePath) =>
       change(`attaching ${absolutePath}`, `Attached ${absolutePath} to ${lessonId}`, (stored) =>
         withResource(stored, lessonId, newResource(folder, absolutePath)),
+      ),
+    attachToCourse: (absolutePath) =>
+      change(`attaching ${absolutePath}`, `Attached ${absolutePath} to the Course`, (stored) =>
+        withCourseResource(stored, newResource(folder, absolutePath)),
       ),
     detach: (resourceId) =>
       change(`detaching ${resourceId}`, `Detached ${resourceId}`, (stored) =>
