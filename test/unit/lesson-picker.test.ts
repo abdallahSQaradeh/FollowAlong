@@ -91,7 +91,7 @@ describe('Go to Lesson…', () => {
     await h.ui.pickerShown();
 
     expect(h.ui.picker?.title).toBe('Open Course');
-    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Add Courses root…']);
+    expect(rows(h.ui.picker)).toEqual(['Some Course', 'Browse…', 'Add Courses root…']);
     expect(h.ui.messages).toEqual([]);
   });
 
