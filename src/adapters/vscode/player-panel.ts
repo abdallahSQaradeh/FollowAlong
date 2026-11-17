@@ -83,11 +83,12 @@ const stripShare = 0.26;
 const spotContextKey = 'followalong.videoSpot';
 
 /** Whether `group` holds a tab of the learner's: not the player's page, and not nothing. */
+function isPlayerTab(tab: vscode.Tab): boolean {
+  return tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith(playerViewType);
+}
+
 function holdsMoreThanThePlayer(group: vscode.TabGroup): boolean {
-  return group.tabs.some(
-    (tab) =>
-      !(tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith(playerViewType)),
-  );
+  return group.tabs.some((tab) => !isPlayerTab(tab));
 }
 
 /** The page in one spot: a webview, how to bring it to the front, and how to drop it. */
@@ -224,10 +225,13 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           return;
         }
         this.awaitedSpot = undefined;
-        const { host, panel, startPage, setMoving } = this.openPanel('floatingWindow', title);
+        const { host, panel, startPage, setMoving, markFloated } = this.openPanel(
+          'floatingWindow',
+          title,
+        );
         this.host = host;
         // The queue waits for the move into the new window, as the spot changes after it must.
-        return this.moveIntoFloatingWindow(host, panel, startPage, setMoving);
+        return this.moveIntoFloatingWindow(host, panel, { startPage, setMoving, markFloated });
       }
       case 'miniStrip':
         return this.openStrip();
@@ -338,6 +342,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     readonly panel: vscode.WebviewPanel;
     readonly startPage: () => void;
     readonly setMoving: (moving: boolean) => void;
+    readonly markFloated: () => void;
   } {
     const floating = spot === 'floatingWindow';
     const panel = vscode.window.createWebviewPanel(
@@ -359,6 +364,37 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
      */
     let moving = false;
     let disposeWhenMoved = false;
+    /** Set once the tab is in a window of its own: that window goes with the tab (ADR 0108). */
+    let floated = false;
+    /**
+     * Closes the tab. A floating window left empty stays open where the learner keeps empty
+     * groups (`workbench.editor.closeEmptyGroups` off), or when it could not be made compact; so
+     * once the tab floats, its group is closed with it, which closes that window. Only a group that
+     * holds nothing but the player: one the learner put other editors in stays (ADR 0108).
+     */
+    const close = (): void => {
+      const group = floated
+        ? vscode.window.tabGroups.all.find((candidate) => candidate.tabs.some(isPlayerTab))
+        : undefined;
+      if (group === undefined || holdsMoreThanThePlayer(group)) {
+        panel.dispose();
+        return;
+      }
+      vscode.window.tabGroups.close(group, true).then(
+        (closed) => {
+          if (!closed) {
+            panel.dispose();
+          }
+        },
+        (error: unknown) => {
+          this.logger.log({
+            level: 'warn',
+            message: `Could not close the floating window: ${messageOf(error)}`,
+          });
+          panel.dispose();
+        },
+      );
+    };
     /** What the page posts is forwarded until the host is dropped. */
     const forwarding: vscode.Disposable[] = [];
     const host: Host = {
@@ -387,7 +423,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           disposeWhenMoved = true;
           return;
         }
-        panel.dispose();
+        close();
       },
       closeContainer: () => Promise.resolve(),
     };
@@ -395,8 +431,11 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       moving = now;
       if (!now && disposeWhenMoved) {
         disposeWhenMoved = false;
-        panel.dispose();
+        close();
       }
+    };
+    const markFloated = (): void => {
+      floated = true;
     };
     panel.onDidDispose(() => {
       // A panel dropped for a move is not a close: the Lesson is still there. The learner closing
@@ -414,7 +453,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     if (!floating) {
       startPage();
     }
-    return { host, panel, startPage, setMoving };
+    return { host, panel, startPage, setMoving, markFloated };
   }
 
   /**
@@ -427,8 +466,15 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   private async moveIntoFloatingWindow(
     host: Host,
     panel: vscode.WebviewPanel,
-    startPage: () => void,
-    setMoving: (moving: boolean) => void,
+    {
+      startPage,
+      setMoving,
+      markFloated,
+    }: {
+      readonly startPage: () => void;
+      readonly setMoving: (moving: boolean) => void;
+      readonly markFloated: () => void;
+    },
   ): Promise<void> {
     const isStillThePlayer = (): boolean => this.host === host;
     if (!isStillThePlayer()) {
@@ -443,9 +489,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     // apply several view-state changes in one turn, before this continuation runs, so `active`
     // alone is not enough (CP3+CP4).
     if (!active || !panel.active) {
+      // The focus is not the player's: the learner went on meanwhile (a quick pick, another
+      // editor), so it stays where they took it (ADR 0108).
       this.cannotFloat(
         host,
         `the player tab was not the active editor within ${String(viewWaitMs)} ms`,
+        false,
       );
       return;
     }
@@ -454,10 +503,11 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       await vscode.commands.executeCommand(floatCommands.move);
     } catch (error) {
       setMoving(false);
-      this.cannotFloat(host, messageOf(error));
+      this.cannotFloat(host, messageOf(error), panel.active);
       return;
     }
-    // A drop that came meanwhile (a collapse, another spot) disposes the tab now, in its window.
+    markFloated();
+    // A drop that came meanwhile (a collapse, another spot) closes the tab now, in its window.
     setMoving(false);
     if (!isStillThePlayer()) {
       // Dropped during the move: there is nothing to settle (review of #51, SOFT 4).
@@ -513,8 +563,12 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     });
   }
 
-  /** The floating window could not be made: no player is left, and the learner is told once. */
-  private cannotFloat(host: Host, why: string): void {
+  /**
+   * The floating window could not be made: no player is left, and the learner is told once. The
+   * code gets the focus back only if the player's tab still has it (`playerHasFocus`): after the
+   * wait, the learner may be somewhere else, and that is not taken from them (ADR 0108).
+   */
+  private cannotFloat(host: Host, why: string, playerHasFocus: boolean): void {
     if (this.host !== host) {
       // Moved on meanwhile: the move after it dropped the tab.
       return;
@@ -526,8 +580,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     this.host = undefined;
     host.drop();
     this.playerGone();
-    // The tab took the focus to be moved: the code gets it back (ADR 0009).
-    void this.returnFocus();
+    if (playerHasFocus) {
+      // The tab took the focus to be moved: the code gets it back (ADR 0009).
+      void this.returnFocus();
+    }
   }
 
   /**
