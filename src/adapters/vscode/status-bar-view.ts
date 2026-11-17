@@ -66,10 +66,25 @@ export class StatusBarView implements vscode.Disposable {
     model.items.forEach((item, index) => {
       this.draw(item, model.items.length - index);
     });
+    // `drawn()` lists them left to right too, whichever were made again.
+    for (const { id } of model.items) {
+      const item = this.items.get(id);
+      if (item !== undefined) {
+        this.items.delete(id);
+        this.items.set(id, item);
+      }
+    }
   }
 
   private draw(model: StatusBarItemModel, priority: number): void {
     let item = this.items.get(model.id);
+    if (item !== undefined && item.priority !== priority) {
+      // VS Code sets a priority only when it makes the item: an item that came or went before
+      // this one (zoom, sound) moves it, so it is made again where the model puts it.
+      item.dispose();
+      this.items.delete(model.id);
+      item = undefined;
+    }
     if (item === undefined) {
       item = vscode.window.createStatusBarItem(
         `followalong.${model.id}`,

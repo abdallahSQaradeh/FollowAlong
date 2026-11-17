@@ -14,7 +14,7 @@ import { FileSystemError, type Ports } from './ports.js';
 
 type LinePorts = Pick<Ports, 'fileSystem' | 'storage' | 'logger'>;
 
-/** How many Courses are read at the same time: a library of hundreds does not open them all at once. */
+/** How many Courses are read at the same time: hundreds of Courses are not opened all at once. */
 const readAtOnce = 8;
 
 /**
@@ -29,7 +29,7 @@ export async function progressLineOf(
   roots: readonly string[],
 ): Promise<string | undefined> {
   const progress = await openCourseData(folder, ports).read(progressFile);
-  // Looked at before the Course's folders are: most Courses of a library have not been played.
+  // Looked at before the Course's folders are: most Courses under the roots have not been played.
   if (
     progress === undefined ||
     !Object.values(progress.lessons).some((l) => l.status !== undefined)

@@ -289,7 +289,7 @@ describe('Courses under category and wrapper folders', () => {
     expect(await listed(h, learning)).toEqual(['docker-mastery-2024 — Docker Mastery', 'Other']);
   });
 
-  it('lists a library laid out as the real downloads are', async () => {
+  it('lists a Courses root laid out as the real downloads are', async () => {
     const h = await createHarness();
     const learning = await h.folder('Learning', {
       // A wrapper named by the instructor around the folder the platform's download made.
