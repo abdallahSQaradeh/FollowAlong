@@ -719,8 +719,14 @@ async function turnOffCompactMode(): Promise<void> {
     const [look] = await floatingWindows();
     return look?.titleActions.includes('Turn On Compact Mode') === true ? true : undefined;
   };
+  // The action acts on the window that has the focus (VS Code 1.146, `getActiveWindow()`), and the
+  // main window has it after the float: the floating window takes it first, as a click on it does.
   await withFloatingWindowPages(async ([window]) => {
     assert.ok(window, 'no floating window to turn compact mode off in');
+    await window.bringToFront();
+    await window.evaluate(() => {
+      globalThis.focus();
+    });
     await window.locator(button).first().click();
   });
   try {
