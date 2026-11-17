@@ -27,7 +27,7 @@ const bundledFfmpegFiles = /** @type {{ outputs: string[] }} */ (pinnedJson).out
 const missing = bundledFfmpegFiles.filter((name) => !existsSync(join(root, 'bin', name)));
 if (missing.length > 0) {
   throw new Error(
-    `bin/ lacks ${missing.join(', ')}. Build the bundled ffmpeg first: node scripts/build-ffmpeg.mjs (Linux with mingw-w64), or download the "ffmpeg-win32-x64" artifact of a CI run into bin/.`,
+    `bin/ lacks ${missing.join(', ')}. Build the bundled ffmpeg first: node scripts/build-ffmpeg.mjs (Linux with mingw-w64), or npm run fetch-ffmpeg (downloads it from CI).`,
   );
 }
 

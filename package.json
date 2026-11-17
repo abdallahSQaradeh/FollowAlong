@@ -565,6 +565,7 @@
     "prepare": "husky",
     "build": "node scripts/build.mjs",
     "package": "node scripts/package.mjs",
+    "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
