@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 
 import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
-import { media, openPlayer, type PlayerHarness } from './player-page.js';
+import { media, openPlayer, pageBrightness, type PlayerHarness } from './player-page.js';
 
 const lessonId = 'Section 1/01 Welcome.webm';
 
@@ -61,15 +61,20 @@ function expectArea(actual: Area, expected: Area): void {
   }
 }
 
-/** Drags with the mouse from one point of the page to another, in small steps. */
+/**
+ * Drags with the mouse from one point of the page to another, in small steps. `beforeRelease`
+ * runs once the pointer has reached `to`, while the button is still down.
+ */
 async function drag(
   page: Page,
   from: { readonly x: number; readonly y: number },
   to: { readonly x: number; readonly y: number },
+  beforeRelease?: () => Promise<void>,
 ): Promise<void> {
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 8 });
+  await beforeRelease?.();
   await page.mouse.up();
 }
 
@@ -184,15 +189,19 @@ test.describe('a plain drag while zoomed', () => {
   });
 });
 
-/** Drags with Shift held, as a learner drawing a box while zoomed does. */
+/**
+ * Drags with Shift held, as a learner drawing a box while zoomed does. Shift is let go before the
+ * button: the press already chose the box (ADR 0087), and a key let go during the drag is part of
+ * its gesture. Let go after the button, the key would be an interaction of its own, reported or
+ * not depending on whether the drag's report was posted first.
+ */
 async function shiftDrag(
   page: Page,
   from: { readonly x: number; readonly y: number },
   to: { readonly x: number; readonly y: number },
 ): Promise<void> {
   await page.keyboard.down('Shift');
-  await drag(page, from, to);
-  await page.keyboard.up('Shift');
+  await drag(page, from, to, () => page.keyboard.up('Shift'));
 }
 
 test.describe('the cursor over the picture', () => {
@@ -890,5 +899,128 @@ test.describe('the zoom key commands', () => {
 
     expect((await player.video()).paused).toBe(true);
     expect(await interactions(player)).toBe(0);
+  });
+});
+
+/**
+ * The zoomed picture is drawn, not black (#117). Chromium dropped the picture of a zoomed `<video>`
+ * whose control bar went off with the zoom, and painted its box black. The fixture videos are
+ * ffmpeg's colour test pattern, as bright in any part as in the whole, so a zoomed picture is
+ * about as bright as the whole one; a black one reads 0.
+ */
+test.describe('the zoomed picture', () => {
+  /** How bright, at least, a zoomed picture is beside the whole one. */
+  const nearTheWhole = 0.6;
+
+  /** How bright the page is once it shows the Lesson's picture. */
+  async function brightnessShown(page: Page): Promise<number> {
+    await expect.poll(() => pageBrightness(page)).toBeGreaterThan(1);
+    return pageBrightness(page);
+  }
+
+  async function expectPictureShown(page: Page, whole: number): Promise<void> {
+    await expect.poll(() => pageBrightness(page)).toBeGreaterThanOrEqual(whole * nearTheWhole);
+  }
+
+  test('shows after a box is dragged, after a pan, and while the Lesson plays', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const whole = await brightnessShown(page);
+
+    await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+    await expectPictureShown(page, whole);
+
+    await drag(page, { x: 600, y: 300 }, { x: 400, y: 200 });
+    await expectPictureShown(page, whole);
+
+    await player.post({ type: 'play' });
+    await expect.poll(async () => (await player.video()).currentTime).toBeGreaterThan(1);
+    await expectPictureShown(page, whole);
+  });
+
+  test('shows after a turn of the wheel, from a pointer at rest', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const whole = await brightnessShown(page);
+    // The pointer rests on the picture before the turn, as a learner's does. On the zoomed <video>,
+    // a turn within about half a second of a pointer move kept the picture, and one after a second
+    // at rest lost it: the rest makes this test fail there.
+    await page.mouse.move(640, 360);
+    await page.waitForTimeout(1_500);
+
+    // One notch of a mouse wheel, away from the learner.
+    await page.mouse.wheel(0, -100);
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+    await expectPictureShown(page, whole);
+  });
+
+  for (const lesson of [
+    { name: 'a WebM Lesson', videoUri: media.long, container: 'webm' },
+    { name: 'an MP4 Lesson', videoUri: media.mp4, container: 'mp4' },
+  ] as const) {
+    test(`shows after the zoom command, in ${lesson.name}`, async ({ page }) => {
+      const player = await openPlayer(page);
+      await player.post(load({ videoUri: lesson.videoUri, container: lesson.container }));
+      await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+      const whole = await brightnessShown(page);
+
+      await player.post({ type: 'zoom', action: 'in' });
+
+      await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+      await expectPictureShown(page, whole);
+    });
+  }
+
+  test('shows the zoom of the page it replaces in another spot (#49)', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const whole = await brightnessShown(page);
+
+    await player.post({ type: 'restore', zoom: { level: 4, left: 0.25, top: 0.5 } });
+
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+    await expectPictureShown(page, whole);
+  });
+
+  // Cover only: this could not fail on the zoomed <video> either. The reloaded page applies the
+  // stored zoom before its video has a frame, and Chromium lost the picture only when the control
+  // bar went off a video already showing one.
+  test('shows the zoom a reloaded page restored', async ({ page }) => {
+    const player = await openPlayer(page);
+    await loadPaused(player);
+    const whole = await brightnessShown(page);
+    await drag(page, { x: 320, y: 180 }, { x: 640, y: 360 });
+    await player.waitForEvent({ type: 'zoomChanged', level: 4 });
+
+    await page.reload();
+    await loadPaused(player);
+
+    await expect(page.getByLabel('Zoom level')).toHaveText('4×');
+    await expectPictureShown(page, whole);
+  });
+
+  test('shows in an MP4 Lesson whose control bar is held back for its sound (ADR 0034)', async ({
+    page,
+  }) => {
+    const player = await openPlayer(page, { aac: false });
+    await player.postAll([
+      load({ videoUri: media.sidecarMp4, container: 'mp4' }),
+      { type: 'soundProgress', percent: 50 },
+    ]);
+    await expect.poll(async () => (await player.video()).duration).toBeGreaterThan(0);
+    const whole = await brightnessShown(page);
+
+    await player.post({ type: 'zoom', action: 'in' });
+    await player.waitForEvent({ type: 'zoomChanged', level: 1.25 });
+    await expectPictureShown(page, whole);
+
+    // The sound arrives while zoomed: the control bar stays off, and the picture stays.
+    await player.post({ type: 'soundReady', audioUri: media.sidecarMp3 });
+    await expect(page.getByText(/Preparing sound/)).toBeHidden();
+    await expectPictureShown(page, whole);
   });
 });

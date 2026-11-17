@@ -42,7 +42,9 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 </head>
 <body>
 <main class="stage">
+<div class="zoom-frame">
 <video id="video" controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture disableremoteplayback preload="auto"></video>
+</div>
 <div class="overlay" aria-hidden="true"></div>
 <div class="zoom-box" hidden></div>
 <div class="zoom-tools" role="toolbar" aria-label="Zoom">

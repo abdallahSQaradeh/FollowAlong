@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import type { Page } from '@playwright/test';
+import type { Page, PageScreenshotOptions } from '@playwright/test';
 
 import { renderPlayerHtml } from '../../src/player/page.js';
 import type { PlayerTuning } from '../../src/player/tuning.js';
@@ -526,47 +526,89 @@ export async function spots(page: Page) {
   };
 }
 
+/** The blank page beside each page under test that reads its screenshots. */
+const scratchPages = new WeakMap<Page, Promise<Page>>();
+
+/**
+ * The blank page that reads `page`'s screenshots, opened once in the same browser context: the
+ * context closes it with the test. A page per screenshot would start a renderer each time, and
+ * the load slows the timing-sensitive tests running beside it.
+ */
+function scratchPage(page: Page): Promise<Page> {
+  let scratch = scratchPages.get(page);
+  if (scratch === undefined) {
+    scratch = page.context().newPage();
+    scratchPages.set(page, scratch);
+  }
+  return scratch;
+}
+
+/** How wide, at most, {@link screenshotPixels} draws a screenshot: a wider one is drawn smaller. */
+const widestDrawn = 128;
+
+/**
+ * The RGB values of a screenshot of `clip` of the page. A screenshot wider than
+ * {@link widestDrawn} px is drawn that wide, so its pixels blend into the mean of each area. Read
+ * in a scratch page, so no image library is needed.
+ */
+async function screenshotPixels(
+  page: Page,
+  clip: NonNullable<PageScreenshotOptions['clip']>,
+): Promise<readonly (readonly [number, number, number])[]> {
+  // A JPEG is quicker to make than a PNG, and close enough for a mean or a white icon.
+  const shot = await page.screenshot({ clip, type: 'jpeg', quality: 90 });
+  return (await scratchPage(page)).evaluate(
+    async ({ data, widest }) => {
+      const image = new Image();
+      image.src = `data:image/jpeg;base64,${data}`;
+      await image.decode();
+      const scale = Math.min(1, widest / image.width);
+      const width = Math.round(image.width * scale);
+      const height = Math.round(image.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (context === null) {
+        throw new Error('no 2d canvas');
+      }
+      context.drawImage(image, 0, 0, width, height);
+      const { data: pixels } = context.getImageData(0, 0, width, height);
+      const rgb: [number, number, number][] = [];
+      for (let index = 0; index < pixels.length; index += 4) {
+        rgb.push([pixels[index] ?? 0, pixels[index + 1] ?? 0, pixels[index + 2] ?? 0]);
+      }
+      return rgb;
+    },
+    { data: shot.toString('base64'), widest: widestDrawn },
+  );
+}
+
 /**
  * Whether Chromium's native control bar is on screen: its play/pause icon is drawn in white at
- * the left end of the button row, where the fixture video has no white. Reads the pixels of a
- * screenshot in a scratch page, so no image library is needed.
+ * the left end of the button row, where the fixture video has no white.
  */
 export async function controlBarShown(page: Page): Promise<boolean> {
   const box = await page.locator('video').boundingBox();
   if (box === null) {
     throw new Error('the video is not on screen');
   }
-  const png = await page.screenshot({
-    clip: { x: box.x + 12, y: box.y + box.height - 60, width: 24, height: 24 },
+  const pixels = await screenshotPixels(page, {
+    x: box.x + 12,
+    y: box.y + box.height - 60,
+    width: 24,
+    height: 24,
   });
-  const scratch = await page.context().newPage();
-  try {
-    return await scratch.evaluate(async (data) => {
-      const image = new Image();
-      image.src = `data:image/png;base64,${data}`;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const context = canvas.getContext('2d');
-      if (context === null) {
-        throw new Error('no 2d canvas');
-      }
-      context.drawImage(image, 0, 0);
-      const { data: pixels } = context.getImageData(0, 0, image.width, image.height);
-      let white = 0;
-      for (let index = 0; index < pixels.length; index += 4) {
-        if (
-          (pixels[index] ?? 0) > 220 &&
-          (pixels[index + 1] ?? 0) > 220 &&
-          (pixels[index + 2] ?? 0) > 220
-        ) {
-          white += 1;
-        }
-      }
-      return white >= 10;
-    }, png.toString('base64'));
-  } finally {
-    await scratch.close();
+  return pixels.filter((pixel) => pixel.every((value) => value > 220)).length >= 10;
+}
+
+/** How bright the whole page looks, from 0 (black) to 255 (white): the mean of a screenshot. */
+export async function pageBrightness(page: Page): Promise<number> {
+  const viewport = page.viewportSize();
+  if (viewport === null) {
+    throw new Error('the page has no fixed viewport');
   }
+  const pixels = await screenshotPixels(page, { x: 0, y: 0, ...viewport });
+  const total = pixels.reduce((sum, [red, green, blue]) => sum + red + green + blue, 0);
+  return total / (pixels.length * 3);
 }
