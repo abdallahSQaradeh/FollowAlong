@@ -403,8 +403,8 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
     }
 
     say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
-    say(await closingTheFloatingWindowClosesTheLesson(hooks, code));
     say(await theFloatingWindowGoesWithItsTabWhenEmptyGroupsStay(hooks, code));
+    say(await closingTheFloatingWindowClosesTheLesson(hooks, code));
     say(await doesAMoveIntoANewWindowKeepThePage(hooks));
     say(await aPlayerOpensInTheStripFromTheSetting(hooks, course, code));
   } finally {
