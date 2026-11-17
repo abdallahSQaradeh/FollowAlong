@@ -9,7 +9,7 @@ import { basename } from 'node:path';
 import { messageOf } from './logger.js';
 import { openCourseData, type CourseData, type CourseDataFile } from './course-data.js';
 import { lessonsInOrder } from './course-model.js';
-import { normalisedRoot } from './courses-roots.js';
+import { normalisedRoot } from './folder-identity.js';
 import { folderLabel } from './course-scanner.js';
 import { readCourse } from './folder-listing.js';
 import { FileSystemError, type Ports } from './ports.js';

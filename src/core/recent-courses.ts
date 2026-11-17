@@ -6,7 +6,7 @@
  */
 import type { RecentCourse } from './course-picker.js';
 import { folderLabel, type ScannedCourse } from './course-scanner.js';
-import { keyOf, normalisedRoot } from './courses-roots.js';
+import { keyOf, normalisedRoot } from './folder-identity.js';
 import { FileSystemError, type KeyValueStore, type Ports } from './ports.js';
 
 /** Global storage key of the list. */

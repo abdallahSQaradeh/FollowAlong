@@ -28,6 +28,7 @@ import type { Lesson } from './course-model.js';
 import type { PreparedSound, SoundRequest } from './sidecar-sound.js';
 import type { Disposable, PlayerShowResult, Ports } from './ports.js';
 import type { PlayheadSeen } from './lesson-status.js';
+import { messageOf } from './logger.js';
 import { lessonStatus, type ProgressRecorder } from './progress.js';
 import { settingSpot, type VideoSpot } from './video-placement.js';
 import {
@@ -564,7 +565,7 @@ export function createLoadedLesson(
           player.send({ type: 'noSidecar' });
           return;
         }
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = messageOf(error);
         if (!preparation.loggedFailure) {
           preparation.loggedFailure = true;
           logger.log({

@@ -6,7 +6,7 @@
 import { messageOf } from './logger.js';
 import { openCourseData } from './course-data.js';
 import { lessonsInOrder } from './course-model.js';
-import { keyOf } from './courses-roots.js';
+import { keyOf } from './folder-identity.js';
 import { readCourse } from './folder-listing.js';
 import { summaryOf, totalsOf } from './lesson-tree.js';
 import { lessonStatus, noLastLesson, progressFile } from './progress.js';

@@ -3,9 +3,8 @@
  * function from the scanned Courses and the Recent Courses to the quick pick behind “Open
  * Course…”. Picking returns an intent; the core carries it out.
  */
-import { keyOf, sameFolder } from './courses-roots.js';
+import { folderKey, keyOf, sameFolder } from './folder-identity.js';
 import type { ScannedCourse } from './course-scanner.js';
-import { hiddenKeyOf } from './hidden-courses.js';
 import type { QuickPickEntry, QuickPickModel } from './quick-pick.js';
 
 /** What picking an item, or pressing a button, of the Course picker asks the core to do. */
@@ -56,7 +55,7 @@ export interface CoursePickerInput {
    */
   readonly progressLines?: ReadonlyMap<string, string | undefined>;
   /**
-   * The folders the learner hid, by {@link hiddenKeyOf}: a Course in it is not listed, wherever it
+   * The folders the learner hid, by {@link folderKey}: a Course in it is not listed, wherever it
    * would have been (Recent or the A–Z list).
    */
   readonly hidden?: ReadonlySet<string>;
@@ -92,7 +91,7 @@ export function buildCoursePicker(input: CoursePickerInput): QuickPickModel<Cour
     const line = missing ? undefined : input.progressLines?.get(keyOf(folder));
     return line === undefined ? {} : { detail: line };
   };
-  const isHidden = (folder: string): boolean => input.hidden?.has(hiddenKeyOf(folder)) === true;
+  const isHidden = (folder: string): boolean => input.hidden?.has(folderKey(folder)) === true;
   const hideButton = (folder: string, name: string) => ({
     label: 'Hide',
     icon: 'eye-closed',

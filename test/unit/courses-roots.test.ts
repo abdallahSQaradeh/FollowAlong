@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isFullPath } from '../../src/core/courses-roots.js';
+import { isFullPath } from '../../src/core/folder-identity.js';
 
 /**
  * Which setting entries name one folder wherever VS Code runs (ADR 0022), under each OS's path

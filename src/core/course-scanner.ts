@@ -6,7 +6,7 @@
 import { dirname, join, posix, relative, sep, win32 } from 'node:path';
 
 import { isLessonFile, isSkippedFolder, naturalOrder } from './course-model.js';
-import { hostFlavour, keyOf, type PathFlavour } from './courses-roots.js';
+import { hostFlavour, keyOf, type PathFlavour } from './folder-identity.js';
 import { type DirectoryEntry, FileSystemError, type Ports } from './ports.js';
 
 type ScanPorts = Pick<Ports, 'fileSystem' | 'logger'>;

@@ -7,8 +7,8 @@
 import { messageOf } from './logger.js';
 import { buildCoursePicker, type CoursePickerIntent } from './course-picker.js';
 import { readProgressLines } from './course-progress-lines.js';
-import { keyOf, sameFolder } from './courses-roots.js';
-import { hiddenKeyOf, hideCourse, readHidden, type HiddenCourse } from './hidden-courses.js';
+import { folderKey, keyOf, sameFolder } from './folder-identity.js';
+import { hideCourse, readHidden, type HiddenCourse } from './hidden-courses.js';
 import type { CourseScans } from './course-list-cache.js';
 import {
   buildFolderBrowser,
@@ -60,9 +60,9 @@ export async function showCoursePicker(
   /** The Progress lines read so far, and the Courses already asked for (read once per scan). */
   const lines = new Map<string, string | undefined>();
   const asked = new Set<string>();
-  /** The folders the learner hid, by {@link hiddenKeyOf}: read when the picker opens. */
+  /** The folders the learner hid, by {@link folderKey}: read when the picker opens. */
   const hidden = new Set(
-    readHidden(ports.storage.global).map((course) => hiddenKeyOf(course.folder)),
+    readHidden(ports.storage.global).map((course) => folderKey(course.folder)),
   );
   let closed = false;
   /** Counts what is shown (redraws) and what is asked for (scans): only the latest counts. */
@@ -259,7 +259,7 @@ export async function showCoursePicker(
   /** Hides a Course and shows the list again without it; the picker stays open. */
   const hide = async (course: HiddenCourse): Promise<void> => {
     // Gone from the list at once; the storage write follows, and a refusal is logged, not shown.
-    hidden.add(hiddenKeyOf(course.folder));
+    hidden.add(folderKey(course.folder));
     picker.update(view());
     try {
       await hideCourse(ports.storage.global, course);

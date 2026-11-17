@@ -11,7 +11,7 @@ import { basename, dirname, join } from 'node:path';
 
 import * as vscode from 'vscode';
 
-import type { Logger } from '../../core/logger.js';
+import { messageOf, type Logger } from '../../core/logger.js';
 import { renderPdfViewerPage } from '../../player/pdf-page.js';
 import { parsePdfViewerEvent, type PdfViewerEvent } from '../../protocol/pdf-viewer-messages.js';
 import { renderHtmlPreviewPage, renderMarkdownPreviewPage } from './preview-pages.js';
@@ -172,7 +172,7 @@ export class ResourceViewers implements vscode.Disposable {
     } catch (error) {
       this.logger.log({
         level: 'warn',
-        message: `VS Code could not render Markdown, opening the file as text: ${error instanceof Error ? error.message : String(error)}`,
+        message: `VS Code could not render Markdown, opening the file as text: ${messageOf(error)}`,
       });
       return undefined;
     }

@@ -12,6 +12,7 @@ import {
   type CourseDataWritten,
 } from './course-data.js';
 import type { Ports } from './ports.js';
+import { messageOf } from './logger.js';
 import {
   findResource,
   missingResources,
@@ -69,7 +70,7 @@ export async function openResources(
   } catch (error) {
     logger.log({
       level: 'warn',
-      message: `Could not read the Resources of ${folder}: ${error instanceof Error ? error.message : String(error)}`,
+      message: `Could not read the Resources of ${folder}: ${messageOf(error)}`,
     });
   }
   let missing: ReadonlySet<string> = await missingResources(fileSystem, folder, resources);

@@ -7,7 +7,8 @@
  */
 import { handOffCourse } from './course-hand-off.js';
 import { createCourseScans } from './course-list-cache.js';
-import { addCoursesRoot, readCoursesRoots, sameFolder } from './courses-roots.js';
+import { addCoursesRoot, readCoursesRoots } from './courses-roots.js';
+import { sameFolder } from './folder-identity.js';
 import { showCoursePicker } from './live-course-picker.js';
 import { locateCourse } from './locate-course.js';
 import type { Ports } from './ports.js';

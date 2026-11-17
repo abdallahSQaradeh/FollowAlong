@@ -595,7 +595,11 @@ async function theFloatingWindowHoldsThePlayer(): Promise<string> {
     const windows = await floatingWindows();
     return windows.length === 1 && windows[0]?.holdsWebview === true ? windows[0] : undefined;
   });
-  const mainHasFocus = await inWorkbench(() => document.hasFocus());
+  // The focus goes back to the code once the window is made, just after its page starts
+  // (ADR 0102; CI run 43971341720 measured it on Windows and under xvfb).
+  await waitForAsync('the main window to have the OS focus back after the float', async () =>
+    (await inWorkbench(() => document.hasFocus())) ? true : undefined,
+  );
   assert.equal(
     look.statusBarShown,
     false,
@@ -607,7 +611,7 @@ async function theFloatingWindowHoldsThePlayer(): Promise<string> {
       `the floating window's title bar has no "${action}": [${look.titleActions.join(', ')}]`,
     );
   }
-  return `the player sits in a floating window of its own, compact (no status bar) and on top (its title bar offers: ${look.titleActions.filter((label) => label.startsWith('Turn Off')).join(', ')}); the main window has the OS focus: ${String(mainHasFocus)}`;
+  return `the player sits in a floating window of its own, compact (no status bar) and on top (its title bar offers: ${look.titleActions.filter((label) => label.startsWith('Turn Off')).join(', ')}); the main window has the OS focus`;
 }
 
 /** Waits until no floating VS Code window is left after `what`. */

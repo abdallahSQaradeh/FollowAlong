@@ -439,7 +439,9 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       return;
     }
     // Checked again right before the move: the command moves whichever editor is active, and the
-    // learner may have clicked back into the code meanwhile (review of #51).
+    // learner may have clicked back into the code meanwhile (review of #51). The extension host can
+    // apply several view-state changes in one turn, before this continuation runs, so `active`
+    // alone is not enough (CP3+CP4).
     if (!active || !panel.active) {
       this.cannotFloat(
         host,
@@ -457,6 +459,10 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     }
     // A drop that came meanwhile (a collapse, another spot) disposes the tab now, in its window.
     setMoving(false);
+    if (!isStillThePlayer()) {
+      // Dropped during the move: there is nothing to settle (review of #51, SOFT 4).
+      return;
+    }
     // The new window takes the focus a moment after VS Code opened it.
     await this.whileOpen(panel, floatSettleMs, () => false);
     if (!isStillThePlayer()) {
@@ -721,7 +727,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
       (error: unknown) => {
         this.logger.log({
           level: 'error',
-          message: `Could not open the ${spot} view: ${error instanceof Error ? error.message : String(error)}`,
+          message: `Could not open the ${spot} view: ${messageOf(error)}`,
         });
         // No player will show: the core must not wait for it.
         if (this.awaitedSpot?.spot === spot) {
@@ -832,7 +838,7 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
           // The view still hides with its `when` clause; the move goes on (review of #49, item 4).
           this.logger.log({
             level: 'warn',
-            message: `Could not close the ${spot}: ${error instanceof Error ? error.message : String(error)}`,
+            message: `Could not close the ${spot}: ${messageOf(error)}`,
           });
         }
       },
