@@ -46,6 +46,8 @@ interface TestHooks {
     readonly id: string;
     readonly text: string;
     readonly command?: { readonly id: string; readonly argument: unknown };
+    /** VS Code draws higher priorities further left. */
+    readonly priority: number | undefined;
   }[];
   selectedLesson(): string | undefined;
   /** How many quick picks were shown so far. */
@@ -1378,7 +1380,27 @@ async function theStatusBarRunsTheCommands(hooks: TestHooks): Promise<string> {
   await vscode.commands.executeCommand(click, 'speedCycle');
   await vscode.commands.executeCommand('followalong.speedDown');
   assert.equal(vscode.window.activeTextEditor?.document, code, 'a click moved the focus');
-  return 'the status bar shows play/pause, time, speed and back, each wired to the click command';
+
+  // An item that comes later (zoom) sits right of the others: the items already shown move to
+  // keep the model's order, with no two at the same priority (final review of #12).
+  await vscode.commands.executeCommand('followalong.zoomIn');
+  const zoomed = await waitFor('the zoom item in the status bar', () => {
+    const now = hooks.statusBar();
+    return now.some((item) => item.id === 'zoom') ? now : undefined;
+  });
+  const order = ['playPause', 'time', 'speed', 'back', 'zoom'];
+  const priorities = order.map(
+    (id) => zoomed.find((item) => item.id === id)?.priority ?? Number.NaN,
+  );
+  assert.ok(
+    priorities.every((priority, index) => index === 0 || priority < (priorities[index - 1] ?? 0)),
+    `the status bar items are not left to right as ${order.join(', ')}: priorities ${priorities.join(', ')}`,
+  );
+  await vscode.commands.executeCommand('followalong.zoomReset');
+  await waitFor('the zoom item to go', () =>
+    hooks.statusBar().some((item) => item.id === 'zoom') ? undefined : true,
+  );
+  return 'the status bar shows play/pause, time, speed and back, each wired to the click command, and a zoom item to their right';
 }
 
 /** Attaches a text file to a Lesson of a scratch Course, then opens it from the tree. */

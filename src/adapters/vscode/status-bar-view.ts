@@ -19,6 +19,8 @@ export interface DrawnItem {
   readonly text: string;
   /** The VS Code command a click runs, and the core command it is run with. */
   readonly command: { readonly id: string; readonly argument: unknown } | undefined;
+  /** VS Code draws a higher priority further left. */
+  readonly priority: number | undefined;
 }
 
 const codicons: Readonly<Record<StatusBarIcon, string>> = {
@@ -44,6 +46,7 @@ export class StatusBarView implements vscode.Disposable {
         id,
         text: item.text,
         command: typeof command === 'object' ? { id: command.command, argument } : undefined,
+        priority: item.priority,
       };
     });
   }
