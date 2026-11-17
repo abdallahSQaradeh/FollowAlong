@@ -13,8 +13,13 @@ Q1–Q4 on it, which accepted each default below.
 - **Zoom belongs to the player page, not to the Lesson** (Q1). The player keeps what it shows as
   a level from 1 to 8 plus the top-left corner of the shown area, in fractions of the whole
   picture (`src/player/zoom.ts`). Fractions, not pixels, so a resized player (or, with #49, a
-  moved one) still shows the same area. The video is scaled from its top left with a CSS
-  transform whose translate is a percentage of its own box, so a resize needs no code. The view is
+  moved one) still shows the same area. The picture is scaled from its top left with a CSS
+  transform whose translate is a percentage of its own box, so a resize needs no code. **The
+  transform sits on a zoom frame around the video** (`.zoom-frame`, the size of the player), not on
+  the `<video>` (#117). Chromium drops the picture of a transformed `<video>` whose `controls`
+  goes off in the same frame, as it does at every zoom above 1×: the element's box is still
+  painted, black, and the picture comes back only at 1×. Seam 2 checks what is painted (the mean
+  brightness of a screenshot), not only where the video lies. The view is
   written to the webview state on every change. So it stays while the Lesson plays, when the next
   Lesson loads (the instructor's editor is usually in the same place), and when VS Code reloads
   the page (ADR 0022). A reloaded page shows the stored zoom and reports it with `zoomChanged`
@@ -90,5 +95,8 @@ Q1–Q4 on it, which accepted each default below.
   slow the most common click (#23 made it instant), and at 1× there is nothing to reset.
 - **Toggle at once and undo the first toggle on a double-click.** Rejected: the learner would hear
   a blip, and the core would record a manual pause and a play.
+- **Transform the `<video>` itself, a frame after its control bar goes** (#117). Rejected: it
+  shows the picture only if an untransformed frame was painted in between, so it depends on
+  timing; a zoom frame does not.
 - **Keep the zoom in pixels, as the prototype did.** Rejected: a resize would show another area,
   and a stored view would not fit a player of another size.

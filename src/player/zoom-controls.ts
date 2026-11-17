@@ -40,6 +40,11 @@ interface PageState {
 
 export interface ZoomControlsOptions {
   readonly media: HTMLVideoElement;
+  /**
+   * The element around the video, the size of the player, that zoom transforms. Not the video:
+   * Chromium then drops the picture when the control bar goes (#117, ADR 0037).
+   */
+  readonly zoomFrame: HTMLElement;
   /** The transparent layer over the picture that takes the learner's pointer. */
   readonly overlay: HTMLElement;
   /** The box drawn while the learner drags. */
@@ -192,10 +197,10 @@ export class ZoomControls {
 
   /** Shows `view`, and reports a new level. */
   private render(view: ZoomView): void {
-    const { media, zoomChanged } = this.options;
+    const { media, zoomFrame, zoomChanged } = this.options;
     const before = this.view.level;
     this.view = view;
-    media.style.transform = zoomTransform(view);
+    zoomFrame.style.transform = zoomTransform(view);
     // The native control bar would be enlarged with the picture: it is off while zoomed, and the
     // overlay then covers the whole player, so the strip along the bottom is picture too.
     media.controls = !this.zoomed && !this.options.controlsHeldBack();

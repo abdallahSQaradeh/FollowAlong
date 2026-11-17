@@ -814,6 +814,7 @@ function part(selector: string): HTMLElement {
 const overlay = part('.overlay');
 const zoomControls = new ZoomControls({
   media: video,
+  zoomFrame: part('.zoom-frame'),
   overlay,
   box: part('.zoom-box'),
   toolbar: part('.zoom-tools'),

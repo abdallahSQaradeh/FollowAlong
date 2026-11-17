@@ -103,9 +103,12 @@ export function panBy(view: ZoomView, dx: number, dy: number): ZoomView {
   };
 }
 
-/** The CSS transform of the video that shows `view` (its transform origin is its top left). */
+/**
+ * The CSS transform that shows `view`, for the element around the video (its transform origin is
+ * its top left).
+ */
 export function zoomTransform(view: ZoomView): string {
-  // A translate percentage is of the video's own box, which is the player's size.
+  // A translate percentage is of the element's own box, which is the player's size.
   const x = -view.left * view.level * 100;
   const y = -view.top * view.level * 100;
   return `translate(${String(x)}%, ${String(y)}%) scale(${String(view.level)})`;
