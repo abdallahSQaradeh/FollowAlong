@@ -61,15 +61,20 @@ function expectArea(actual: Area, expected: Area): void {
   }
 }
 
-/** Drags with the mouse from one point of the page to another, in small steps. */
+/**
+ * Drags with the mouse from one point of the page to another, in small steps. `beforeRelease`
+ * runs once the pointer has reached `to`, while the button is still down.
+ */
 async function drag(
   page: Page,
   from: { readonly x: number; readonly y: number },
   to: { readonly x: number; readonly y: number },
+  beforeRelease?: () => Promise<void>,
 ): Promise<void> {
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 8 });
+  await beforeRelease?.();
   await page.mouse.up();
 }
 
@@ -184,15 +189,19 @@ test.describe('a plain drag while zoomed', () => {
   });
 });
 
-/** Drags with Shift held, as a learner drawing a box while zoomed does. */
+/**
+ * Drags with Shift held, as a learner drawing a box while zoomed does. Shift is let go before the
+ * button: the press already chose the box (ADR 0087), and a key let go during the drag is part of
+ * its gesture. Let go after the button, the key would be an interaction of its own, reported or
+ * not depending on whether the drag's report was posted first.
+ */
 async function shiftDrag(
   page: Page,
   from: { readonly x: number; readonly y: number },
   to: { readonly x: number; readonly y: number },
 ): Promise<void> {
   await page.keyboard.down('Shift');
-  await drag(page, from, to);
-  await page.keyboard.up('Shift');
+  await drag(page, from, to, () => page.keyboard.up('Shift'));
 }
 
 test.describe('the cursor over the picture', () => {
