@@ -6,18 +6,572 @@
   "private": true,
   "publisher": "followalong",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abdallahSQaradeh/FollowAlong.git"
+  },
+  "categories": [
+    "Education"
+  ],
   "engines": {
     "vscode": "^1.146.0",
     "node": ">=22.22.1"
   },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "files": [
+    "out/extension.js",
+    "out/player/player.js",
+    "out/player/player.css",
+    "out/pdf/pdf-viewer.js",
+    "out/pdf/pdf.worker.js",
+    "media/followalong.svg",
+    "THIRD_PARTY_NOTICES.txt",
+    "bin/ffmpeg.exe",
+    "bin/FFMPEG-LICENSE-LGPL-2.1.txt",
+    "bin/LAME-LICENSE-LGPL.txt",
+    "bin/FFMPEG-BUILD.txt",
+    "scripts/build-ffmpeg.mjs",
+    "scripts/bundled-ffmpeg.json"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "followalong.openCourse",
+        "title": "Open Course…",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.unhideCourse",
+        "title": "Unhide a Course…",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.clearAudioCache",
+        "title": "Clear audio cache",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.playLesson",
+        "title": "Play Lesson",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.playPause",
+        "title": "Play/Pause",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.seekBackShort",
+        "title": "Back (Short Step)",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.seekForwardShort",
+        "title": "Forward (Short Step)",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.seekBackLong",
+        "title": "Back (Long Step)",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.seekForwardLong",
+        "title": "Forward (Long Step)",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.speedUp",
+        "title": "Speed up",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.speedDown",
+        "title": "Speed down",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.zoomArea",
+        "title": "Zoom area",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.zoomIn",
+        "title": "Zoom in",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.zoomOut",
+        "title": "Zoom out",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.zoomReset",
+        "title": "Zoom reset",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.nextLesson",
+        "title": "Next Lesson",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.previousLesson",
+        "title": "Previous Lesson",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.goToLesson",
+        "title": "Go to Lesson…",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.attachResource",
+        "title": "Attach Resource",
+        "category": "FollowAlong",
+        "icon": "$(add)"
+      },
+      {
+        "command": "followalong.attachToLoadedLesson",
+        "title": "Attach Resource",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.openResource",
+        "title": "Open Resource",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.detachResource",
+        "title": "Detach",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.relinkResource",
+        "title": "Relink…",
+        "category": "FollowAlong",
+        "icon": "$(link)"
+      },
+      {
+        "command": "followalong.moveVideo",
+        "title": "Move video to…",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.toggleVideo",
+        "title": "Toggle video",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.toggleAutoPause",
+        "title": "Toggle Auto-pause",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.toggleLessonDone",
+        "title": "Mark done / not done",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.markLessonDone",
+        "title": "Mark done",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.markLessonNotDone",
+        "title": "Mark not done",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.markSectionDone",
+        "title": "Mark all done",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.resetSection",
+        "title": "Reset Section",
+        "category": "FollowAlong"
+      },
+      {
+        "command": "followalong.resetCourseProgress",
+        "title": "Reset Course progress",
+        "category": "FollowAlong"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "followalong.playPause",
+        "key": "ctrl+alt+space",
+        "mac": "cmd+alt+space",
+        "when": "(editorTextFocus || terminalFocus) && !suggestWidgetVisible && !terminalSuggestWidgetVisible"
+      },
+      {
+        "command": "followalong.playPause",
+        "key": "ctrl+' space",
+        "mac": "cmd+' space",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekBackShort",
+        "key": "ctrl+alt+left",
+        "mac": "ctrl+cmd+left",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekForwardShort",
+        "key": "ctrl+alt+right",
+        "mac": "ctrl+cmd+right",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekBackShort",
+        "key": "ctrl+' ,",
+        "mac": "cmd+' ,",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekForwardShort",
+        "key": "ctrl+' .",
+        "mac": "cmd+' .",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekBackLong",
+        "key": "ctrl+' left",
+        "mac": "cmd+' left",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.seekForwardLong",
+        "key": "ctrl+' right",
+        "mac": "cmd+' right",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.speedUp",
+        "key": "ctrl+' up",
+        "mac": "cmd+' up",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.speedDown",
+        "key": "ctrl+' down",
+        "mac": "cmd+' down",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomArea",
+        "key": "ctrl+' z",
+        "mac": "cmd+' z",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomIn",
+        "key": "ctrl+' =",
+        "mac": "cmd+' =",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomOut",
+        "key": "ctrl+' -",
+        "mac": "cmd+' -",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.zoomReset",
+        "key": "ctrl+' 0",
+        "mac": "cmd+' 0",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.nextLesson",
+        "key": "ctrl+' n",
+        "mac": "cmd+' n",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.previousLesson",
+        "key": "ctrl+' p",
+        "mac": "cmd+' p",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.goToLesson",
+        "key": "ctrl+' l",
+        "mac": "cmd+' l",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.attachToLoadedLesson",
+        "key": "ctrl+' r",
+        "mac": "cmd+' r",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.toggleAutoPause",
+        "key": "ctrl+' a",
+        "mac": "cmd+' a",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.toggleLessonDone",
+        "key": "ctrl+' d",
+        "mac": "cmd+' d",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.toggleVideo",
+        "key": "ctrl+' v",
+        "mac": "cmd+' v",
+        "when": "editorTextFocus || terminalFocus"
+      },
+      {
+        "command": "followalong.openCourse",
+        "key": "ctrl+' c",
+        "mac": "cmd+' c",
+        "when": "editorTextFocus || terminalFocus"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "followalong",
+          "title": "FollowAlong",
+          "icon": "media/followalong.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "followalong-video-panel",
+          "title": "FollowAlong video",
+          "icon": "media/followalong.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "followalong-video-sidebar",
+          "title": "FollowAlong video",
+          "icon": "media/followalong.svg"
+        }
+      ]
+    },
+    "views": {
+      "followalong": [
+        {
+          "id": "followalong.lessons",
+          "name": "Lessons"
+        }
+      ],
+      "followalong-video-panel": [
+        {
+          "type": "webview",
+          "id": "followalong.videoPanel",
+          "name": "Video",
+          "when": "followalong.videoSpot == bottomPanel"
+        }
+      ],
+      "followalong-video-sidebar": [
+        {
+          "type": "webview",
+          "id": "followalong.videoSidebar",
+          "name": "Video",
+          "when": "followalong.videoSpot == secondarySidebar"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "followalong.lessons",
+        "contents": "Pick a Course from your Courses roots to list its Lessons here.\n[Open Course…](command:followalong.openCourse)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "followalong.playLesson",
+          "when": "false"
+        },
+        {
+          "command": "followalong.attachResource",
+          "when": "false"
+        },
+        {
+          "command": "followalong.openResource",
+          "when": "false"
+        },
+        {
+          "command": "followalong.detachResource",
+          "when": "false"
+        },
+        {
+          "command": "followalong.relinkResource",
+          "when": "false"
+        },
+        {
+          "command": "followalong.markLessonDone",
+          "when": "false"
+        },
+        {
+          "command": "followalong.markLessonNotDone",
+          "when": "false"
+        },
+        {
+          "command": "followalong.markSectionDone",
+          "when": "false"
+        },
+        {
+          "command": "followalong.resetSection",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "followalong.attachResource",
+          "when": "view == followalong.lessons && viewItem =~ /^(lesson|course)$/",
+          "group": "inline"
+        },
+        {
+          "command": "followalong.relinkResource",
+          "when": "view == followalong.lessons && viewItem == resourceMissing",
+          "group": "inline"
+        },
+        {
+          "command": "followalong.relinkResource",
+          "when": "view == followalong.lessons && viewItem == resourceMissing",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "followalong.detachResource",
+          "when": "view == followalong.lessons && viewItem =~ /^resource/",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "followalong.markLessonDone",
+          "when": "view == followalong.lessons && viewItem == lesson",
+          "group": "2_progress@1"
+        },
+        {
+          "command": "followalong.markLessonNotDone",
+          "when": "view == followalong.lessons && viewItem == lesson",
+          "group": "2_progress@2"
+        },
+        {
+          "command": "followalong.markSectionDone",
+          "when": "view == followalong.lessons && viewItem == section",
+          "group": "2_progress@1"
+        },
+        {
+          "command": "followalong.resetSection",
+          "when": "view == followalong.lessons && viewItem == section",
+          "group": "2_progress@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "FollowAlong",
+      "properties": {
+        "followalong.shortStep": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "markdownDescription": "Seconds the short step moves back or forward: `Ctrl+Alt+←` / `→`, `Ctrl+'` then `,` / `.`."
+        },
+        "followalong.longStep": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "markdownDescription": "Seconds the long step moves back or forward: `Ctrl+'` then `←` / `→`."
+        },
+        "followalong.coursesRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine",
+          "markdownDescription": "Folders that hold your Courses (Courses roots). **FollowAlong: Open Course…** (`Ctrl+'` then `C`) lists every Course under them, and can add a root for you."
+        },
+        "followalong.resumeRewind": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "Seconds the video jumps back when you resume a paused Lesson by hand, so you rehear the last words. `0` resumes where it stopped. Automatic resumes never jump back."
+        },
+        "followalong.autoPause": {
+          "type": "string",
+          "enum": [
+            "off",
+            "pause",
+            "pauseAndResume"
+          ],
+          "enumDescriptions": [
+            "Typing never pauses the Lesson.",
+            "Typing in the active editor pauses a playing Lesson. Press play to go on.",
+            "Typing in the active editor pauses a playing Lesson, and it goes on by itself once you stop typing for the quiet period (Auto Pause Resume After)."
+          ],
+          "default": "off",
+          "markdownDescription": "Auto-pause while typing: an edit in the active editor (a file, or an untitled one) pauses the Lesson that plays, so you don't miss what the instructor says while you type. Cursor moves, other editors and panels, and FollowAlong's own changes don't count. If you press play while it holds the Lesson paused, the Lesson plays through your typing until it pauses again. The play/pause item in the status bar shows a keyboard while it is on."
+        },
+        "followalong.autoPauseResumeAfter": {
+          "type": "number",
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "markdownDescription": "Seconds with no edit before a Lesson that typing paused goes on by itself, when `#followalong.autoPause#` is `pauseAndResume`. Each edit starts the wait again. It never jumps back, whatever `#followalong.resumeRewind#` says."
+        },
+        "followalong.ffmpegPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "The ffmpeg program FollowAlong uses to prepare the sound of MP4 Lessons, which VS Code cannot play (their sound is AAC). Leave it empty to use the ffmpeg that comes with FollowAlong (Windows x64), or `ffmpeg` on your PATH on other systems. Only user settings can set it, never a workspace."
+        },
+        "followalong.audioCacheLimit": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "markdownDescription": "The most disk space, in GB, that the prepared sound of MP4 Lessons may take, in all your Courses together. Past it, the sound of the Lessons you opened longest ago is deleted first; the Lesson you play and the next ones are kept. Deleted sound is prepared again when you open the Lesson. **FollowAlong: Clear audio cache** deletes it at once."
+        },
+        "followalong.videoLocation": {
+          "type": "string",
+          "enum": [
+            "editorSplit",
+            "bottomPanel",
+            "secondarySidebar",
+            "miniStrip",
+            "floatingWindow"
+          ],
+          "enumDescriptions": [
+            "An editor group beside the code.",
+            "The bottom panel, beside the terminal.",
+            "The secondary sidebar.",
+            "A short editor group above the code.",
+            "A floating window, compact and always on top. A click in it moves the focus out of the main window."
+          ],
+          "default": "editorSplit",
+          "markdownDescription": "Where the video opens: an editor group beside the code, the bottom panel, the secondary sidebar, a mini strip above the code or a floating always-on-top window. **FollowAlong: Move video to…** moves an open video to another spot, keeping its time, speed and zoom. A changed setting applies the next time the video opens."
+        }
+      }
+    }
+  },
   "scripts": {
     "prepare": "husky",
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
+    "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node scripts/run-logged.mjs test -- vitest run",
-    "test:player": "node scripts/run-logged.mjs test:player -- playwright test --trace off --pass-with-no-tests",
+    "test:player": "node scripts/run-logged.mjs test:player -- playwright test --trace off",
     "test:smoke": "node scripts/run-logged.mjs test:smoke -- node scripts/run-smoke.mjs",
     "check-logs": "node scripts/check-logs.mjs",
     "verify:fast": "npm run format:check && npm run lint && npm run typecheck && npm run test",
@@ -30,11 +584,14 @@
     "@types/node": "22.20.5",
     "@types/vscode": "1.146.0",
     "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.1.1",
+    "esbuild": "0.28.2",
     "eslint": "10.15.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.14.0",
     "husky": "9.1.7",
     "lint-staged": "17.6.1",
+    "pdfjs-dist": "6.5.438",
     "prettier": "3.10.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",

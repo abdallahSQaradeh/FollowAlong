@@ -60,15 +60,88 @@ jobs:
 
       - name: Upload .logs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: logs-ubuntu
           path: .logs/
           include-hidden-files: true
           if-no-files-found: ignore
 
+  ffmpeg:
+    name: ffmpeg (build the bundled LGPL ffmpeg.exe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Find the mingw-w64 version the build would use
+        id: mingw
+        run: |
+          sudo apt-get update
+          version="$(apt-cache policy gcc-mingw-w64-x86-64-posix | sed -n 's/^ *Candidate: //p')"
+          echo "mingw-w64 compiler: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # The key holds everything the binary depends on: the build script, the pinned versions,
+      # checksums and configure flags, and the cross-compiler's version. Change one, and it is
+      # built again (ADR 0070).
+      - name: Restore the built ffmpeg
+        id: cache
+        uses: actions/cache@v5
+        with:
+          path: bin
+          key: ffmpeg-win32-x64-${{ steps.mingw.outputs.version }}-${{ hashFiles('scripts/build-ffmpeg.mjs', 'scripts/bundled-ffmpeg.json') }}
+
+      - name: Install the cross-compiler and nasm (to build)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 make nasm xz-utils
+
+      - name: Install objdump (to check what is cached)
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: sudo apt-get install -y --no-install-recommends binutils-mingw-w64-x86-64
+
+      - name: Build ffmpeg.exe from the pinned sources
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          BUILD_JOBS: '4'
+        run: node scripts/build-ffmpeg.mjs
+
+      - name: Show what was built, and that it needs no DLL outside Windows
+        run: |
+          ls -l bin
+          cat bin/FFMPEG-BUILD.txt
+          node scripts/build-ffmpeg.mjs --check-imports bin/ffmpeg.exe
+
+      - name: Upload ffmpeg-win32-x64
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-win32-x64
+          path: bin/
+          if-no-files-found: error
+
+      # The corresponding source, distributed beside the .vsix (LGPL 2.1 section 6(d), ADR 0070):
+      # the exact tarballs, checked against their SHA-256, with the build script and its settings.
+      # Same run as the followalong-vsix artifact; retention is the repository default.
+      - name: Fetch the exact source tarballs (checked against their SHA-256)
+        run: node scripts/build-ffmpeg.mjs --fetch-sources ffmpeg-source
+
+      - name: Upload ffmpeg-source
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-source
+          path: |
+            ffmpeg-source/
+            scripts/build-ffmpeg.mjs
+            scripts/bundled-ffmpeg.json
+          if-no-files-found: error
+
   windows:
-    name: windows (typecheck, unit, smoke, package)
+    name: windows (typecheck, unit, smoke, bundled ffmpeg, package)
+    needs: ffmpeg
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -80,6 +153,12 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Download the built ffmpeg
+        uses: actions/download-artifact@v8
+        with:
+          name: ffmpeg-win32-x64
+          path: bin
 
       - name: Cache VS Code for the smoke test
         uses: actions/cache@v5
@@ -97,11 +176,19 @@ jobs:
         if: always()
         run: npm run check-logs
 
-      - name: Package the .vsix (once a package script exists)
-        run: npm run package --if-present
+      - name: Package the .vsix
+        run: npm run package
+
+      - name: Unpack the .vsix, and check it holds ffmpeg.exe, its licences and its source offer
+        run: node scripts/check-vsix.mjs
+
+      # The file that ships, run from the unpacked .vsix: the LGPL gate (ffmpeg -L and -buildconf),
+      # then the extension's own converter adapter turns the AAC sound of an MP4 into an MP3.
+      - name: Run the ffmpeg.exe from the .vsix (LGPL gate, AAC to MP3 through the converter adapter)
+        run: node scripts/check-bundled-ffmpeg.mjs vsix-unpacked/extension/bin/ffmpeg.exe
 
       - name: Upload .vsix
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: followalong-vsix
           path: '*.vsix'
@@ -109,7 +196,7 @@ jobs:
 
       - name: Upload .logs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: logs-windows
           path: .logs/

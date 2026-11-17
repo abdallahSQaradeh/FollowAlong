@@ -69,8 +69,32 @@ export default defineConfig(
           ],
           patterns: [
             {
-              group: ['**/adapters/**', '**/vscode/**'],
-              message: 'src/core must not reach into adapters. Depend on a port instead.',
+              group: ['**/adapters/**', '**/vscode/**', '**/player/**'],
+              message:
+                'src/core must not reach into adapters or the player. Depend on a port or src/protocol instead.',
+            },
+          ],
+        },
+      ],
+      // tsconfig includes the DOM types for the player; the core runs in the extension host.
+      'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'localStorage'],
+    },
+  },
+  {
+    // The player runs in the webview: no Node built-ins, no VS Code API, no core internals.
+    files: ['src/player/**'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'vscode', message: 'The player runs in a webview; use the message protocol.' },
+          ],
+          patterns: [
+            {
+              group: ['node:*', '**/core/**', '**/adapters/**'],
+              message:
+                'The player runs in a webview: it talks to the extension only through src/protocol.',
             },
           ],
         },

@@ -8,4 +8,5 @@
 *.jpg binary
 *.ico binary
 *.vsix binary
+*.pdf binary
 *.zip binary

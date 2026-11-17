@@ -1,0 +1,5 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55f1cb9c7ec0] Format mov,mp4,m4a,3gp,3g2,mj2 detected only with low score of 1, misdetection possible!
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55f1cb9c7ec0] moov atom not found
+[in#0 @ 0x55f1cb9c7dc0] Error opening input: Invalid data found when processing input
+Error opening input file /lesson/unreadable.mp4.
+Error opening input files: Invalid data found when processing input
