@@ -12,7 +12,9 @@ The `.vsix` ships a minimal LGPL ffmpeg (`bin/ffmpeg.exe`, Windows x64), so MP4 
 nothing else to install. `npm run package` needs it in `bin/` (git-ignored) and stops with a message
 when it is not there. Get it one of two ways:
 
-- Download the **ffmpeg-win32-x64** artifact of a CI run (the `ffmpeg` job) into `bin/`.
+- `npm run fetch-ffmpeg` (Windows too): downloads the **ffmpeg-win32-x64** artifact of the newest
+  successful CI run into `bin/` with the GitHub CLI (`gh auth login` first), then checks it. The
+  extension run from the repository (F5) also takes ffmpeg from `bin/`, so run this once per clone.
 - Or build it on Linux with mingw-w64: install the tools with
   `sudo apt-get install gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 make nasm xz-utils`,
   then run `node scripts/build-ffmpeg.mjs`. It downloads the pinned sources
