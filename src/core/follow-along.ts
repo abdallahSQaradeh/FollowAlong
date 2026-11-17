@@ -468,7 +468,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     } catch (error) {
       logger.log({
         level: 'warn',
-        message: `Could not open ${checked.url}: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not open ${checked.url}: ${messageOf(error)}`,
       });
       ui.showMessage({
         severity: 'error',
@@ -1031,7 +1031,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       } catch (error) {
         logger.log({
           level: 'warn',
-          message: `Could not open ${path}: ${error instanceof Error ? error.message : String(error)}`,
+          message: `Could not open ${path}: ${messageOf(error)}`,
         });
         ui.showMessage({
           severity: 'error',

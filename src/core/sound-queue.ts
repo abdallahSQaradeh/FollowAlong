@@ -10,7 +10,7 @@
  * opened.
  */
 import type { Lesson } from './course-model.js';
-import type { Logger } from './logger.js';
+import { messageOf, type Logger } from './logger.js';
 
 /** How many Lessons after the opened one get their sound ahead of time. */
 const aheadCount = 3;
@@ -269,7 +269,7 @@ export function createSoundQueue(prepareNow: PrepareNow, logger: Logger): SoundQ
     } else {
       failed.add(job.lesson.id);
       if (job.waiters.size === 0) {
-        const reason = result.error instanceof Error ? result.error.message : String(result.error);
+        const reason = messageOf(result.error);
         logger.log({
           level: 'warn',
           message: `Could not prepare the sound of ${job.lesson.id} ahead of time: ${reason} It is tried again when the Lesson is opened.`,
