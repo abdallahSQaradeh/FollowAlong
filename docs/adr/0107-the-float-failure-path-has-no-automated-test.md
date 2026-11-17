@@ -6,8 +6,7 @@ guard in the panel's `onDidDispose`. Mutations there survive. The CP3+CP4 review
 way.
 
 - **No seam reaches it.** Tests live at three seams (CODING_STANDARDS, _Tests_). The core half is at
-  Seam 1: a player that closes during a move leaves the Lesson loaded and the next open uses the
-  setting (ADR 0102). The adapter half reacts to VS Code: `workbench.action.moveEditorToNewWindow`
+  Seam 1 (`video-placement.test.ts`, _a floating window VS Code cannot make_). The adapter half reacts to VS Code: `workbench.action.moveEditorToNewWindow`
   being refused, or the tab not becoming the active editor within 5 s.
 - **The smoke test cannot trigger it on cue.** In a real VS Code under `@vscode/test-electron` there
   is no setting or command that makes the move fail, and keeping the tab from becoming active for

@@ -41,7 +41,7 @@ export function isFullPath(path: string, flavour: PathFlavour = hostFlavour): bo
     : posix.isAbsolute(path);
 }
 
-/** What two spellings of one folder share, for comparing roots. */
+/** What two normalised spellings of one folder share: compare these, not the spellings. */
 export function keyOf(normalised: string): string {
   return caseInsensitive ? normalised.toLowerCase() : normalised;
 }
