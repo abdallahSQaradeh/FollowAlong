@@ -6,7 +6,7 @@
  */
 import { messageOf } from './logger.js';
 import { scanCourses, type CourseScan, type ScannedCourse } from './course-scanner.js';
-import { keyOf } from './courses-roots.js';
+import { keyOf } from './folder-identity.js';
 import type { KeyValueStore, Ports } from './ports.js';
 
 /** Global storage key of the cache. */

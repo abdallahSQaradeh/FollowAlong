@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 
 import type { CourseDataFile } from './course-data.js';
-import { isInsideFolder } from './courses-roots.js';
+import { isInsideFolder } from './folder-identity.js';
 import type { FileSystem, ResourceTarget } from './ports.js';
 import type { QuickPickModel } from './quick-pick.js';
 

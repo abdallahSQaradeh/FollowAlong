@@ -12,7 +12,7 @@
 import { basename, dirname, join } from 'node:path';
 
 import { courseDataFolderName, fallbackRoot } from './course-data.js';
-import { keyOf } from './courses-roots.js';
+import { keyOf } from './folder-identity.js';
 import { messageOf } from './logger.js';
 import { FileSystemError, type DirectoryEntry, type Ports } from './ports.js';
 

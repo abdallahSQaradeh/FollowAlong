@@ -14,7 +14,8 @@ import { fallbackRoot } from './course-data.js';
 import { takeCourseHandOff } from './course-hand-off.js';
 import { createCoursePickerCommand } from './course-picker-command.js';
 import { unhideCourse } from './hidden-courses.js';
-import { playerFolders, readCoursesRoots, sameFolder } from './courses-roots.js';
+import { playerFolders, readCoursesRoots } from './courses-roots.js';
+import { sameFolder } from './folder-identity.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree, type LessonTreeModel } from './lesson-tree.js';
 import {

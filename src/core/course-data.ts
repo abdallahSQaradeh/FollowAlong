@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';
 
 import { messageOf } from './logger.js';
-import { isInsideFolder, keyOf } from './courses-roots.js';
+import { isInsideFolder, keyOf } from './folder-identity.js';
 import { FileSystemError, type Ports, type ReleaseLock } from './ports.js';
 
 export const courseDataFolderName = '.followalong';

@@ -12,7 +12,7 @@ import { basename, extname, join } from 'node:path';
 
 import { soundFolderName, type AudioCache, type AudioCacheUse } from './audio-cache.js';
 import { openCourseData, type CourseData } from './course-data.js';
-import { isFullPath } from './courses-roots.js';
+import { isFullPath } from './folder-identity.js';
 import type { Lesson } from './course-model.js';
 import {
   createSoundQueue,

@@ -8,7 +8,7 @@
  */
 import { basename } from 'node:path';
 
-import { normalisedRoot } from './courses-roots.js';
+import { normalisedRoot } from './folder-identity.js';
 import { messageOf } from './logger.js';
 import type { KeyValueStore, Ports } from './ports.js';
 

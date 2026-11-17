@@ -7,7 +7,7 @@
  * filters what it lists by it.
  */
 import { folderLabel } from './course-scanner.js';
-import { keyOf, normalisedRoot } from './courses-roots.js';
+import { keyOf, normalisedRoot } from './folder-identity.js';
 import type { KeyValueStore, Ports } from './ports.js';
 
 /** Global storage key of the list. */
@@ -19,11 +19,6 @@ export interface HiddenCourse {
   readonly folder: string;
   /** The name the Course picker listed it under. */
   readonly name: string;
-}
-
-/** The identity of a hidden Course: its folder, normalised the way the cache and Recent do. */
-export function hiddenKeyOf(folder: string): string {
-  return keyOf(normalisedRoot(folder) ?? folder);
 }
 
 /**
