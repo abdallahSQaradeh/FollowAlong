@@ -76,7 +76,7 @@ export interface CourseScans {
   /**
    * Scans the Courses roots and keeps the result in the cache. Without `fresh` it joins a scan of
    * the same roots that is already running (a picker opened again before the last scan was done
-   * does not walk the library twice); `fresh` always starts a new one (Refresh). A scan that a
+   * does not walk the Courses roots twice); `fresh` always starts a new one (Refresh). A scan that a
    * later one has overtaken is not cached, so an older walk never replaces a newer one.
    */
   scan(

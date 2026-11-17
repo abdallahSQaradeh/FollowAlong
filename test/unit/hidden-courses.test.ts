@@ -14,7 +14,7 @@ function rows(picker: QuickPickModel<unknown> | undefined): string[] {
 }
 
 /** A Courses root with a real Course and a stray folder holding one video. */
-async function libraryWithStray(h: Harness): Promise<string> {
+async function coursesRootWithStray(h: Harness): Promise<string> {
   const learning = await h.folder('Learning', {
     'Alpha/intro.mp4': 'v',
     'Stray/images/clip.mp4': 'v',
@@ -26,7 +26,7 @@ async function libraryWithStray(h: Harness): Promise<string> {
 describe('hiding a stray folder from the Course picker', () => {
   it('offers a Hide button on a Course', async () => {
     const h = await createHarness();
-    await libraryWithStray(h);
+    await coursesRootWithStray(h);
 
     void h.core.pickCourse();
     await h.ui.pickerShown();
@@ -38,7 +38,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
   it('removes the entry when the learner presses Hide, and the picker stays open', async () => {
     const h = await createHarness();
-    await libraryWithStray(h);
+    await coursesRootWithStray(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
@@ -50,7 +50,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
   it('leaves the Course folder as it was', async () => {
     const h = await createHarness();
-    const learning = await libraryWithStray(h);
+    const learning = await coursesRootWithStray(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
 
@@ -61,9 +61,9 @@ describe('hiding a stray folder from the Course picker', () => {
     expect(await readdir(join(learning, 'Stray', 'images'))).toEqual(['clip.mp4']);
   });
 
-  it('stays hidden after a Refresh, which rescans the library', async () => {
+  it('stays hidden after a Refresh, which rescans the Courses roots', async () => {
     const h = await createHarness();
-    await libraryWithStray(h);
+    await coursesRootWithStray(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
     h.ui.press('Stray', 'Hide');
@@ -76,7 +76,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
   it('stays hidden after a restart, and the next open does not list it even from the cache', async () => {
     const h = await createHarness();
-    await libraryWithStray(h);
+    await coursesRootWithStray(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
     h.ui.press('Stray', 'Hide');
@@ -111,7 +111,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
   it('hides a Recent Course from Recent as well, and Unhide gives it back its place in Recent', async () => {
     const h = await createHarness();
-    const learning = await libraryWithStray(h);
+    const learning = await coursesRootWithStray(h);
     await h.core.openCourse(join(learning, 'Stray'));
     void h.core.pickCourse();
     await h.ui.pickerShown();
@@ -146,7 +146,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
   it('hides the open Course too, and it is still open', async () => {
     const h = await createHarness();
-    const learning = await libraryWithStray(h);
+    const learning = await coursesRootWithStray(h);
     await h.core.openCourse(join(learning, 'Alpha'));
     void h.core.pickCourse();
     await h.ui.pickerShown();
@@ -160,7 +160,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
   it('has no Hide button on a missing Recent Course, which has Locate… and Remove', async () => {
     const h = await createHarness();
-    const learning = await libraryWithStray(h);
+    const learning = await coursesRootWithStray(h);
     await h.core.openCourse(join(learning, 'Alpha'));
     await rm(join(learning, 'Alpha'), { recursive: true });
 
@@ -172,7 +172,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
   it('hides the Course for now, and logs a warning, when the global storage refuses the write', async () => {
     const h = await createHarness();
-    await libraryWithStray(h);
+    await coursesRootWithStray(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
     h.failNextWrite('global', 'disk full');
@@ -191,7 +191,7 @@ describe('hiding a stray folder from the Course picker', () => {
 
 describe('unhiding a Course', () => {
   async function hideStray(h: Harness): Promise<string> {
-    const learning = await libraryWithStray(h);
+    const learning = await coursesRootWithStray(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
     h.ui.press('Stray', 'Hide');

@@ -21,7 +21,7 @@ function descriptions(picker: QuickPickModel<unknown> | undefined): string[] {
 }
 
 /** A Courses root with one Course, `Alpha`, opened once so the Course list cache holds it. */
-async function libraryWithAlphaCached(h: Harness): Promise<string> {
+async function coursesRootWithAlphaCached(h: Harness): Promise<string> {
   const learning = await h.folder('Learning', { 'Alpha/intro.mp4': 'v' });
   h.config.set('coursesRoots', [learning]);
   void h.core.pickCourse();
@@ -33,7 +33,7 @@ async function libraryWithAlphaCached(h: Harness): Promise<string> {
 describe('the Course list cache', () => {
   it('opens the picker with the cached Courses before the rescan finishes, then updates it', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     await h.folder('Learning/Beta', { 'intro.mp4': 'v' });
     const finishScan = h.holdReads(learning);
 
@@ -52,7 +52,7 @@ describe('the Course list cache', () => {
 
   it('opens from the cache again in a new window, with what the last rescan found', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     await h.folder('Learning/Beta', { 'intro.mp4': 'v' });
     void h.core.pickCourse();
     await h.ui.pickerShown();
@@ -69,7 +69,7 @@ describe('the Course list cache', () => {
 
   it('lets the learner pick a cached Course before the rescan is done', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     const finishScan = h.holdReads(learning);
 
     const picking = h.core.pickCourse();
@@ -84,7 +84,7 @@ describe('the Course list cache', () => {
 
   it('has a Refresh button that rescans at once and shows a Course just downloaded', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
     expect(h.ui.toolbarButtons).toEqual(['Refresh']);
@@ -102,7 +102,7 @@ describe('the Course list cache', () => {
 
   it('keeps the new Course in the cache after Refresh', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     void h.core.pickCourse();
     await h.ui.pickerShown();
     await h.folder('Learning/Beta', { 'intro.mp4': 'v' });
@@ -121,7 +121,7 @@ describe('the Course list cache', () => {
 
   it('drops a Course that is gone from the list when the rescan is done', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     await h.folder('Learning/Beta', { 'intro.mp4': 'v' });
     void h.core.pickCourse();
     await h.ui.pickerShown();
@@ -137,7 +137,7 @@ describe('the Course list cache', () => {
 
   it('saves the rescan in the cache even when the learner closed the picker before it ended', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     await h.folder('Learning/Beta', { 'intro.mp4': 'v' });
     const finishScan = h.holdReads(learning);
     const picking = h.core.pickCourse();
@@ -174,7 +174,7 @@ describe('the Course list cache', () => {
 
   it('does not show the Courses of other roots from the cache', async () => {
     const h = await createHarness();
-    await libraryWithAlphaCached(h);
+    await coursesRootWithAlphaCached(h);
     const other = await h.folder('Other', { 'Gamma/intro.mp4': 'v' });
     h.config.set('coursesRoots', [other]);
     const finishScan = h.holdReads(other);
@@ -214,7 +214,7 @@ describe('the Course list cache', () => {
 
   it('ignores a cache it cannot read and scans as on the first run', async () => {
     const h = await createHarness();
-    const learning = await libraryWithAlphaCached(h);
+    const learning = await coursesRootWithAlphaCached(h);
     await h.storage.global.set('courseListCache', { version: 99, courses: 'nonsense' });
     const finishScan = h.holdReads(learning);
 

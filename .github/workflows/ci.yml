@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload .logs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: logs-ubuntu
           path: .logs/
@@ -117,7 +117,7 @@ jobs:
           node scripts/build-ffmpeg.mjs --check-imports bin/ffmpeg.exe
 
       - name: Upload ffmpeg-win32-x64
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ffmpeg-win32-x64
           path: bin/
@@ -130,7 +130,7 @@ jobs:
         run: node scripts/build-ffmpeg.mjs --fetch-sources ffmpeg-source
 
       - name: Upload ffmpeg-source
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ffmpeg-source
           path: |
@@ -155,7 +155,7 @@ jobs:
       - run: npm ci
 
       - name: Download the built ffmpeg
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: ffmpeg-win32-x64
           path: bin
@@ -188,7 +188,7 @@ jobs:
         run: node scripts/check-bundled-ffmpeg.mjs vsix-unpacked/extension/bin/ffmpeg.exe
 
       - name: Upload .vsix
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: followalong-vsix
           path: '*.vsix'
@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload .logs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: logs-windows
           path: .logs/

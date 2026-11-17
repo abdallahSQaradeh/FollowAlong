@@ -46,6 +46,8 @@ interface TestHooks {
     readonly id: string;
     readonly text: string;
     readonly command?: { readonly id: string; readonly argument: unknown };
+    /** VS Code draws higher priorities further left. */
+    readonly priority: number | undefined;
   }[];
   selectedLesson(): string | undefined;
   /** How many quick picks were shown so far. */
@@ -401,6 +403,7 @@ async function aLessonLoadsInEachSpot(extensionPath: string, hooks: TestHooks): 
     }
 
     say(await aTerminalKeepsItsFocusOverTheBottomPanel(hooks));
+    say(await theFloatingWindowGoesWithItsTabWhenEmptyGroupsStay(hooks, code));
     say(await closingTheFloatingWindowClosesTheLesson(hooks, code));
     say(await doesAMoveIntoANewWindowKeepThePage(hooks));
     say(await aPlayerOpensInTheStripFromTheSetting(hooks, course, code));
@@ -662,6 +665,47 @@ async function closingTheFloatingWindowClosesTheLesson(
   );
   await noFloatingWindowIsLeft('the learner closed it');
   return 'closing the floating window closes the Lesson, as closing its tab does';
+}
+
+/**
+ * A learner who keeps empty editor groups (`workbench.editor.closeEmptyGroups` off) gets no empty
+ * floating window when the player leaves it, by a move to another spot or a collapse (#51 gate,
+ * SOFT 2; ADR 0108).
+ */
+async function theFloatingWindowGoesWithItsTabWhenEmptyGroupsStay(
+  hooks: TestHooks,
+  code: vscode.TextDocument,
+): Promise<string> {
+  const workbench = vscode.workspace.getConfiguration('workbench.editor');
+  await workbench.update('closeEmptyGroups', false, vscode.ConfigurationTarget.Global);
+  try {
+    let from = hooks.playerEvents.length;
+    await vscode.commands.executeCommand('followalong.moveVideo', 'floatingWindow');
+    await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
+    from = hooks.playerEvents.length;
+    await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+    await theLessonLoadsIn(hooks, 'editorSplit', from, code);
+    await noFloatingWindowIsLeft('moving the video out of it with empty groups kept');
+
+    from = hooks.playerEvents.length;
+    await vscode.commands.executeCommand('followalong.moveVideo', 'floatingWindow');
+    await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
+    await vscode.commands.executeCommand('followalong.toggleVideo');
+    await waitFor('the video collapsed in the floating window', () =>
+      hooks.playerSpot() === undefined ? true : undefined,
+    );
+    await noFloatingWindowIsLeft('collapsing the video in it with empty groups kept');
+    from = hooks.playerEvents.length;
+    await vscode.commands.executeCommand('followalong.toggleVideo');
+    await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
+    from = hooks.playerEvents.length;
+    await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+    await theLessonLoadsIn(hooks, 'editorSplit', from, code);
+    await noFloatingWindowIsLeft('the last move out of it with empty groups kept');
+  } finally {
+    await workbench.update('closeEmptyGroups', undefined, vscode.ConfigurationTarget.Global);
+  }
+  return 'with empty editor groups kept, the floating window still goes when the player leaves it';
 }
 
 /**
@@ -1336,7 +1380,27 @@ async function theStatusBarRunsTheCommands(hooks: TestHooks): Promise<string> {
   await vscode.commands.executeCommand(click, 'speedCycle');
   await vscode.commands.executeCommand('followalong.speedDown');
   assert.equal(vscode.window.activeTextEditor?.document, code, 'a click moved the focus');
-  return 'the status bar shows play/pause, time, speed and back, each wired to the click command';
+
+  // An item that comes later (zoom) sits right of the others: the items already shown move to
+  // keep the model's order, with no two at the same priority (final review of #12).
+  await vscode.commands.executeCommand('followalong.zoomIn');
+  const zoomed = await waitFor('the zoom item in the status bar', () => {
+    const now = hooks.statusBar();
+    return now.some((item) => item.id === 'zoom') ? now : undefined;
+  });
+  const order = ['playPause', 'time', 'speed', 'back', 'zoom'];
+  const priorities = order.map(
+    (id) => zoomed.find((item) => item.id === id)?.priority ?? Number.NaN,
+  );
+  assert.ok(
+    priorities.every((priority, index) => index === 0 || priority < (priorities[index - 1] ?? 0)),
+    `the status bar items are not left to right as ${order.join(', ')}: priorities ${priorities.join(', ')}`,
+  );
+  await vscode.commands.executeCommand('followalong.zoomReset');
+  await waitFor('the zoom item to go', () =>
+    hooks.statusBar().some((item) => item.id === 'zoom') ? undefined : true,
+  );
+  return 'the status bar shows play/pause, time, speed and back, each wired to the click command, and a zoom item to their right';
 }
 
 /** Attaches a text file to a Lesson of a scratch Course, then opens it from the tree. */
