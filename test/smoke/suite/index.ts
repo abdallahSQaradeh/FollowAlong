@@ -668,9 +668,11 @@ async function closingTheFloatingWindowClosesTheLesson(
 }
 
 /**
- * A learner who keeps empty editor groups (`workbench.editor.closeEmptyGroups` off) gets no empty
- * floating window when the player leaves it, by a move to another spot or a collapse (#51 gate,
- * SOFT 2; ADR 0108).
+ * A learner who keeps empty editor groups (`workbench.editor.closeEmptyGroups` off) and turned off
+ * the floating window's compact mode gets no empty floating window when the player leaves it, by a
+ * move to another spot or a collapse (#51 gate, SOFT 2; ADR 0108). A compact window closes its empty
+ * groups whatever the setting (VS Code 1.146, `AuxiliaryEditorPartImpl.updateOptions`), so the
+ * window is made not compact first, with its own title bar action, as the learner can.
  */
 async function theFloatingWindowGoesWithItsTabWhenEmptyGroupsStay(
   hooks: TestHooks,
@@ -679,33 +681,47 @@ async function theFloatingWindowGoesWithItsTabWhenEmptyGroupsStay(
   const workbench = vscode.workspace.getConfiguration('workbench.editor');
   await workbench.update('closeEmptyGroups', false, vscode.ConfigurationTarget.Global);
   try {
-    let from = hooks.playerEvents.length;
-    await vscode.commands.executeCommand('followalong.moveVideo', 'floatingWindow');
-    await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
-    from = hooks.playerEvents.length;
-    await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
-    await theLessonLoadsIn(hooks, 'editorSplit', from, code);
-    await noFloatingWindowIsLeft('moving the video out of it with empty groups kept');
-
-    from = hooks.playerEvents.length;
-    await vscode.commands.executeCommand('followalong.moveVideo', 'floatingWindow');
-    await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
-    await vscode.commands.executeCommand('followalong.toggleVideo');
-    await waitFor('the video collapsed in the floating window', () =>
-      hooks.playerSpot() === undefined ? true : undefined,
-    );
-    await noFloatingWindowIsLeft('collapsing the video in it with empty groups kept');
-    from = hooks.playerEvents.length;
-    await vscode.commands.executeCommand('followalong.toggleVideo');
-    await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
-    from = hooks.playerEvents.length;
-    await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
-    await theLessonLoadsIn(hooks, 'editorSplit', from, code);
-    await noFloatingWindowIsLeft('the last move out of it with empty groups kept');
+    for (const leave of ['move', 'collapse'] as const) {
+      let from = hooks.playerEvents.length;
+      await vscode.commands.executeCommand('followalong.moveVideo', 'floatingWindow');
+      await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
+      await turnOffCompactMode();
+      from = hooks.playerEvents.length;
+      if (leave === 'move') {
+        await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+        await theLessonLoadsIn(hooks, 'editorSplit', from, code);
+      } else {
+        await vscode.commands.executeCommand('followalong.toggleVideo');
+        await waitFor('the video collapsed in the floating window', () =>
+          hooks.playerSpot() === undefined ? true : undefined,
+        );
+      }
+      await noFloatingWindowIsLeft(`a ${leave} out of a floating window that is not compact`);
+      if (leave === 'collapse') {
+        await vscode.commands.executeCommand('followalong.toggleVideo');
+        await theLessonLoadsIn(hooks, 'floatingWindow', from, code);
+        from = hooks.playerEvents.length;
+        await vscode.commands.executeCommand('followalong.moveVideo', 'editorSplit');
+        await theLessonLoadsIn(hooks, 'editorSplit', from, code);
+        await noFloatingWindowIsLeft('the move out of the restored floating window');
+      }
+    }
   } finally {
     await workbench.update('closeEmptyGroups', undefined, vscode.ConfigurationTarget.Global);
   }
-  return 'with empty editor groups kept, the floating window still goes when the player leaves it';
+  return 'with empty editor groups kept and compact mode off, the floating window still goes when the player leaves it, by a move or a collapse';
+}
+
+/** Clicks _Turn Off Compact Mode_ in the floating window's title bar, as the learner can. */
+async function turnOffCompactMode(): Promise<void> {
+  await withFloatingWindowPages(async ([window]) => {
+    assert.ok(window, 'no floating window to turn compact mode off in');
+    await window.click('.part.titlebar [aria-label="Turn Off Compact Mode"]');
+  });
+  await waitForAsync('the floating window to show its status bar, no longer compact', async () => {
+    const [look] = await floatingWindows();
+    return look?.statusBarShown === true ? true : undefined;
+  });
 }
 
 /**
