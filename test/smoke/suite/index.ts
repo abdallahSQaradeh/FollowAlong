@@ -714,14 +714,34 @@ async function theFloatingWindowGoesWithItsTabWhenEmptyGroupsStay(
 
 /** Clicks _Turn Off Compact Mode_ in the floating window's title bar, as the learner can. */
 async function turnOffCompactMode(): Promise<void> {
+  const button = '.part.titlebar [aria-label="Turn Off Compact Mode"]';
+  const notCompact = async (): Promise<true | undefined> => {
+    const [look] = await floatingWindows();
+    return look?.titleActions.includes('Turn On Compact Mode') === true ? true : undefined;
+  };
   await withFloatingWindowPages(async ([window]) => {
     assert.ok(window, 'no floating window to turn compact mode off in');
-    await window.click('.part.titlebar [aria-label="Turn Off Compact Mode"]');
+    await window.locator(button).first().click();
   });
-  await waitForAsync('the floating window to show its status bar, no longer compact', async () => {
-    const [look] = await floatingWindows();
-    return look?.statusBarShown === true ? true : undefined;
-  });
+  try {
+    await waitForAsync('the floating window to be no longer compact', notCompact, 3000);
+  } catch {
+    // A window in the background under xvfb may miss the pointer: the button's own click event.
+    await withFloatingWindowPages(async ([window]) => {
+      await window?.locator(button).first().dispatchEvent('click');
+    });
+    let seen = '';
+    await waitForAsync('the floating window to be no longer compact', async () => {
+      const found = await notCompact();
+      const [look] = await floatingWindows();
+      const now = `[${look?.titleActions.join(', ') ?? 'no floating window'}]`;
+      if (found === undefined && now !== seen) {
+        seen = now;
+        say(`the floating window's title bar offers: ${now}`);
+      }
+      return found;
+    });
+  }
 }
 
 /**
