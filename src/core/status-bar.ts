@@ -30,7 +30,14 @@ export function isStatusBarCommand(value: unknown): value is StatusBarCommand {
 /** A second symbol after the icon: `autoPause` while auto-pause is on (story 104). */
 export type StatusBarMarker = 'autoPause';
 
-export type StatusBarItemId = 'playPause' | 'time' | 'speed' | 'back' | 'sound' | 'zoom';
+/**
+ * Every item there can be, left to right. The model lists the items it shows in this order, and the
+ * adapter places each item by its index here, so an item that comes later (sound, zoom) never lands
+ * left of one already shown.
+ */
+export const statusBarItemOrder = ['playPause', 'time', 'speed', 'back', 'sound', 'zoom'] as const;
+
+export type StatusBarItemId = (typeof statusBarItemOrder)[number];
 
 export interface StatusBarItemModel {
   /** Stable across updates: the adapter keeps one item per id, in the order of the list. */

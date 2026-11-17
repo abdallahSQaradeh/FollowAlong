@@ -4,12 +4,13 @@
  */
 import * as vscode from 'vscode';
 
-import type {
-  StatusBarIcon,
-  StatusBarMarker,
-  StatusBarItemId,
-  StatusBarItemModel,
-  StatusBarModel,
+import {
+  statusBarItemOrder,
+  type StatusBarIcon,
+  type StatusBarMarker,
+  type StatusBarItemId,
+  type StatusBarItemModel,
+  type StatusBarModel,
 } from '../../core/status-bar.js';
 
 /** An item as VS Code has it: for the smoke test to read. */
@@ -31,6 +32,15 @@ const codicons: Readonly<Record<StatusBarIcon, string>> = {
   sound: 'sync~spin',
 };
 
+/**
+ * Where an item sits: VS Code draws a higher priority further left, and sets it only when it makes
+ * the item. Each id has a place of its own in the core's order, so an item that comes later (sound,
+ * zoom) never ties with or lands left of one already shown (final review of #12).
+ */
+function priorityOf(id: StatusBarItemId): number {
+  return statusBarItemOrder.length - statusBarItemOrder.indexOf(id);
+}
+
 const markerCodicons: Readonly<Record<StatusBarMarker, string>> = {
   autoPause: 'keyboard',
 };
@@ -39,16 +49,18 @@ export class StatusBarView implements vscode.Disposable {
   private readonly items = new Map<StatusBarItemId, vscode.StatusBarItem>();
   /** The items as VS Code has them now: what the learner sees, and what a click runs. */
   drawn(): readonly DrawnItem[] {
-    return [...this.items].map(([id, item]): DrawnItem => {
-      const { command } = item;
-      const argument: unknown = typeof command === 'object' ? command.arguments?.[0] : undefined;
-      return {
-        id,
-        text: item.text,
-        command: typeof command === 'object' ? { id: command.command, argument } : undefined,
-        priority: item.priority,
-      };
-    });
+    return [...this.items]
+      .sort(([a], [b]) => priorityOf(b) - priorityOf(a))
+      .map(([id, item]): DrawnItem => {
+        const { command } = item;
+        const argument: unknown = typeof command === 'object' ? command.arguments?.[0] : undefined;
+        return {
+          id,
+          text: item.text,
+          command: typeof command === 'object' ? { id: command.command, argument } : undefined,
+          priority: item.priority,
+        };
+      });
   }
 
   /** `clickCommand` is run with the name of the core command, whenever an item is clicked. */
@@ -62,34 +74,18 @@ export class StatusBarView implements vscode.Disposable {
         this.items.delete(id);
       }
     }
-    // Left to right as the model lists them: the first has the highest priority.
-    model.items.forEach((item, index) => {
-      this.draw(item, model.items.length - index);
-    });
-    // `drawn()` lists them left to right too, whichever were made again.
-    for (const { id } of model.items) {
-      const item = this.items.get(id);
-      if (item !== undefined) {
-        this.items.delete(id);
-        this.items.set(id, item);
-      }
+    for (const item of model.items) {
+      this.draw(item);
     }
   }
 
-  private draw(model: StatusBarItemModel, priority: number): void {
+  private draw(model: StatusBarItemModel): void {
     let item = this.items.get(model.id);
-    if (item !== undefined && item.priority !== priority) {
-      // VS Code sets a priority only when it makes the item: an item that came or went before
-      // this one (zoom, sound) moves it, so it is made again where the model puts it.
-      item.dispose();
-      this.items.delete(model.id);
-      item = undefined;
-    }
     if (item === undefined) {
       item = vscode.window.createStatusBarItem(
         `followalong.${model.id}`,
         vscode.StatusBarAlignment.Left,
-        priority,
+        priorityOf(model.id),
       );
       item.name = `FollowAlong: ${model.id}`;
       this.items.set(model.id, item);
