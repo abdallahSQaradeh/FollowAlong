@@ -22,6 +22,7 @@ import type {
 } from '../../core/ports.js';
 import { spotLabels, type VideoSpot } from '../../core/video-placement.js';
 import { renderPlayerHtml } from '../../player/page.js';
+import { isYouTubeStandIn, PrototypeYouTube } from './prototype-youtube.js';
 import {
   parsePlayerEvent,
   type PlayerCommand,
@@ -139,6 +140,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
    * item 2).
    */
   private placing: Promise<void> = Promise.resolve();
+  /** PROTOTYPE: YouTube Lessons through a relay page. */
+  private readonly youtube: PrototypeYouTube;
 
   constructor(
     private readonly extensionPath: string,
@@ -146,6 +149,8 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     /** Hands focus back to the code after VS Code focused a view it opened. */
     private readonly returnFocus: () => Promise<FocusedPart>,
   ) {
+    this.youtube = new PrototypeYouTube(extensionPath, logger);
+    this.subscriptions.push(this.youtube);
     for (const spot of ['bottomPanel', 'secondarySidebar'] as const) {
       this.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
@@ -283,6 +288,9 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
   resourceUri(absolutePath: string): string {
     if (this.host === undefined) {
       throw new Error('resourceUri: the player is not open.');
+    }
+    if (isYouTubeStandIn(absolutePath)) {
+      return this.youtube.uriFor(absolutePath);
     }
     return this.host.webview.asWebviewUri(vscode.Uri.file(absolutePath)).toString();
   }
@@ -922,6 +930,17 @@ export class PlayerPanel implements PlayerPort, vscode.Disposable {
     const listening = webview.onDidReceiveMessage((raw: unknown) => {
       // A message already queued from a page dropped for a move is about a player that is gone.
       if (this.host !== host) {
+        return;
+      }
+      // PROTOTYPE: what the YouTube spike measured in the page, for the output channel.
+      if (
+        typeof raw === 'object' &&
+        raw !== null &&
+        'type' in raw &&
+        raw.type === 'prototypeLog' &&
+        'text' in raw
+      ) {
+        this.logger.log({ level: 'info', message: `[prototype] page: ${String(raw.text)}` });
         return;
       }
       const event = parsePlayerEvent(raw);

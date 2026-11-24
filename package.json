@@ -479,6 +479,16 @@
     "configuration": {
       "title": "FollowAlong",
       "properties": {
+        "followalong.prototype.youtubeRelay": {
+          "type": "string",
+          "default": "local",
+          "markdownDescription": "PROTOTYPE (YouTube spike). How a `*.youtube.webm` stand-in Lesson reaches YouTube: `local` (a relay page the extension serves on 127.0.0.1), `direct` (YouTube framed straight from the webview, no control), or the https URL of `media/prototype-youtube-relay.html` hosted elsewhere."
+        },
+        "followalong.prototype.youtubeFocusReturn": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "PROTOTYPE (YouTube spike). Hand focus back to the code 0.8 s after it lands inside the YouTube frame (ADR 0009)."
+        },
         "followalong.shortStep": {
           "type": "number",
           "default": 5,
@@ -564,6 +574,7 @@
   "scripts": {
     "prepare": "husky",
     "build": "node scripts/build.mjs",
+    "prototype:youtube-course": "node scripts/prototype-youtube-course.mjs",
     "package": "node scripts/package.mjs",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "format": "prettier --write .",

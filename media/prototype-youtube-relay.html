@@ -1,0 +1,148 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway (ticket "How does a YouTube Lesson feel in the player?"). Never merge.
+
+  The relay page: the player webview frames this page, and this page embeds YouTube with the
+  IFrame API, so YouTube gets a Referer from a real http(s) origin instead of none
+  (vscode-webview://). It passes commands in and player state out with postMessage.
+
+  The extension serves it on http://127.0.0.1:<port>/relay.html. The same file can be put on any
+  https static host and named in the setting `followalong.prototype.youtubeRelay`.
+
+  Query: v (video ID), start (seconds), autoplay (0/1), echo (a URL to frame, to record the Referer
+  this page sends; optional).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FollowAlong YouTube relay (prototype)</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+      }
+      #player {
+        width: 100%;
+        height: 100%;
+      }
+      #echo {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        border: 0;
+        left: -10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="player"></div>
+    <script>
+      const query = new URLSearchParams(location.search);
+      const videoId = query.get('v') || '';
+      const start = Number(query.get('start') || '0');
+      const autoplay = query.get('autoplay') === '1';
+      const echo = query.get('echo');
+
+      function send(message) {
+        parent.postMessage({ fa: 'yt', ...message }, '*');
+      }
+
+      send({ ev: 'relayLoaded', referrer: document.referrer, origin: location.origin });
+
+      if (echo) {
+        const frame = document.createElement('iframe');
+        frame.id = 'echo';
+        frame.src = echo;
+        document.body.appendChild(frame);
+      }
+
+      let player;
+      function snapshot() {
+        if (!player || typeof player.getCurrentTime !== 'function') {
+          return {};
+        }
+        return {
+          time: player.getCurrentTime(),
+          duration: player.getDuration(),
+          rate: player.getPlaybackRate(),
+          state: player.getPlayerState(),
+        };
+      }
+
+      window.onYouTubeIframeAPIReady = () => {
+        player = new YT.Player('player', {
+          host: 'https://www.youtube-nocookie.com',
+          videoId,
+          width: '100%',
+          height: '100%',
+          playerVars: {
+            start: Math.floor(start),
+            autoplay: autoplay ? 1 : 0,
+            playsinline: 1,
+            rel: 0,
+            enablejsapi: 1,
+            origin: location.origin,
+          },
+          events: {
+            onReady: () => {
+              send({ ev: 'ready', rates: player.getAvailablePlaybackRates(), ...snapshot() });
+              setInterval(() => {
+                send({ ev: 'tick', ...snapshot() });
+              }, 250);
+            },
+            onStateChange: (event) => {
+              send({ ev: 'state', ...snapshot(), state: event.data });
+            },
+            onPlaybackRateChange: (event) => {
+              send({ ev: 'rate', rate: event.data });
+            },
+            onError: (event) => {
+              send({ ev: 'error', code: event.data });
+            },
+            onAutoplayBlocked: () => {
+              send({ ev: 'autoplayBlocked' });
+            },
+          },
+        });
+      };
+
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (event.source !== parent || !data || data.fa !== 'yt' || !player) {
+          return;
+        }
+        switch (data.cmd) {
+          case 'play':
+            player.playVideo();
+            break;
+          case 'pause':
+            player.pauseVideo();
+            break;
+          case 'seekTo':
+            player.seekTo(data.time, true);
+            break;
+          case 'setRate':
+            player.setPlaybackRate(data.rate);
+            break;
+        }
+      });
+
+      // Focus moving into YouTube's own frame, seen from here (one level closer than the webview).
+      window.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (document.activeElement && document.activeElement.tagName === 'IFRAME') {
+            send({ ev: 'focusInYouTube' });
+          }
+        }, 0);
+      });
+
+      const api = document.createElement('script');
+      api.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(api);
+    </script>
+  </body>
+</html>

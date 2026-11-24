@@ -30,6 +30,8 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
     `img-src ${cspSource} data:`,
     `style-src 'nonce-${nonce}'`,
     `script-src 'nonce-${nonce}'`,
+    // PROTOTYPE: the YouTube relay (local or https) and, in direct mode, YouTube itself.
+    'frame-src http://127.0.0.1:* https:',
   ].join('; ');
   return `<!doctype html>
 <html lang="en">
@@ -59,6 +61,8 @@ export function renderPlayerHtml(options: PlayerPageOptions): string {
 <button class="play-without-sound" type="button" hidden>Play without sound</button>
 </div>
 <button class="next" type="button" hidden></button>
+<div class="prototype-youtube" hidden><iframe class="prototype-youtube-frame" title="YouTube" allow="autoplay; encrypted-media; picture-in-picture; fullscreen"></iframe></div>
+<output class="prototype-diag" hidden></output>
 </main>
 <audio preload="auto"></audio>
 <script nonce="${nonce}">${inline(options.script, 'script')}</script>

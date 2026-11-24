@@ -11,6 +11,7 @@ import {
   type PlayerSnapshot,
 } from '../protocol/player-messages.js';
 import { Interactions } from './interactions.js';
+import { YouTubeLesson } from './prototype-youtube.js';
 import { WebmSource } from './webm-source.js';
 import { ZoomControls } from './zoom-controls.js';
 
@@ -476,6 +477,31 @@ function showNext(title: string, media: HTMLVideoElement): void {
 }
 
 function run(command: PlayerCommand, media: HTMLVideoElement): void {
+  // PROTOTYPE: a YouTube Lesson takes the commands while it is loaded.
+  if (command.type === 'load') {
+    if (command.videoUri.startsWith('youtube:')) {
+      current?.stop.abort();
+      current = undefined;
+      hideNext();
+      dropSound();
+      media.pause();
+      media.removeAttribute('src');
+      media.load();
+      youtube.load(command);
+      return;
+    }
+    youtube.unload();
+  } else if (youtube.active) {
+    if (command.type === 'takeSnapshot') {
+      post({ type: 'snapshot', snapshot: youtube.snapshot() });
+      return;
+    }
+    if (command.type === 'setRate') {
+      setRate(command.rate, media);
+    }
+    youtube.run(command);
+    return;
+  }
   switch (command.type) {
     case 'load':
       load(command, media);
@@ -824,6 +850,25 @@ const zoomControls = new ZoomControls({
     post({ type: 'zoomChanged', level });
   },
   controlsHeldBack: controlsHeldForSound,
+});
+
+const youtubeFrame = document.querySelector<HTMLIFrameElement>('.prototype-youtube-frame');
+if (youtubeFrame === null) {
+  throw new Error('The player page has no YouTube frame (prototype).');
+}
+const youtube = new YouTubeLesson({
+  post,
+  log: (text) => {
+    host.postMessage({ type: 'prototypeLog', text });
+  },
+  box: part('.prototype-youtube'),
+  frame: youtubeFrame,
+  diag: part('.prototype-diag'),
+  showNext: (title) => {
+    nextOverlay.textContent = `Next: ${title}`;
+    nextOverlay.removeAttribute('hidden');
+  },
+  hideNext,
 });
 
 playWithoutSoundButton.addEventListener('click', () => {
