@@ -161,6 +161,7 @@ export class YouTubeLesson {
         start,
         autoplay,
         echo: `${echo}?from=relay-${this.mode}`,
+        paint: uri.searchParams.get('paint') ?? '',
       });
       this.parts.frame.src = `${relay}?${query.toString()}`;
       setTimeout(() => {

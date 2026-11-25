@@ -68,6 +68,18 @@ export class PrototypeYouTube implements vscode.Disposable {
         response.end(`Referer: ${referer}`);
         return;
       }
+      if (url.pathname === '/paint') {
+        // A frame on another site (localhost, not 127.0.0.1): does a third-level frame paint?
+        this.logger.log({
+          level: 'info',
+          message: `[prototype] paint-test frame requested by ${header(request, 'referer')}`,
+        });
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(
+          '<!doctype html><body style="margin:0;background:#1f8a4c;color:#fff;font:12px monospace;display:grid;place-items:center;height:100vh">3rd-level frame paints</body>',
+        );
+        return;
+      }
       response.writeHead(404);
       response.end();
     });
@@ -105,6 +117,7 @@ export class PrototypeYouTube implements vscode.Disposable {
     const query = new URLSearchParams({
       relay,
       echo: `${origin}/echo`,
+      paint: `${origin.replace('127.0.0.1', 'localhost')}/paint`,
       focusReturn: config.get<boolean>('youtubeFocusReturn', true) ? '1' : '0',
     });
     this.logger.log({
