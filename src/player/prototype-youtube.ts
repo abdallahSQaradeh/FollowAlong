@@ -34,6 +34,8 @@ interface RelayMessage {
   readonly code?: number;
   readonly referrer?: string;
   readonly origin?: string;
+  readonly when?: string;
+  readonly text?: string;
 }
 
 function isRelayMessage(data: unknown): data is RelayMessage {
@@ -161,6 +163,12 @@ export class YouTubeLesson {
         echo: `${echo}?from=relay-${this.mode}`,
       });
       this.parts.frame.src = `${relay}?${query.toString()}`;
+      setTimeout(() => {
+        const box = this.parts.frame.getBoundingClientRect();
+        this.parts.log(
+          `page ${String(innerWidth)}×${String(innerHeight)}, relay frame ${String(Math.round(box.width))}×${String(Math.round(box.height))}, ${document.visibilityState}`,
+        );
+      }, 1000);
       clearTimeout(this.relayWatch);
       this.relayProblem = '';
       this.relayWatch = setTimeout(() => {
@@ -200,6 +208,7 @@ export class YouTubeLesson {
   }
 
   run(command: PlayerCommand): void {
+    this.parts.log(`command ${command.type}`);
     switch (command.type) {
       case 'play':
         this.pauseByExtension = false;
@@ -287,7 +296,13 @@ export class YouTubeLesson {
       case 'tick':
         this.track(message);
         break;
+      case 'layout':
+        this.parts.log(`layout at ${message.when ?? '?'}: ${message.text ?? ''}`);
+        break;
       case 'state':
+        this.parts.log(
+          `YouTube state → ${stateNames[message.state ?? -9] ?? String(message.state)}`,
+        );
         this.track(message);
         this.stateChanged(about, message.state ?? -1);
         break;

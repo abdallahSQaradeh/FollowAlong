@@ -23,7 +23,16 @@
         height: 100%;
         margin: 0;
         overflow: hidden;
-        background: #000;
+        background: #13294b;
+      }
+      #label {
+        position: fixed;
+        top: 4px;
+        left: 6px;
+        z-index: 1;
+        font: 11px monospace;
+        color: #9fc1ff;
+        pointer-events: none;
       }
       #player {
         width: 100%;
@@ -39,6 +48,7 @@
     </style>
   </head>
   <body>
+    <div id="label">relay page (blue) · waiting for YouTube</div>
     <div id="player"></div>
     <script>
       const query = new URLSearchParams(location.search);
@@ -61,6 +71,15 @@
       }
 
       let player;
+      function layout(when) {
+        const frame = document.querySelector('iframe:not(#echo)');
+        const rect = frame ? frame.getBoundingClientRect() : null;
+        const text = `relay ${innerWidth}×${innerHeight}, YouTube frame ${rect ? `${Math.round(rect.width)}×${Math.round(rect.height)}` : 'none'}, ${document.visibilityState}`;
+        document.getElementById('label').textContent = `relay page (blue) · ${text}`;
+        send({ ev: 'layout', when, text });
+      }
+      layout('load');
+
       function snapshot() {
         if (!player || typeof player.getCurrentTime !== 'function') {
           return {};
@@ -89,6 +108,8 @@
           },
           events: {
             onReady: () => {
+              layout('ready');
+              setTimeout(() => layout('ready+2s'), 2000);
               send({ ev: 'ready', rates: player.getAvailablePlaybackRates(), ...snapshot() });
               setInterval(() => {
                 send({ ev: 'tick', ...snapshot() });

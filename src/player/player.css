@@ -241,6 +241,8 @@ body:hover .zoom-tools,
 .prototype-youtube {
   position: absolute;
   inset: 18px 0 0;
+  /* Diagnostic: purple means the box shows but the relay frame does not paint. */
+  background: #3a1240;
 }
 
 .prototype-youtube[hidden],
