@@ -19,6 +19,9 @@ leaves open.
 - **Start from beginning is an item button on every Lesson**, from #38's generic item-button
   model, without `staysOpen` (now `keepsOpen`, ADR 0072): it closes the picker and answers with
   its intent.
-- **`UiSink.pick`, not the live picker.** The Lesson's list is complete and instant (it is the
-  open Course's outline and Progress), so nothing is updated while it is open; the live picker
-  (ADR 0058) exists for lists that fill in the background.
+- **~~`UiSink.pick`, not the live picker.~~ Amended by ADR 0109 (#138): the live picker.** This
+  first said the Lesson's list is complete and instant (the open Course's outline and Progress), so
+  nothing is updated while it is open. Lesson lengths are now probed in the background (ADR 0109),
+  so the list is no longer complete at once: “Go to Lesson…” opens with `UiSink.openPicker`
+  (ADR 0058) and is updated, keeping what the learner typed, each time a probe lands while it is
+  open. A length that lands after another Course opened is not shown in the old Course's picker.

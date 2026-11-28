@@ -63,6 +63,25 @@ describe('the length job', () => {
     expect(probed(h)).toEqual(['03 Extra.mp4']);
   });
 
+  it('fills in a length in the open picker as its probe lands, without closing it', async () => {
+    const h = await createHarness();
+    const folder = await course(h);
+    h.converter.lengths.set(join(folder, 'Other', '03 Extra.mp4'), 125);
+    h.converter.holdLengths = true;
+    await h.core.openCourse(folder);
+    await h.settle();
+    void h.core.goToLesson();
+    expect(items(h)).toEqual(['○ Extra | Other', '○ Intro | Part', '○ Series | Part']);
+
+    const updated = h.ui.nextUpdate();
+    await h.converter.releaseLength();
+    await updated;
+
+    // The same quick pick is updated, so what the learner typed in it stays (LivePicker.update).
+    expect(h.ui.pickers).toHaveLength(1);
+    expect(items(h)).toEqual(['○ Extra | Other  ·  02:05', '○ Intro | Part', '○ Series | Part']);
+  });
+
   it('shows no length for a Lesson ffmpeg cannot read, and only logs it', async () => {
     const h = await createHarness();
     const folder = await course(h);

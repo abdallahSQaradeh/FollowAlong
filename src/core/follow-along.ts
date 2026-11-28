@@ -158,6 +158,8 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let sidecarSound: SidecarSound | undefined;
   /** The open Course's length job, which reads its Lessons' lengths (ADR 0109). */
   let lengthJob: LessonLengthJob | undefined;
+  /** Updates the open Lesson picker with the lengths known now; unset while none is open. */
+  let followLengths: (() => void) | undefined;
   /** The `followalong.ffmpegPath` values the learner was told are ignored in this window. */
   const warnedFfmpegPaths = new Set<string>();
   /** The prepared sound of every Course on this machine, kept under its limit (ADR 0096). */
@@ -180,7 +182,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     sidecarSound?.stop();
     sidecarSound = openSidecarSound(course.folder, ports, warnedFfmpegPaths, audioCache);
     lengthJob?.stop();
-    lengthJob = startLessonLengthJob(course, ports, warnedFfmpegPaths);
+    lengthJob = startLessonLengthJob(course, ports, warnedFfmpegPaths, () => followLengths?.());
   }
 
   /** Stops the open Course's background work: the window closes. */
@@ -637,13 +639,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const course = openedCourse;
-      const intent = await ui.pick(
+      const model = () =>
         buildLessonPicker(
           course,
           progress?.current() ?? { lessons: {} },
           lengthJob?.lengths() ?? new Map(),
-        ),
-      );
+        );
+      // The live picker, so a length that lands while it is open shows in it (ADR 0109).
+      const picker = ui.openPicker(model(), () => undefined);
+      const follow = (): void => {
+        if (course === openedCourse) {
+          picker.update(model());
+        }
+      };
+      followLengths = follow;
+      const intent = await picker.answer;
+      if (followLengths === follow) {
+        followLengths = undefined;
+      }
       if (intent !== undefined) {
         if (course === openedCourse) {
           playLesson(intent.lessonId, intent.type === 'playLessonFromStart');

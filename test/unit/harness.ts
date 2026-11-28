@@ -221,11 +221,38 @@ export class FakeConverter implements Converter {
   /** Set to make every length probe hang for good, as ffmpeg does on a stalled mount. */
   stallLengths = false;
 
+  /**
+   * Set to make each length probe wait, as a slow ffmpeg does, until {@link releaseLength} lets
+   * the oldest one answer.
+   */
+  holdLengths = false;
+
+  private readonly heldLengths: (() => void)[] = [];
+
+  /** Lets the oldest held length probe answer, as it would have; resolves once it has. */
+  async releaseLength(): Promise<void> {
+    const release = this.heldLengths.shift();
+    if (release === undefined) {
+      throw new Error('No length probe is held');
+    }
+    release();
+    await Promise.resolve();
+  }
+
   lessonLength(probe: LessonProbe): Promise<number | undefined> {
     this.lengthProbes.push(probe);
     if (this.stallLengths) {
       return new Promise(() => undefined);
     }
+    if (this.holdLengths) {
+      return new Promise<void>((resolve) => {
+        this.heldLengths.push(resolve);
+      }).then(() => this.answerLength(probe));
+    }
+    return this.answerLength(probe);
+  }
+
+  private answerLength(probe: LessonProbe): Promise<number | undefined> {
     if (probe.signal.aborted) {
       return Promise.reject(new Error('The length probe was stopped.'));
     }
