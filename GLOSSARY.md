@@ -121,7 +121,7 @@ What FollowAlong keeps about a Course for itself (its Progress, its Resources, p
 _Avoid_: Metadata, cache, settings
 
 **Audio sidecar**:
-An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks and speed.
+An MP4 Lesson's sound, converted to MP3 and kept in Course data, that plays beside the video because VS Code cannot play the Lesson's own sound. The video leads, and the sidecar follows its play, pause, seeks, stalls and speed: while the picture waits for data, the sound waits with it.
 _Avoid_: Soundtrack, audio copy
 
 **Sound ahead**:
