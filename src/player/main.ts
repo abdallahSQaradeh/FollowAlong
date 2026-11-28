@@ -46,7 +46,7 @@ if (soundElement === null) {
 /**
  * The hidden `<audio>` that plays an MP4 Lesson's sound, converted to MP3, beside the video when
  * the page cannot decode AAC (the audio sidecar, ADR 0034). The video is the clock: the sound
- * follows its play, pause, seeks, rate, volume and mute.
+ * follows its play, pause, seeks, stalls, rate, volume and mute.
  */
 const sidecar: HTMLAudioElement = soundElement;
 /**
@@ -644,33 +644,53 @@ function reportMediaEvents(media: HTMLVideoElement): void {
 }
 
 /**
- * Makes the sidecar follow the video, the clock: its pause, seeks and rate, and its playhead
- * whenever the two drift more than {@link maxDriftSeconds} apart.
+ * Whether a video that is not paused is starved: seeking, or without the data to play on. It is
+ * `waiting`, and its picture stands still, though it fires no `pause` (ticket #140).
+ */
+function starved(media: HTMLVideoElement): boolean {
+  return media.seeking || media.readyState < HTMLMediaElement.HAVE_FUTURE_DATA;
+}
+
+/**
+ * Makes the sidecar follow the video, the clock: its pause, seeks and rate, its stalls, and its
+ * playhead whenever the two drift more than {@link maxDriftSeconds} apart.
  */
 function followWithSound(media: HTMLVideoElement): void {
   const following = () => current?.sound === 'sidecar';
-  media.addEventListener('play', () => {
-    // The native control bar's play button, a gesture in the page: the sound joins in.
-    if (following() && sidecar.paused) {
-      startSound(media).catch(() => undefined);
+  /**
+   * The sound plays while the picture moves, and only then. A video that is not paused but
+   * starved stops its sound, and starts it again at its playhead once it moves. A paused video is
+   * left to its `pause`: `play` starts the sound before the video, on purpose. Nothing here posts
+   * or counts as the learner's: a stall is neither a pause nor a play (ticket #140).
+   */
+  const keepWithPicture = () => {
+    if (!following() || media.paused) {
+      return;
     }
-  });
+    if (starved(media)) {
+      sidecar.pause();
+    } else if (sidecar.paused) {
+      // Also the native control bar's play button, a gesture in the page: the sound joins in.
+      startSound(media).catch(() => undefined);
+    } else if (!sidecar.seeking) {
+      // Not while the sound is still seeking: moving it again would only restart that seek.
+      alignSound(media);
+    }
+  };
+  for (const type of ['play', 'playing', 'waiting', 'canplay', 'seeked', 'timeupdate']) {
+    media.addEventListener(type, keepWithPicture);
+  }
   media.addEventListener('pause', () => {
     sidecar.pause();
   });
   media.addEventListener('seeking', () => {
     if (following()) {
       sidecar.currentTime = media.currentTime;
+      keepWithPicture();
     }
   });
   media.addEventListener('ratechange', () => {
     if (following()) {
-      alignSound(media);
-    }
-  });
-  media.addEventListener('timeupdate', () => {
-    // Not while the sound is still seeking: moving it again would only restart that seek.
-    if (following() && !media.paused && !sidecar.seeking) {
       alignSound(media);
     }
   });

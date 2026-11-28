@@ -58,8 +58,15 @@ future VS Code that ships AAC turns this off with no code change (spec #12, tick
   - `seeking` (the sidecar seeks to the video's position);
   - the rate (the speed ladder, ADR 0015);
   - the volume and mute (below);
-  - drift above 0.1 s, checked on each `timeupdate`, but not while the sidecar is still seeking,
-    because moving it again would restart that seek.
+  - its stalls (ticket #140): while the video is not paused but starved (seeking, or `readyState`
+    below `HAVE_FUTURE_DATA`, as on `waiting`), the sidecar is paused. Once the picture moves again
+    (`playing`, `canplay`, `seeked`, `timeupdate`) it starts at the video's playhead and rate. A
+    paused video is left to its `pause`, so a learner's pause during a stall stays a pause. The
+    stall posts nothing: the video fires no `pause` or `play`, and `played` is posted once per
+    play, so Progress, auto-pause and the interaction count see nothing of it;
+  - drift above 0.1 s, checked whenever the picture moves (each `timeupdate`, and the events
+    above), but not while the sidecar is still seeking, because moving it again would restart that
+    seek.
 
   The sidecar's own seeks write the `<audio>`'s `currentTime`, never the video's, so they don't go
   through `writeTime` (ADR 0030) and are never taken for the learner's seeks.
@@ -93,10 +100,17 @@ future VS Code that ships AAC turns this off with no code change (spec #12, tick
 ## Considered options
 
 - **Pause the sidecar on the video's `waiting`, resume it on `playing` (gate round 1, optional).**
-  Not done. A local file seldom stalls, and the drift correction realigns the sound within one
-  `timeupdate` of the picture moving again. No Seam 2 fixture can stall an MP4 deterministically:
-  the harness holds only fetch streams, which MP4 playback doesn't use. The behaviour would go
-  untested.
+  First not done: a local file seldom stalls, the drift correction realigns the sound within one
+  `timeupdate` of the picture moving again, and no Seam 2 fixture could stall an MP4
+  deterministically (the harness held only fetch streams, which MP4 playback doesn't use).
+  **Done since ticket #140**, because both reasons fell. Stalls are likelier than assumed: Courses
+  on OneDrive Files On-Demand, network or USB drives, a spinning-up disk, or a resource loader held
+  up while the extension host is busy (for example ffmpeg preparing Sound ahead). And the
+  realignment is the bug: the sound plays on over a frozen picture, then jumps back by the length
+  of the stall, so the learner hears those words twice (4 s for one read held 5 s). Seam 2 now
+  stalls the faststart MP4 by answering its Range reads in parts and holding one back, or slowing
+  them after a seek (`readMp4InParts`, `test/player/sidecar-stall.spec.ts`), and checks the drift
+  stays within 0.1 s throughout.
 - **An explicit `cwd` for a bare `ffmpeg` (gate round 1, optional).** Not done. The extension host
   runs in VS Code's own folder, not in the learner's files. A bare name is only the stopgap until
   #43 passes the bundled ffmpeg's full path.

@@ -475,6 +475,81 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
   };
 }
 
+const mp4File = readFileSync(join(root, 'test', 'fixtures', 'media', 'sample.mp4'));
+/** The size of the faststart MP4 (sample.mp4), whose bytes run in step with its time. */
+export const mp4Bytes = mp4File.length;
+
+/** How {@link readMp4InParts} answers the faststart MP4's Range requests. */
+export interface PartReadOptions {
+  /** The most bytes one answer carries: the player has to ask again for the rest. */
+  readonly partBytes: number;
+  /** Holds back the first read that starts at or after this offset, until `release()`. */
+  readonly holdFrom?: number;
+  /** Every read that starts at or after this offset takes `slowMs` to arrive. */
+  readonly slowFrom?: number;
+  readonly slowMs?: number;
+}
+
+export interface PartReads {
+  /** Resolves once a read is held back by `holdFrom`. */
+  readonly held: Promise<void>;
+  /** Lets the held read arrive. */
+  release(): void;
+}
+
+/**
+ * Answers the Range requests for the faststart MP4 (sample.mp4) in parts of at most `partBytes`,
+ * as a slow drive or a busy resource loader might, and holds back or slows the reads past a given
+ * offset. The MP4 plays from a Range-read file, not a fetch stream, so this is how a test starves
+ * its picture (ticket #140). Overrides `openPlayer`'s route for that file only.
+ */
+export async function readMp4InParts(page: Page, options: PartReadOptions): Promise<PartReads> {
+  const body = mp4File;
+  let release = () => {
+    // Replaced right below.
+  };
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let onHeld = () => {
+    // Replaced right below.
+  };
+  const held = new Promise<void>((resolve) => {
+    onHeld = resolve;
+  });
+  let holding = options.holdFrom !== undefined;
+  await page.route(`${origin}/media/sample.mp4`, async (route) => {
+    const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? '');
+    if (range === null) {
+      await route.fallback();
+      return;
+    }
+    const start = Number(range[1]);
+    const asked = range[2] === '' ? body.length - 1 : Math.min(Number(range[2]), body.length - 1);
+    const end = Math.min(asked, start + options.partBytes - 1);
+    if (holding && options.holdFrom !== undefined && start >= options.holdFrom) {
+      holding = false;
+      onHeld();
+      await released;
+    } else if (options.slowFrom !== undefined && start >= options.slowFrom) {
+      await new Promise((resolve) => setTimeout(resolve, options.slowMs ?? 0));
+    }
+    // The player may have given up on a read it no longer needs (a seek elsewhere).
+    await route
+      .fulfill({
+        status: 206,
+        contentType: 'video/mp4',
+        headers: {
+          'Accept-Ranges': 'bytes',
+          'Content-Range': `bytes ${String(start)}-${String(end)}/${String(body.length)}`,
+        },
+        body: body.subarray(start, end + 1),
+      })
+      .catch(() => undefined);
+  });
+  return { held, release };
+}
+
 type Evaluate = <Result, Arg>(run: (arg: Arg) => Result, arg: Arg) => Promise<Awaited<Result>>;
 
 /** Runs `run(arg)` in the page, as a user gesture (Playwright's way) or not (VS Code's). */
