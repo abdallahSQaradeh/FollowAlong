@@ -14,6 +14,7 @@ export default defineConfig(
       '.logs/',
       '.claude/logs/',
       '.claude/skills/',
+      '.claude/worktrees/',
       '.vscode-test/',
       'test-results/',
       'playwright-report/',
