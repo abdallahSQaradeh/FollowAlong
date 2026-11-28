@@ -178,6 +178,56 @@ describe('the sound codec of a Lesson, as ffmpeg lists it', () => {
   });
 });
 
+describe('the length of a Lesson, as ffmpeg lists it', () => {
+  const length = (name: string) =>
+    converterProbing(name).converter.lessonLength({
+      program: 'ffmpeg',
+      input: join(folder, 'Lesson.mp4'),
+      signal: never,
+    });
+
+  it('is the seconds ffmpeg reports for the video', async () => {
+    await expect(length('aac')).resolves.toBe(1);
+  });
+
+  it('is unknown, not 0, for a WebM whose length ffmpeg reports as N/A', async () => {
+    await expect(length('no-duration')).resolves.toBeUndefined();
+  });
+
+  it('fails, with what ffmpeg said, for a file it cannot read', async () => {
+    await expect(length('unreadable')).rejects.toThrow(
+      /^ffmpeg could not read the Lesson: .*Invalid data found when processing input/,
+    );
+  });
+
+  it('asks ffmpeg for the stream list only, through an argument array with the file as one item', async () => {
+    const { converter, started } = converterProbing('aac');
+    const input = join(folder, 'A "quoted" Lesson; rm -rf $HOME.mp4');
+
+    await converter.lessonLength({ program: 'ffmpeg', input, signal: never });
+
+    expect(started[0]?.args).toEqual(['-hide_banner', '-nostdin', '-i', input]);
+  });
+
+  it('stops ffmpeg when asked to, as the sound probe does', async () => {
+    const { converter, started } = converterRunning(() => undefined, ['SIGKILL']);
+    const stop = new AbortController();
+    const probing = converter.lessonLength({
+      program: 'ffmpeg',
+      input: join(folder, 'Lesson.mp4'),
+      signal: stop.signal,
+    });
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(1);
+    });
+
+    stop.abort();
+
+    await expect(probing).rejects.toThrow();
+    expect(started[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']);
+  });
+});
+
 describe('stopping ffmpeg', () => {
   const lesson = () => ({ program: 'ffmpeg', input: join(folder, 'Lesson.mp4') });
 
