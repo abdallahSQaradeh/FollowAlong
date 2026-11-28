@@ -82,6 +82,42 @@ describe('the length job', () => {
     expect(items(h)).toEqual(['○ Extra | Other  ·  02:05', '○ Intro | Part', '○ Series | Part']);
   });
 
+  it('fills in the Lesson tree as a probe lands, for a Lesson in progress with no saved length', async () => {
+    const h = await createHarness();
+    const folder = await h.folder('Course', {
+      'Part/01 Intro.mp4': 'v',
+      'Other/02 Extra.mp4': 'v',
+      '.followalong/progress.json': JSON.stringify({
+        version: 1,
+        data: {
+          lessons: {
+            'Part/01 Intro.mp4': {
+              position: 750,
+              duration: 0,
+              savedAt: 1000,
+              status: 'inProgress',
+            },
+          },
+        },
+      }),
+    });
+    h.converter.lengths.set(join(folder, 'Part', '01 Intro.mp4'), 2405);
+    h.converter.holdLengths = true;
+    await h.core.openCourse(folder);
+    await h.settle();
+
+    // Extra, then Intro, in Course order.
+    await h.converter.releaseLength();
+    await h.settle();
+    await h.converter.releaseLength();
+    await h.settle();
+
+    const part = h.ui.lessonTree?.nodes.find((node) => node.label === 'Part');
+    expect(part?.kind === 'section' ? part.children : []).toEqual([
+      expect.objectContaining({ label: 'Intro', description: '12:30 / 40:05' }),
+    ]);
+  });
+
   it('shows no length for a Lesson ffmpeg cannot read, and only logs it', async () => {
     const h = await createHarness();
     const folder = await course(h);

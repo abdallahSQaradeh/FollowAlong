@@ -182,7 +182,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     sidecarSound?.stop();
     sidecarSound = openSidecarSound(course.folder, ports, warnedFfmpegPaths, audioCache);
     lengthJob?.stop();
-    lengthJob = startLessonLengthJob(course, ports, warnedFfmpegPaths, () => followLengths?.());
+    lengthJob = startLessonLengthJob(course, ports, warnedFfmpegPaths, () => {
+      drawTreeWith(resourceStore);
+      followLengths?.();
+    });
   }
 
   /** Stops the open Course's background work: the window closes. */
