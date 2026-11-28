@@ -44,11 +44,21 @@ declare global {
 }
 
 /**
- * Samples the picture's and the sound's playheads every 20 ms in the page, until the Lesson ends.
- * A seek the player has not seen yet (its `seeking` event is still queued) is left out: the sound
- * follows it as soon as it is seen.
+ * Samples the picture's and the sound's playheads every 20 ms in the page, until the Lesson ends,
+ * from the moment the sound is first in step (the start is not a stall, and the sound settles
+ * within a few frames). A seek the player has not seen yet (its `seeking` event is still queued) is
+ * left out: the sound follows it as soon as it is seen.
  */
 async function watchDrift(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const video = document.querySelector('video');
+        const audio = document.querySelector('audio');
+        return Math.abs((video?.currentTime ?? 0) - (audio?.currentTime ?? Number.NaN));
+      }),
+    )
+    .toBeLessThanOrEqual(inStep);
   await page.evaluate(() => {
     const video = document.querySelector('video');
     const audio = document.querySelector('audio');
