@@ -5,9 +5,14 @@
  * folders and holds only what a probe can find again, so a damaged or outdated copy is ignored.
  */
 import { folderKey } from './folder-identity.js';
-import type { LessonLengths } from './lesson-tree.js';
 import { messageOf } from './logger.js';
 import type { FileStat, KeyValueStore, Ports } from './ports.js';
+
+/**
+ * Lesson lengths found other than by playing, in seconds, by Lesson id (ADR 0109). Never 0: the
+ * Converter port reports no length rather than 0.
+ */
+export type LessonLengths = ReadonlyMap<string, number>;
 
 /** Global storage key of the cache. */
 const cacheKey = 'lessonLengths';
@@ -85,36 +90,39 @@ function lessonsOf(store: KeyValueStore, folder: string): Readonly<Record<string
   return storedCourses(store).find((course) => course.folder === key)?.lessons ?? {};
 }
 
-/**
- * The known lengths of the Course in `folder`, by Lesson id, as the Lesson picker takes them. A
- * Lesson probed with no length is left out. The files are not checked here: the length job checks
- * each one ({@link cachedLessonLength}) and saves what changed.
- */
-export function cachedLessonLengths(store: KeyValueStore, folder: string): LessonLengths {
-  return new Map(
-    Object.entries(lessonsOf(store, folder)).flatMap(([id, lesson]) =>
-      lesson.seconds !== null && lesson.seconds > 0 ? [[id, lesson.seconds] as const] : [],
-    ),
-  );
+/** What the cache holds for one Course, read from the global storage once. */
+export interface CachedCourse {
+  /**
+   * The known lengths, by Lesson id, as the Lesson picker takes them. A Lesson probed with no
+   * length is left out. The files are not checked here: the length job checks each one
+   * ({@link CachedCourse.probed}) and saves what changed.
+   */
+  readonly lengths: LessonLengths;
+  /**
+   * What the cache holds for one Lesson whose file has this stat: `{seconds}` (`undefined` when it
+   * was probed with no length), or `undefined` when it must be probed: never probed, or the file
+   * changed since.
+   */
+  probed(lessonId: string, stat: FileStat): { readonly seconds: number | undefined } | undefined;
 }
 
-/**
- * What the cache holds for one Lesson whose file has this stat: `{seconds}` (`undefined` when it
- * was probed with no length), or `undefined` when it must be probed: never probed, or the file
- * changed since.
- */
-export function cachedLessonLength(
-  store: KeyValueStore,
-  folder: string,
-  lessonId: string,
-  stat: FileStat,
-): { readonly seconds: number | undefined } | undefined {
-  const lessons = lessonsOf(store, folder);
-  const lesson = Object.hasOwn(lessons, lessonId) ? lessons[lessonId] : undefined;
-  if (lesson?.size !== stat.size || lesson.modifiedMs !== stat.modifiedMs) {
-    return undefined;
-  }
-  return { seconds: lesson.seconds ?? undefined };
+/** Reads what the cache holds for the Course in `folder`, once: later saves do not change it. */
+export function cachedCourse(store: KeyValueStore, folder: string): CachedCourse {
+  const lessons = new Map(Object.entries(lessonsOf(store, folder)));
+  return {
+    lengths: new Map(
+      [...lessons].flatMap(([id, lesson]) =>
+        lesson.seconds === null ? [] : [[id, lesson.seconds] as const],
+      ),
+    ),
+    probed(lessonId, { size, modifiedMs }) {
+      const lesson = lessons.get(lessonId);
+      if (lesson?.size !== size || lesson.modifiedMs !== modifiedMs) {
+        return undefined;
+      }
+      return { seconds: lesson.seconds ?? undefined };
+    },
+  };
 }
 
 /**

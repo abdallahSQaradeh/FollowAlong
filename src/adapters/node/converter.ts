@@ -30,12 +30,22 @@ const longestLine = 64 * 1024;
  */
 const stalePartMs = 10 * 60 * 1000;
 
-/** The length ffmpeg lists for its input: `Duration: HH:MM:SS.xx` (or `Duration: N/A`, no match). */
-const durationPattern = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/;
-
 /** `HH:MM:SS.xx` in ffmpeg's output, in seconds. */
 function seconds(hours: string, minutes: string, rest: string): number {
   return Number(hours) * 3600 + Number(minutes) * 60 + Number(rest);
+}
+
+/**
+ * The input's length in seconds when `line` is the one where ffmpeg lists it
+ * (`Duration: HH:MM:SS.xx`); `undefined` for any other line, and for `Duration: N/A`.
+ */
+function durationOf(line: string): number | undefined {
+  const match = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
+  if (match === null) {
+    return undefined;
+  }
+  const [, hours = '0', minutes = '0', rest = '0'] = match;
+  return seconds(hours, minutes, rest);
 }
 
 /** The ffmpeg arguments that write `input`'s first sound track to `output` as MP3. */
@@ -289,10 +299,8 @@ async function convert(
     signal,
     request.lowPriority,
     (line) => {
-      const durationMatch = durationPattern.exec(line);
-      if (durationMatch !== null && duration === 0) {
-        const [, hours = '0', minutes = '0', rest = '0'] = durationMatch;
-        duration = seconds(hours, minutes, rest);
+      if (duration === 0) {
+        duration = durationOf(line) ?? 0;
       }
       const timeMatch = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
       if (timeMatch !== null) {
@@ -360,12 +368,9 @@ export function createFfmpegConverter(options: ConverterOptions = {}): Converter
       // Filled in by the first `Duration:` line. `Duration: N/A` does not match, so stays unknown.
       const found: { length: number | undefined } = { length: undefined };
       await readStreams(runner, probe, (line) => {
-        const match = durationPattern.exec(line);
-        if (match !== null && found.length === undefined) {
-          const [, hours = '0', minutes = '0', rest = '0'] = match;
-          found.length = seconds(hours, minutes, rest);
-        }
+        found.length ??= durationOf(line);
       });
+      // The one place the "a length of 0 is unknown" rule is kept: the port never reports 0.
       return found.length !== undefined && found.length > 0 ? found.length : undefined;
     },
 

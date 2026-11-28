@@ -4,6 +4,7 @@
  * real temp-dir Course, the fake converter for ffmpeg, observed through the picker, the log, the
  * learner's messages and the probes the converter is asked for.
  */
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -187,6 +188,82 @@ describe('the length job', () => {
 
     expect(probed(h)).toEqual(['02 Series.mp4']);
     expect(items(h)).toContain('○ Series | Part  ·  50:00');
+  });
+
+  it('shows no old length for a replaced Lesson while it is probed again, nor after its probe fails', async () => {
+    const h = await createHarness();
+    const folder = await course(h);
+    h.converter.lengths.set(join(folder, 'Part', '02 Series.mp4'), 2405);
+    await h.core.openCourse(folder);
+    await h.settle();
+    await h.core.close();
+
+    await h.folder('Course', { 'Part/02 Series.mp4': 'another video' });
+    h.restart();
+    h.converter.holdLengths = true;
+    await h.core.openCourse(folder);
+    await h.settle();
+    void h.core.goToLesson();
+
+    expect(items(h)).toContain('○ Series | Part');
+
+    h.converter.unreadableLengths.set(join(folder, 'Part', '02 Series.mp4'), 'Invalid data found');
+    await h.converter.releaseLength();
+    await h.settle();
+
+    expect(items(h)).toContain('○ Series | Part');
+  });
+
+  it('shows no old length for a Lesson whose file is gone by the time the job reaches it', async () => {
+    const h = await createHarness();
+    const folder = await course(h);
+    h.converter.lengths.set(join(folder, 'Part', '02 Series.mp4'), 2405);
+    await h.core.openCourse(folder);
+    await h.settle();
+    await h.core.close();
+
+    // Extra changed, so it is probed again first; Series goes while that probe is under way.
+    await h.folder('Course', { 'Other/03 Extra.mp4': 'another video' });
+    h.restart();
+    h.converter.holdLengths = true;
+    await h.core.openCourse(folder);
+    await h.settle();
+    void h.core.goToLesson();
+    expect(items(h)).toContain('○ Series | Part  ·  40:05');
+
+    await rm(join(folder, 'Part', '02 Series.mp4'));
+    await h.converter.releaseLength();
+    await h.settle();
+
+    expect(items(h)).toContain('○ Series | Part');
+    const warnings = h.logger.entries.filter((entry) => entry.level === 'warn');
+    expect(warnings.map((entry) => entry.message)).toEqual([
+      expect.stringContaining('Could not check the file of Part/02 Series.mp4'),
+    ]);
+  });
+
+  it('reads no lengths and keeps nothing in the cache for a Course with no Lessons', async () => {
+    const h = await createHarness();
+    const folder = await h.folder('Empty', { 'notes.txt': 'n' });
+
+    await h.core.openCourse(folder);
+    await h.settle();
+
+    expect(h.converter.lengthProbes).toEqual([]);
+    expect(h.storage.global.get('lessonLengths')).toBeUndefined();
+  });
+
+  it('stops the probe under way when the window closes', async () => {
+    const h = await createHarness();
+    const folder = await course(h);
+    h.converter.stallLengths = true;
+    await h.core.openCourse(folder);
+    await h.settle();
+
+    await h.core.close();
+
+    expect(h.converter.lengthProbes.map((probe) => probe.signal.aborted)).toEqual([true]);
+    expect(h.logger.entries.filter((entry) => entry.level === 'warn')).toEqual([]);
   });
 
   it('stops the probe under way when another Course opens', async () => {

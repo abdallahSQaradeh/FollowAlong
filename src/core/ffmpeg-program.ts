@@ -62,9 +62,10 @@ export async function ffmpegProgram(
 }
 
 /**
- * How long ffmpeg may take to read a Lesson before the read is given up. A local file takes a
- * fraction of a second; a stalled network mount or a disconnected drive never answers, and the
- * Lesson's controls would stay hidden for ever (ADR 0056).
+ * How long ffmpeg may take to read a Lesson, for its sound track or its length, before the read is
+ * given up. A local file takes a fraction of a second; a stalled network mount or a disconnected
+ * drive never answers: the Lesson's controls would stay hidden for ever (ADR 0056), and the length
+ * job would wait on it with the rest of the Course still to read (ADR 0109).
  */
 export const probeTimeoutMs = 30_000;
 

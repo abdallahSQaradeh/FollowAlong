@@ -4,8 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { folderKey } from '../../src/core/folder-identity.js';
 import {
-  cachedLessonLength,
-  cachedLessonLengths,
+  cachedCourse,
   lessonLengthCacheCourses,
   saveLessonLengths,
 } from '../../src/core/lesson-length-cache.js';
@@ -29,11 +28,11 @@ describe('the Lesson length cache', () => {
     );
     h.restart();
 
-    expect(cachedLessonLengths(h.storage.global, course)).toEqual(new Map([['intro.mp4', 600]]));
-    expect(cachedLessonLength(h.storage.global, course, 'intro.mp4', intro)).toEqual({
+    expect(cachedCourse(h.storage.global, course).lengths).toEqual(new Map([['intro.mp4', 600]]));
+    expect(cachedCourse(h.storage.global, course).probed('intro.mp4', intro)).toEqual({
       seconds: 600,
     });
-    expect(cachedLessonLength(h.storage.global, course, 'part.mp4', part)).toEqual({
+    expect(cachedCourse(h.storage.global, course).probed('part.mp4', part)).toEqual({
       seconds: undefined,
     });
   });
@@ -44,10 +43,10 @@ describe('the Lesson length cache', () => {
     await saveLessonLengths(h, course, new Map([['intro.mp4', { ...intro, seconds: 600 }]]));
 
     expect(
-      cachedLessonLength(h.storage.global, course, 'intro.mp4', { ...intro, size: 1001 }),
+      cachedCourse(h.storage.global, course).probed('intro.mp4', { ...intro, size: 1001 }),
     ).toBeUndefined();
     expect(
-      cachedLessonLength(h.storage.global, course, 'intro.mp4', { ...intro, modifiedMs: 5001 }),
+      cachedCourse(h.storage.global, course).probed('intro.mp4', { ...intro, modifiedMs: 5001 }),
     ).toBeUndefined();
   });
 
@@ -63,7 +62,7 @@ describe('the Lesson length cache', () => {
     const warnings = h.logger.entries.filter((entry) => entry.level === 'warn');
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toContain('disk full');
-    expect(cachedLessonLengths(h.storage.global, course)).toEqual(new Map());
+    expect(cachedCourse(h.storage.global, course).lengths).toEqual(new Map());
   });
 
   it('keeps only the Courses saved most recently, dropping the oldest past the limit', async () => {
@@ -80,7 +79,7 @@ describe('the Lesson length cache', () => {
     await save(lessonLengthCacheCourses);
 
     const known = (index: number): number =>
-      cachedLessonLengths(h.storage.global, courseAt(index)).size;
+      cachedCourse(h.storage.global, courseAt(index)).lengths.size;
     expect(known(0)).toBe(1);
     expect(known(1)).toBe(0);
     expect(known(2)).toBe(1);
@@ -94,8 +93,8 @@ describe('the Lesson length cache', () => {
     const saved = h.storage.global.get('lessonLengths') as Record<string, unknown>;
     await h.storage.global.set('lessonLengths', { ...saved, version: 99 });
 
-    expect(cachedLessonLengths(h.storage.global, course)).toEqual(new Map());
-    expect(cachedLessonLength(h.storage.global, course, 'intro.mp4', intro)).toBeUndefined();
+    expect(cachedCourse(h.storage.global, course).lengths).toEqual(new Map());
+    expect(cachedCourse(h.storage.global, course).probed('intro.mp4', intro)).toBeUndefined();
   });
 
   it.each<[string, (folder: string) => unknown]>([
@@ -122,9 +121,9 @@ describe('the Lesson length cache', () => {
     const course = await h.folder('Course', { 'intro.mp4': 'v', 'part.mp4': 'v' });
     await h.storage.global.set('lessonLengths', damaged(folderKey(course)));
 
-    expect(cachedLessonLengths(h.storage.global, course)).toEqual(new Map());
-    expect(cachedLessonLength(h.storage.global, course, 'intro.mp4', intro)).toBeUndefined();
+    expect(cachedCourse(h.storage.global, course).lengths).toEqual(new Map());
+    expect(cachedCourse(h.storage.global, course).probed('intro.mp4', intro)).toBeUndefined();
     await saveLessonLengths(h, course, new Map([['part.mp4', { ...part, seconds: 90 }]]));
-    expect(cachedLessonLengths(h.storage.global, course)).toEqual(new Map([['part.mp4', 90]]));
+    expect(cachedCourse(h.storage.global, course).lengths).toEqual(new Map([['part.mp4', 90]]));
   });
 });

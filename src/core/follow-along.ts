@@ -182,10 +182,14 @@ export function createFollowAlong(ports: Ports): FollowAlong {
     sidecarSound?.stop();
     sidecarSound = openSidecarSound(course.folder, ports, warnedFfmpegPaths, audioCache);
     lengthJob?.stop();
-    lengthJob = startLessonLengthJob(course, ports, warnedFfmpegPaths, () => {
-      drawTreeWith(resourceStore);
-      followLengths?.();
-    });
+    // A Course with no Lessons has no lengths to read, and nothing to keep in the cache.
+    lengthJob =
+      lessonsInOrder(course).length === 0
+        ? undefined
+        : startLessonLengthJob(course, ports, warnedFfmpegPaths, () => {
+            drawTreeWith(resourceStore);
+            followLengths?.();
+          });
   }
 
   /** Stops the open Course's background work: the window closes. */

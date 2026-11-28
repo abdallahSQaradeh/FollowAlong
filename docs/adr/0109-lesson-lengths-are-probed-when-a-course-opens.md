@@ -16,7 +16,17 @@ the choices the spec leaves open. Source: the #132 triage comment, ADR 0005, 005
   30 s probe timeout of the sound probe (ADR 0081); a failure or a timeout logs one warn line and
   never tells the learner. A missing bundled ffmpeg is said by the Sound notice (ADR 0071), not by a
   length probe. The job stops when the Course is switched or closed, and a result for a Course that
-  is no longer open is dropped.
+  is no longer open is dropped. A Course with no Lessons starts no job and leaves the cache as it
+  was.
+- **A timeout stops the job for the rest of the Course.** A drive that stalls on one Lesson stalls
+  on the next, and 30 s a Lesson would never end on a large Course. The job logs the timeout once
+  and probes nothing more until the Course is opened again. A missing ffmpeg stops it the same way.
+  The Lessons it did not reach keep their cached length, unchecked, for the rest of that opening.
+- **A cached length shows only while its file is unchanged.** The picker and the tree start from
+  the cached lengths at once, then the job checks each Lesson's size and last change in Course
+  order. A Lesson whose file changed, is gone (its stat fails, logged as a failed check), or whose
+  probe fails (logged as a failed read) shows no length from then on, until a probe finds one: a
+  replaced file never keeps showing its old length once the job has reached it.
 - **Consequence.** The first time a Course opens, only the Lessons probed so far have a length.
   Opening the Course can be what first says the relative `followalong.ffmpegPath` warning, earlier
   than the first MP4 played; that is accepted.

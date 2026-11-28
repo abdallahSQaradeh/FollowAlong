@@ -9,12 +9,11 @@
 import { lessonsInOrder, type Course, type Lesson } from './course-model.js';
 import { ffmpegProgram, probeInTime, ProbeTimeout } from './ffmpeg-program.js';
 import {
-  cachedLessonLength,
-  cachedLessonLengths,
+  cachedCourse,
   saveLessonLengths,
+  type LessonLengths,
   type ProbedLength,
 } from './lesson-length-cache.js';
-import type { LessonLengths } from './lesson-tree.js';
 import { messageOf } from './logger.js';
 import type { FileStat, Ports } from './ports.js';
 
@@ -52,7 +51,13 @@ export function startLessonLengthJob(
   const { folder } = course;
   const stopped = new AbortController();
   const { signal } = stopped;
-  const known = new Map(cachedLessonLengths(storage.global, folder));
+  // Read once: what this job saves does not change what it checks the files against.
+  const cached = cachedCourse(storage.global, folder);
+  /**
+   * The lengths shown now: the cached ones until the job finds a Lesson's file changed or gone, so
+   * a replaced file never keeps showing its old length (ADR 0109).
+   */
+  const known = new Map(cached.lengths);
   /** What was probed and is not yet in the cache. */
   let unsaved = new Map<string, ProbedLength>();
   /** The ffmpeg to run, chosen at the first Lesson that needs a probe. */
@@ -60,6 +65,13 @@ export function startLessonLengthJob(
 
   const warn = (message: string): void => {
     logger.log({ level: 'warn', message });
+  };
+
+  /** The Lesson shows no length until a probe finds one; `landed` when that changes what shows. */
+  const forget = (lesson: Lesson): void => {
+    if (known.delete(lesson.id)) {
+      landed();
+    }
   };
 
   const save = async (): Promise<void> => {
@@ -75,7 +87,7 @@ export function startLessonLengthJob(
       const { size, modifiedMs } = await fileSystem.stat(lesson.path);
       return { size, modifiedMs };
     } catch (error) {
-      warn(`Could not read the length of ${lesson.id}: ${messageOf(error)}`);
+      warn(`Could not check the file of ${lesson.id}: ${messageOf(error)}`);
       return undefined;
     }
   };
@@ -116,12 +128,10 @@ export function startLessonLengthJob(
       return false;
     }
     unsaved.set(lesson.id, { ...stat, seconds });
-    if (seconds !== undefined && seconds > 0) {
+    if (seconds !== undefined) {
       known.set(lesson.id, seconds);
-    } else {
-      known.delete(lesson.id);
+      landed();
     }
-    landed();
     return true;
   };
 
@@ -131,10 +141,12 @@ export function startLessonLengthJob(
       if (signal.aborted) {
         return;
       }
-      if (
-        stat === undefined ||
-        cachedLessonLength(storage.global, folder, lesson.id, stat) !== undefined
-      ) {
+      if (stat !== undefined && cached.probed(lesson.id, stat) !== undefined) {
+        continue;
+      }
+      // Gone, never probed, or replaced: its cached length, if any, no longer holds.
+      forget(lesson);
+      if (stat === undefined) {
         continue;
       }
       if (!(await probe(lesson, stat))) {

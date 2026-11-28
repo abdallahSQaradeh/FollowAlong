@@ -12,7 +12,7 @@ import { basename, extname, join } from 'node:path';
 
 import { soundFolderName, type AudioCache, type AudioCacheUse } from './audio-cache.js';
 import { openCourseData, type CourseData } from './course-data.js';
-import { fileExists as exists, ffmpegProgram, probeInTime } from './ffmpeg-program.js';
+import { fileExists, ffmpegProgram, probeInTime } from './ffmpeg-program.js';
 import type { Lesson } from './course-model.js';
 import {
   createSoundQueue,
@@ -238,7 +238,7 @@ async function prepareSound(
   const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
   for (const folder of data.folders(soundFolderName)) {
     const path = join(folder, name);
-    if (await exists(fileSystem, path)) {
+    if (await fileExists(fileSystem, path)) {
       logger.log({ level: 'debug', message: `Reusing the prepared sound of ${lesson.id}` });
       return { kind: 'sidecar', path };
     }

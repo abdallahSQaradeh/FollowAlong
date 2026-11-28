@@ -5,6 +5,7 @@
 import { basename } from 'node:path';
 
 import { lessonsInOrder, type Course, type Outline, type Section } from './course-model.js';
+import type { LessonLengths } from './lesson-length-cache.js';
 import type { LessonStatus } from './lesson-status.js';
 import { lessonEntry, lessonStatus, type CourseProgress } from './progress.js';
 import { resourcePath, urlLabel, type ResourceRecord, type ResourcesData } from './resources.js';
@@ -103,13 +104,11 @@ export interface LessonTreeModel {
 }
 
 /** What the tree is built from: the Course and what is attached to its Lessons. */
-interface TreeSource {
+interface TreeSource extends LengthSources {
   readonly folder: string;
   readonly resources: ResourcesData;
   /** The ids of the Resources whose file is not where they point. */
   readonly missing: ReadonlySet<string>;
-  readonly progress: CourseProgress;
-  readonly lengths: LessonLengths;
 }
 
 function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode {
@@ -135,42 +134,36 @@ function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode 
 }
 
 /**
- * Lesson lengths found other than by playing, in seconds, by Lesson id (ADR 0109). A Lesson with
- * no entry, or an entry that is not above 0, has no length from here.
+ * Where the Lesson tree and the Lesson picker know a Lesson's length from: its Progress, where the
+ * player measured it, then the lengths the length job probed (ADR 0109).
  */
-export type LessonLengths = ReadonlyMap<string, number>;
+export interface LengthSources {
+  readonly progress: CourseProgress;
+  readonly probed: LessonLengths;
+}
 
 /**
  * A Lesson's length in seconds, or `undefined` while it is unknown. The length the player measured
- * (the Progress `duration`) wins over one found otherwise (ADR 0109).
+ * (the Progress `duration`, 0 while unmeasured) wins over a probed one (ADR 0109).
  */
 export function knownLength(
-  progress: CourseProgress,
-  lengths: LessonLengths,
+  { progress, probed }: LengthSources,
   lessonId: string,
 ): number | undefined {
   const played = lessonEntry(progress.lessons, lessonId)?.duration ?? 0;
-  if (played > 0) {
-    return played;
-  }
-  const found = lengths.get(lessonId) ?? 0;
-  return found > 0 ? found : undefined;
+  return played > 0 ? played : probed.get(lessonId);
 }
 
 /**
  * `12:30 / 40:05`: where the Lesson was saved and how long it is, the one rule for the tree and the
  * Lesson picker (ADR 0079); just the position while its length is unknown.
  */
-export function playheadText(
-  progress: CourseProgress,
-  lengths: LessonLengths,
-  lessonId: string,
-): string {
-  const saved = lessonEntry(progress.lessons, lessonId);
+export function playheadText(sources: LengthSources, lessonId: string): string {
+  const saved = lessonEntry(sources.progress.lessons, lessonId);
   if (saved === undefined) {
     return '';
   }
-  const length = knownLength(progress, lengths, lessonId);
+  const length = knownLength(sources, lessonId);
   return length === undefined
     ? formatClock(saved.position)
     : `${formatClock(saved.position)} / ${formatClock(length)}`;
@@ -230,8 +223,7 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
         label: lesson.title,
         status,
         glyph: lessonGlyphs[status],
-        description:
-          status === 'inProgress' ? playheadText(source.progress, source.lengths, lesson.id) : '',
+        description: status === 'inProgress' ? playheadText(source, lesson.id) : '',
         resources: (source.resources.lessons[lesson.id] ?? []).map((record) =>
           resourceNode(source, record),
         ),
@@ -243,17 +235,18 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
 
 /**
  * The Lesson tree of a Course: a pure function of the Course, what is attached to it (and which
- * of that is missing), its Progress and the Lesson lengths found other than by playing. The states come from `lessonStatus`; nothing here decides
- * what done means (ADR 0030). Only called for a Course with at least one Lesson.
+ * of that is missing), its Progress and the probed Lesson lengths. The states come from
+ * `lessonStatus`; nothing here decides what done means (ADR 0030). Only called for a Course with
+ * at least one Lesson.
  */
 export function buildLessonTree(
   course: Course,
   resources: ResourcesData,
   progress: CourseProgress,
   missing: ReadonlySet<string>,
-  lengths: LessonLengths = new Map(),
+  probed: LessonLengths = new Map(),
 ): LessonTreeModel {
-  const source: TreeSource = { folder: course.folder, resources, missing, progress, lengths };
+  const source: TreeSource = { folder: course.folder, resources, missing, progress, probed };
   return {
     course: {
       kind: 'course',
