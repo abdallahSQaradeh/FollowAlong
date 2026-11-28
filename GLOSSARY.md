@@ -32,6 +32,10 @@ _Avoid_: File explorer, folder dialog, tree
 The Courses the last scan of the Courses roots found, kept on this machine (not in any Course folder) so the Course picker can open from it before the rescan is done. It is used only for the same Courses roots, and a copy that cannot be read is ignored.
 _Avoid_: Course data, library index, scan results
 
+**Lesson length cache**:
+The length read from each Lesson's file for the Courses opened most recently (50 at most), kept on this machine (not in any Course folder) so the Lesson picker shows lengths at once and an unchanged file is not read again. Each length is kept with the file's size and last change, and is not used once the file changes; a Lesson whose file has no length is kept as read, with none. A copy that cannot be read is ignored (ADR 0109).
+_Avoid_: Duration cache, probe cache, metadata
+
 **Section**:
 A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
