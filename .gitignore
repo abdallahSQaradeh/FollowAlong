@@ -5,6 +5,7 @@ vsix-unpacked/
 ffmpeg-source/
 .logs/
 .claude/logs/
+.claude/worktrees/
 .vscode-test/
 test-results/
 playwright-report/

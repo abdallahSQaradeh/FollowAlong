@@ -4,8 +4,10 @@
  * under a separator for their Section, and each item shows its Section so that typing a Section
  * name narrows the list to it.
  */
+import { formatClock } from './clock-text.js';
 import type { Lesson, Outline } from './course-model.js';
-import { lessonGlyphs, playheadText } from './lesson-tree.js';
+import type { LessonLengths } from './lesson-length-cache.js';
+import { knownLength, lessonGlyphs, playheadText, type LengthSources } from './lesson-tree.js';
 import { lessonStatus, type CourseProgress } from './progress.js';
 import type { QuickPickEntry, QuickPickModel } from './quick-pick.js';
 
@@ -21,20 +23,30 @@ export type LessonPickerIntent =
 
 type Entry = QuickPickEntry<LessonPickerIntent>;
 
+/** `12:30 / 40:05` for a Lesson in progress; `40:05` for any other Lesson whose length is known. */
+function lengthText(sources: LengthSources, lessonId: string): string {
+  if (lessonStatus(sources.progress, lessonId) === 'inProgress') {
+    return playheadText(sources, lessonId);
+  }
+  const length = knownLength(sources, lessonId);
+  return length === undefined ? '' : formatClock(length);
+}
+
 /** A Section shown by its path, so same-named Sections in different places stay apart. */
 function sectionLabel(sectionPath: readonly string[]): string {
   return sectionPath.join(' / ');
 }
 
 /**
- * A Lesson's line: its state glyph before the title, and the Section and, for a Lesson in
- * progress, the saved position beside it. The glyph and the position come from the same rules as
- * the Lesson tree (ADR 0030); the Section stays in the description, which typing matches.
+ * A Lesson's line: its state glyph before the title, and beside it the Section and the length, or
+ * for a Lesson in progress the saved position and the length. The glyph and the position come from
+ * the same rules as the Lesson tree (ADR 0030); the Section stays in the description, which typing
+ * matches. An unknown length shows nothing (ADR 0109).
  */
-function itemOf(lesson: Lesson, sectionPath: readonly string[], progress: CourseProgress): Entry {
-  const status = lessonStatus(progress, lesson.id);
-  const position = status === 'inProgress' ? playheadText(progress, lesson.id) : '';
-  const description = [...(sectionPath.length > 0 ? [sectionLabel(sectionPath)] : []), position]
+function itemOf(lesson: Lesson, sectionPath: readonly string[], sources: LengthSources): Entry {
+  const status = lessonStatus(sources.progress, lesson.id);
+  const length = lengthText(sources, lesson.id);
+  const description = [...(sectionPath.length > 0 ? [sectionLabel(sectionPath)] : []), length]
     .filter((part) => part !== '')
     .join('  ·  ');
   return {
@@ -55,9 +67,9 @@ function itemOf(lesson: Lesson, sectionPath: readonly string[], progress: Course
 function entriesOf(
   outline: Outline,
   sectionPath: readonly string[],
-  progress: CourseProgress,
+  sources: LengthSources,
 ): Entry[] {
-  const own = outline.lessons.map((lesson) => itemOf(lesson, sectionPath, progress));
+  const own = outline.lessons.map((lesson) => itemOf(lesson, sectionPath, sources));
   const heading: Entry[] =
     sectionPath.length > 0 && own.length > 0
       ? [{ kind: 'separator', label: sectionLabel(sectionPath) }]
@@ -66,19 +78,24 @@ function entriesOf(
     ...heading,
     ...own,
     ...outline.sections.flatMap((section) =>
-      entriesOf(section, [...sectionPath, section.name], progress),
+      entriesOf(section, [...sectionPath, section.name], sources),
     ),
   ];
 }
 
+/**
+ * The picker for the open Course. `probed` holds the Lesson lengths the length job found (ADR
+ * 0109); a length in Progress wins over it.
+ */
 export function buildLessonPicker(
   course: Outline,
   progress: CourseProgress,
+  probed: LessonLengths = new Map(),
 ): QuickPickModel<LessonPickerIntent> {
   return {
     title: 'Go to Lesson',
     placeholder: 'Type a Lesson title or a Section name',
     matchOnDescription: true,
-    entries: entriesOf(course, [], progress),
+    entries: entriesOf(course, [], { progress, probed }),
   };
 }

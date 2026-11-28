@@ -16,6 +16,7 @@ import { createCoursePickerCommand } from './course-picker-command.js';
 import { unhideCourse } from './hidden-courses.js';
 import { playerFolders, readCoursesRoots } from './courses-roots.js';
 import { sameFolder } from './folder-identity.js';
+import { startLessonLengthJob, type LessonLengthJob } from './lesson-length-job.js';
 import { buildLessonPicker } from './lesson-picker.js';
 import { buildLessonTree, type LessonTreeModel } from './lesson-tree.js';
 import {
@@ -155,6 +156,10 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   let progress: ProgressRecorder | undefined;
   /** The open Course's audio sidecars (ADR 0034). */
   let sidecarSound: SidecarSound | undefined;
+  /** The open Course's length job, which reads its Lessons' lengths (ADR 0109). */
+  let lengthJob: LessonLengthJob | undefined;
+  /** Updates the open Lesson picker with the lengths known now; unset while none is open. */
+  let followLengths: (() => void) | undefined;
   /** The `followalong.ffmpegPath` values the learner was told are ignored in this window. */
   const warnedFfmpegPaths = new Set<string>();
   /** The prepared sound of every Course on this machine, kept under its limit (ADR 0096). */
@@ -169,10 +174,28 @@ export function createFollowAlong(ports: Ports): FollowAlong {
   // The last auto-pause mode that was on, so the toggle can bring it back (ADR 0098).
   const modeWatch = rememberAutoPauseMode(config, storage, logger);
 
-  /** The audio sidecars of the Course in `folder` replace the open Course's, which stop. */
-  function openSoundOf(folder: string): void {
+  /**
+   * The audio sidecars and the length job of `course` replace the open Course's, which stop
+   * (ADR 0034, 0109).
+   */
+  function openBackgroundWorkOf(course: Course): void {
     sidecarSound?.stop();
-    sidecarSound = openSidecarSound(folder, ports, warnedFfmpegPaths, audioCache);
+    sidecarSound = openSidecarSound(course.folder, ports, warnedFfmpegPaths, audioCache);
+    lengthJob?.stop();
+    // A Course with no Lessons has no lengths to read, and nothing to keep in the cache.
+    lengthJob =
+      lessonsInOrder(course).length === 0
+        ? undefined
+        : startLessonLengthJob(course, ports, warnedFfmpegPaths, () => {
+            drawTreeWith(resourceStore);
+            followLengths?.();
+          });
+  }
+
+  /** Stops the open Course's background work: the window closes. */
+  function stopBackgroundWork(): void {
+    sidecarSound?.stop();
+    lengthJob?.stop();
   }
 
   /** What the Lesson tree shows now (as JSON), so a redraw that would change nothing is skipped. */
@@ -197,6 +220,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       store.current(),
       progress.current(),
       store.missing(),
+      lengthJob?.lengths(),
     );
     if (JSON.stringify(model) !== shownTree) {
       drawTree(model);
@@ -367,7 +391,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         openedCourse = course;
         resourceStore = store;
         progress = recorder;
-        openSoundOf(folder);
+        openBackgroundWorkOf(course);
         const text = `FollowAlong found no Lessons (.mp4 or .webm) in “${basename(folder)}”. If the Course is zipped, extract it first.`;
         drawTree({ message: text, nodes: [] });
         ui.showMessage({ severity: 'warning', text });
@@ -383,8 +407,16 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       openedCourse = course;
       resourceStore = store;
       progress = recorder;
-      openSoundOf(folder);
-      drawTree(buildLessonTree(course, store.current(), recorder.current(), store.missing()));
+      openBackgroundWorkOf(course);
+      drawTree(
+        buildLessonTree(
+          course,
+          store.current(),
+          recorder.current(),
+          store.missing(),
+          lengthJob?.lengths(),
+        ),
+      );
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       await rememberRecent(folder);
       const saved = recorder.current();
@@ -623,9 +655,24 @@ export function createFollowAlong(ports: Ports): FollowAlong {
         return;
       }
       const course = openedCourse;
-      const intent = await ui.pick(
-        buildLessonPicker(course, progress?.current() ?? { lessons: {} }),
-      );
+      const model = () =>
+        buildLessonPicker(
+          course,
+          progress?.current() ?? { lessons: {} },
+          lengthJob?.lengths() ?? new Map(),
+        );
+      // The live picker, so a length that lands while it is open shows in it (ADR 0109).
+      const picker = ui.openPicker(model(), () => undefined);
+      const follow = (): void => {
+        if (course === openedCourse) {
+          picker.update(model());
+        }
+      };
+      followLengths = follow;
+      const intent = await picker.answer;
+      if (followLengths === follow) {
+        followLengths = undefined;
+      }
       if (intent !== undefined) {
         if (course === openedCourse) {
           playLesson(intent.lessonId, intent.type === 'playLessonFromStart');
@@ -760,7 +807,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       loaded.dispose();
       limitWatch.dispose();
       modeWatch.dispose();
-      sidecarSound?.stop();
+      stopBackgroundWork();
     },
     nextLesson() {
       moveToLesson(1);
@@ -772,7 +819,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       loaded.dispose();
       limitWatch.dispose();
       modeWatch.dispose();
-      sidecarSound?.stop();
+      stopBackgroundWork();
     },
   };
 }

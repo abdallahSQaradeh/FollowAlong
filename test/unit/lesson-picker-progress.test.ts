@@ -45,7 +45,7 @@ function lastStart(h: Harness): unknown {
 }
 
 describe('Progress in the Lesson picker', () => {
-  it('marks each Lesson ✓, ◐ or ○ and shows the saved position of one in progress, beside its Section', async () => {
+  it('marks each Lesson ✓, ◐ or ○ and shows its known length, or the saved position of one in progress, beside its Section', async () => {
     const h = await createHarness();
     await openCourseWithProgress(h);
 
@@ -53,10 +53,25 @@ describe('Progress in the Lesson picker', () => {
 
     expect(items(h)).toEqual([
       '○ Extra | Other',
-      '✓ Intro | Part',
+      '✓ Intro | Part  ·  10:00',
       '◐ Limits | Part  ·  12:30 / 40:05',
       '○ Series | Part',
     ]);
+  });
+
+  it('shows just the length for a Lesson with no Section whose length is known', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      '01 Intro.mp4': 'v',
+      '02 Next.mp4': 'v',
+      '.followalong/progress.json': progressFile({ '01 Intro.mp4': saved(590, 'done') }),
+    });
+    await h.core.openCourse(course);
+    h.player.ready();
+
+    void h.core.goToLesson();
+
+    expect(items(h)).toEqual(['✓ Intro | 10:00', '○ Next | ']);
   });
 
   it('still narrows to a Section by its name: the Section stays in the matched description', async () => {
@@ -143,5 +158,31 @@ describe('Progress in the Lesson picker', () => {
       }),
     ]);
     expect(h.ui.picker).toBeUndefined();
+  });
+
+  it('shows the length read from the file beside the saved position, in the picker and the tree alike, when Progress has none', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'Part/02 Limits.mp4': 'v',
+      'Other/04 Extra.mp4': 'v',
+      '.followalong/progress.json': progressFile({
+        'Part/02 Limits.mp4': saved(750, 'inProgress', 0),
+      }),
+    });
+    h.converter.lengths.set(join(course, 'Part', '02 Limits.mp4'), 2405);
+    await h.core.openCourse(course);
+    await h.settle();
+    await h.core.close();
+
+    // A new window knows the length from the Lesson length cache when it draws the tree.
+    h.restart();
+    await h.core.openCourse(course);
+    void h.core.goToLesson();
+
+    expect(items(h)).toEqual(['○ Extra | Other', '◐ Limits | Part  ·  12:30 / 40:05']);
+    const part = h.ui.lessonTree?.nodes.find((node) => node.label === 'Part');
+    expect(part?.kind === 'section' ? part.children : []).toEqual([
+      expect.objectContaining({ label: 'Limits', description: '12:30 / 40:05' }),
+    ]);
   });
 });

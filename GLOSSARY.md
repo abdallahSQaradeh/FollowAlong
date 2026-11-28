@@ -32,12 +32,16 @@ _Avoid_: File explorer, folder dialog, tree
 The Courses the last scan of the Courses roots found, kept on this machine (not in any Course folder) so the Course picker can open from it before the rescan is done. It is used only for the same Courses roots, and a copy that cannot be read is ignored.
 _Avoid_: Course data, library index, scan results
 
+**Lesson length cache**:
+The length read from each Lesson's file for the Courses opened most recently (50 at most), kept on this machine (not in any Course folder) so the Lesson picker shows lengths at once and an unchanged file is not read again. Each length is kept with the file's size and last change, and is not used once the file changes; a Lesson whose file has no length is kept as read, with none. A copy that cannot be read is ignored. It is filled by the length job, which reads the open Course's Lessons in the background, one at a time, from when the Course opens until another Course opens or the window closes (ADR 0109).
+_Avoid_: Duration cache, probe cache, metadata
+
 **Section**:
 A named group of Lessons within a Course, in the order the Course presents them.
 _Avoid_: Module, chapter, part
 
 **Lesson picker**:
-The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing. Each item shows the Lesson's state (✓/◐/○) and, for one in progress, its saved position, as the Lesson tree does; a _Start from beginning_ button on the item plays that Lesson from 0:00.
+The quick pick that lists the open Course's Lessons grouped by Section, so the learner can jump to any Lesson by typing. Each item shows the Lesson's state (✓/◐/○), its Section and its length when known (from Progress, or read from the file, ADR 0109), or for one in progress its saved position and length, as the Lesson tree does; an unknown length shows nothing; a _Start from beginning_ button on the item plays that Lesson from 0:00.
 _Avoid_: Lesson search, jump list
 
 **Course order**:
@@ -49,7 +53,7 @@ The "Next: <title>" button the player shows over the last frame when a Lesson en
 _Avoid_: Autoplay next, up next, end card
 
 **Lesson tree**:
-The FollowAlong view in the activity bar: the open Course's Sections and Lessons in Course order, each Lesson with its state (✓ done, ◐ in progress, ○ not started) and, when in progress, its position and length (`12:30 / 40:05`); each Section with its done/total (`3/12`); and the Course's done/total and percent (`27/140 · 19%`) beside the Course's name at the top. The Lesson the learner is on is highlighted and revealed.
+The FollowAlong view in the activity bar: the open Course's Sections and Lessons in Course order, each Lesson with its state (✓ done, ◐ in progress, ○ not started) and, when in progress, its position and length (`12:30 / 40:05`, the length from Progress or read from the file, ADR 0109; just the position while the length is unknown); each Section with its done/total (`3/12`); and the Course's done/total and percent (`27/140 · 19%`) beside the Course's name at the top. The Lesson the learner is on is highlighted and revealed.
 _Avoid_: Course library view, outline, playlist
 
 **Wrapper folder**:

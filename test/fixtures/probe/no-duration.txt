@@ -1,0 +1,12 @@
+[aist#0:1/vorbis @ 0000018c0d07d280] Guessed Channel Layout: mono
+Input #0, matroska,webm, from '/lesson/no-duration.webm':
+  Metadata:
+    encoder         : Lavf
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: vp8, none(progressive), 160x90, SAR 1:1 DAR 16:9, 25 fps, 25 tbr, 1k tbn
+      Metadata:
+        ENCODER         : Lavc libvpx
+  Stream #0:1: Audio: vorbis, 44100 Hz, mono
+      Metadata:
+        ENCODER         : Lavc libvorbis
+At least one output file must be specified

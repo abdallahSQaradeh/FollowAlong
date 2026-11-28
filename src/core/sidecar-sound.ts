@@ -12,7 +12,7 @@ import { basename, extname, join } from 'node:path';
 
 import { soundFolderName, type AudioCache, type AudioCacheUse } from './audio-cache.js';
 import { openCourseData, type CourseData } from './course-data.js';
-import { isFullPath } from './folder-identity.js';
+import { fileExists, ffmpegProgram, probeInTime } from './ffmpeg-program.js';
 import type { Lesson } from './course-model.js';
 import {
   createSoundQueue,
@@ -30,9 +30,6 @@ import {
   type Ports,
 } from './ports.js';
 
-/** The ffmpeg used on a machine with no bundled one, when `followalong.ffmpegPath` is not set. */
-const pathProgram = 'ffmpeg';
-
 /** `<Lesson file name>-<hash of relative path, size, last change>.mp3`: readable, and unique. */
 function soundFileName(lesson: Lesson, { size, modifiedMs }: FileStat): string {
   const key = `${lesson.id}\n${String(size)}\n${String(Math.trunc(modifiedMs))}`;
@@ -43,71 +40,10 @@ function soundFileName(lesson: Lesson, { size, modifiedMs }: FileStat): string {
   return `${name}-${hash}.mp3`;
 }
 
-/**
- * The ffmpeg to run (ADR 0071): the `followalong.ffmpegPath` setting when it names a full path,
- * else the ffmpeg the extension ships, where there is one for this machine, else the one on PATH.
- * Rejects when the shipped ffmpeg is wanted but its file is gone: the sound then fails like any
- * other, and the learner can play without it.
- */
-async function ffmpegProgram(ports: SidecarSoundPorts, warned: Set<string>): Promise<string> {
-  const { config, ui, logger, fileSystem, bundledFfmpeg } = ports;
-  const setting = config.get('ffmpegPath');
-  const value = typeof setting === 'string' ? setting.trim() : '';
-  if (value !== '') {
-    if (isFullPath(value)) {
-      return value;
-    }
-    // A relative path would resolve against whatever folder VS Code runs in (as for Courses
-    // roots). Said once per window and value, not at every Lesson.
-    if (!warned.has(value)) {
-      warned.add(value);
-      const instead =
-        bundledFfmpeg === undefined ? 'ffmpeg on PATH' : 'the ffmpeg that comes with FollowAlong';
-      logger.log({
-        level: 'warn',
-        message: `Ignoring followalong.ffmpegPath ${value}: not a full path.`,
-      });
-      ui.showMessage({
-        severity: 'warning',
-        text: `FollowAlong ignores the followalong.ffmpegPath setting “${value}”: it must be a full path, such as C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe. It uses ${instead} instead.`,
-      });
-    }
-  }
-  if (bundledFfmpeg === undefined) {
-    return pathProgram;
-  }
-  if (!(await exists(fileSystem, bundledFfmpeg))) {
-    throw new Error(
-      `The ffmpeg that comes with FollowAlong is missing (${bundledFfmpeg}). Reinstall FollowAlong, or set followalong.ffmpegPath to an ffmpeg you installed.`,
-    );
-  }
-  return bundledFfmpeg;
-}
-
-/** Whether a file is at `path`. */
-async function exists(fileSystem: Ports['fileSystem'], path: string): Promise<boolean> {
-  try {
-    await fileSystem.stat(path);
-    return true;
-  } catch (error) {
-    if (FileSystemError.is(error, 'notFound')) {
-      return false;
-    }
-    throw error;
-  }
-}
-
 type SidecarSoundPorts = Pick<
   Ports,
   'fileSystem' | 'storage' | 'converter' | 'config' | 'ui' | 'logger' | 'clock' | 'bundledFfmpeg'
 >;
-
-/**
- * How long ffmpeg may take to read a Lesson's sound track before the sound is given up. A local
- * file takes a fraction of a second; a stalled network mount or a disconnected drive never answers,
- * and the Lesson's controls would stay hidden for ever (ADR 0056).
- */
-const probeTimeoutMs = 30_000;
 
 /**
  * How long a conversion may go without reporting progress before the sound is given up. ffmpeg
@@ -175,46 +111,15 @@ async function extractWithStallGuard(
  * The codec of `lesson`'s first sound track, or `undefined` for a silent video. Rejects when
  * ffmpeg does not answer in time, even if it ignores being stopped, so nothing waits on it.
  */
-async function probeSound(
+function probeSound(
   { clock, converter }: SidecarSoundPorts,
   lesson: Lesson,
   program: string,
   signal: AbortSignal,
 ): Promise<string | undefined> {
-  const stalled = new AbortController();
-  let timer: Disposable | undefined;
-  let leave: (() => void) | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    // The learner left the Lesson: nothing waits for an ffmpeg that does not stop.
-    leave = () => {
-      reject(signal.reason instanceof Error ? signal.reason : new Error('The sound was stopped.'));
-    };
-    signal.addEventListener('abort', leave, { once: true });
-    timer = clock.schedule(probeTimeoutMs, () => {
-      stalled.abort();
-      reject(
-        new Error(
-          `ffmpeg did not finish reading “${basename(lesson.id)}” within ${String(probeTimeoutMs / 1000)} seconds. Is its drive or network folder still there?`,
-        ),
-      );
-    });
-  });
-  const probe = converter.soundCodec({
-    program,
-    input: lesson.path,
-    signal: AbortSignal.any([signal, stalled.signal]),
-  });
-  // Whichever loses the race must not become an unhandled rejection.
-  probe.catch(() => undefined);
-  timeout.catch(() => undefined);
-  try {
-    return await Promise.race([probe, timeout]);
-  } finally {
-    timer?.dispose();
-    if (leave !== undefined) {
-      signal.removeEventListener('abort', leave);
-    }
-  }
+  return probeInTime(clock, lesson, { signal, stopped: 'The sound was stopped.' }, (probeSignal) =>
+    converter.soundCodec({ program, input: lesson.path, signal: probeSignal }),
+  );
 }
 
 /** The audio sidecars of one Course, kept in its Course data. */
@@ -333,7 +238,7 @@ async function prepareSound(
   const name = soundFileName(lesson, await fileSystem.stat(lesson.path));
   for (const folder of data.folders(soundFolderName)) {
     const path = join(folder, name);
-    if (await exists(fileSystem, path)) {
+    if (await fileExists(fileSystem, path)) {
       logger.log({ level: 'debug', message: `Reusing the prepared sound of ${lesson.id}` });
       return { kind: 'sidecar', path };
     }

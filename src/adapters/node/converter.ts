@@ -17,7 +17,7 @@ import {
   FileSystemError,
   type ConversionRequest,
   type Converter,
-  type SoundProbe,
+  type LessonProbe,
 } from '../../core/ports.js';
 
 /** The last lines of ffmpeg's error output kept for the reason of a failure. */
@@ -33,6 +33,19 @@ const stalePartMs = 10 * 60 * 1000;
 /** `HH:MM:SS.xx` in ffmpeg's output, in seconds. */
 function seconds(hours: string, minutes: string, rest: string): number {
   return Number(hours) * 3600 + Number(minutes) * 60 + Number(rest);
+}
+
+/**
+ * The input's length in seconds when `line` is the one where ffmpeg lists it
+ * (`Duration: HH:MM:SS.xx`); `undefined` for any other line, and for `Duration: N/A`.
+ */
+function durationOf(line: string): number | undefined {
+  const match = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
+  if (match === null) {
+    return undefined;
+  }
+  const [, hours = '0', minutes = '0', rest = '0'] = match;
+  return seconds(hours, minutes, rest);
 }
 
 /** The ffmpeg arguments that write `input`'s first sound track to `output` as MP3. */
@@ -286,10 +299,8 @@ async function convert(
     signal,
     request.lowPriority,
     (line) => {
-      const durationMatch = /Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
-      if (durationMatch !== null && duration === 0) {
-        const [, hours = '0', minutes = '0', rest = '0'] = durationMatch;
-        duration = seconds(hours, minutes, rest);
+      if (duration === 0) {
+        duration = durationOf(line) ?? 0;
       }
       const timeMatch = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line);
       if (timeMatch !== null) {
@@ -310,6 +321,32 @@ async function convert(
   onProgress(100);
 }
 
+/**
+ * Runs `ffmpeg -i <file>` with no output, which lists the file's streams and exits 1: the probe.
+ * `onLine` is given each line ffmpeg writes. Rejects when ffmpeg could not read the file.
+ */
+async function readStreams(
+  runner: Required<ConverterOptions>,
+  { program, input, signal }: LessonProbe,
+  onLine: (line: string) => void,
+): Promise<void> {
+  const found = { readable: false };
+  const run = await runFfmpeg(
+    runner,
+    program,
+    ['-hide_banner', '-nostdin', '-i', input],
+    signal,
+    false,
+    (line) => {
+      found.readable ||= line.startsWith('Input #0');
+      onLine(line);
+    },
+  );
+  if (!found.readable) {
+    throw new Error(`ffmpeg could not read the Lesson: ${run.tail.join(' ')}`);
+  }
+}
+
 export function createFfmpegConverter(options: ConverterOptions = {}): Converter {
   const runner: Required<ConverterOptions> = {
     start: options.start ?? startProcess,
@@ -317,29 +354,24 @@ export function createFfmpegConverter(options: ConverterOptions = {}): Converter
     setPriority: options.setPriority ?? setProcessPriority,
   };
   return {
-    async soundCodec({ program, input, signal }: SoundProbe) {
-      // `ffmpeg -i <file>` with no output lists the file's streams, then exits 1: that is the probe.
-      // Filled in by the lines ffmpeg writes: whether it read the file, and its first sound track.
-      const found: { readable: boolean; codec: string | undefined } = {
-        readable: false,
-        codec: undefined,
-      };
-      const run = await runFfmpeg(
-        runner,
-        program,
-        ['-hide_banner', '-nostdin', '-i', input],
-        signal,
-        false,
-        (line) => {
-          found.readable ||= line.startsWith('Input #0');
-          const audio = /^\s*Stream #\d+:\d+\S*: Audio: ([A-Za-z0-9_]+)/.exec(line);
-          found.codec ??= audio?.[1];
-        },
-      );
-      if (!found.readable) {
-        throw new Error(`ffmpeg could not read the Lesson: ${run.tail.join(' ')}`);
-      }
+    async soundCodec(probe) {
+      // Filled in by the lines ffmpeg writes: the codec of its first sound track.
+      const found: { codec: string | undefined } = { codec: undefined };
+      await readStreams(runner, probe, (line) => {
+        const audio = /^\s*Stream #\d+:\d+\S*: Audio: ([A-Za-z0-9_]+)/.exec(line);
+        found.codec ??= audio?.[1];
+      });
       return found.codec;
+    },
+
+    async lessonLength(probe) {
+      // Filled in by the first `Duration:` line. `Duration: N/A` does not match, so stays unknown.
+      const found: { length: number | undefined } = { length: undefined };
+      await readStreams(runner, probe, (line) => {
+        found.length ??= durationOf(line);
+      });
+      // The one place the "a length of 0 is unknown" rule is kept: the port never reports 0.
+      return found.length !== undefined && found.length > 0 ? found.length : undefined;
     },
 
     async extractSound(request) {

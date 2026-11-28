@@ -151,3 +151,46 @@ describe('the ffmpeg that converts the sound', () => {
     expect(programs(h).conversions).toEqual([bundled]);
   });
 });
+
+describe('the ffmpeg that reads the Lesson lengths', () => {
+  /** The programs the converter was asked to read a length with, once the Course is open. */
+  async function lengthPrograms(h: Harness): Promise<string[]> {
+    const course = await h.folder('course', { '01 Intro.mp4': 'v', '02 Setup.webm': 'v' });
+    await h.core.openCourse(course);
+    await h.settle();
+    return h.converter.lengthProbes.map((probe) => probe.program);
+  }
+
+  it('is the bundled ffmpeg when followalong.ffmpegPath is not set', async () => {
+    const h = await createHarness();
+    const bundled = await h.shipBundledFfmpeg({ present: true });
+
+    expect(await lengthPrograms(h)).toEqual([bundled, bundled]);
+  });
+
+  it('is the one followalong.ffmpegPath names, even when an ffmpeg is bundled', async () => {
+    const h = await createHarness();
+    await h.shipBundledFfmpeg({ present: true });
+    const own = join(h.root, 'Tools', 'ffmpeg.exe');
+    h.config.set('ffmpegPath', own);
+
+    expect(await lengthPrograms(h)).toEqual([own, own]);
+  });
+
+  it('is ffmpeg on PATH when nothing is bundled', async () => {
+    const h = await createHarness();
+
+    expect(await lengthPrograms(h)).toEqual(['ffmpeg', 'ffmpeg']);
+  });
+
+  it('is none, with one log line and nothing said to the learner, when the bundled ffmpeg is gone', async () => {
+    const h = await createHarness();
+    const bundled = await h.shipBundledFfmpeg({ present: false });
+
+    expect(await lengthPrograms(h)).toEqual([]);
+    const warnings = h.logger.entries.filter((entry) => entry.level === 'warn');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toContain(bundled);
+    expect(h.ui.messages).toEqual([]);
+  });
+});

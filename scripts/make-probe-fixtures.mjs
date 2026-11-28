@@ -11,12 +11,14 @@
  * - mp3.txt: H.264 + MP3, a sound the page decodes in an MP4 itself;
  * - silent.txt: H.264 only;
  * - two-tracks.txt: H.264, then MP3 and AAC sound tracks, in that order: the first one counts;
- * - unreadable.txt: a text file with an .mp4 name.
+ * - unreadable.txt: a text file with an .mp4 name;
+ * - no-duration.txt: test/fixtures/media/no-duration.webm, a WebM whose length ffmpeg reports as
+ *   `Duration: N/A` (made by scripts/make-media-fixtures.mjs).
  * convert-aac.txt is the output of converting an AAC Lesson's sound as the converter does it.
  * The clip's path is written as `/lesson/<name>` so the files do not depend on where they were made.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,12 +102,15 @@ const two = clip('two-tracks.mp4', [
 ]);
 const unreadable = join(work, 'unreadable.mp4');
 writeFileSync(unreadable, 'this is not a video');
+const noDuration = join(work, 'no-duration.webm');
+copyFileSync(join(root, 'test', 'fixtures', 'media', 'no-duration.webm'), noDuration);
 
 record('aac.txt', probe(aac));
 record('mp3.txt', probe(mp3));
 record('silent.txt', probe(silent));
 record('two-tracks.txt', probe(two));
 record('unreadable.txt', probe(unreadable));
+record('no-duration.txt', probe(noDuration));
 record(
   'convert-aac.txt',
   run([
