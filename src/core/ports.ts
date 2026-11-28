@@ -183,11 +183,13 @@ export interface ConversionRequest {
   readonly signal: AbortSignal;
 }
 
-export interface SoundProbe {
+/** A question about one Lesson video that ffmpeg answers by reading the file. */
+export interface LessonProbe {
   /** The ffmpeg to run: a path, or a command name looked up on PATH. */
   readonly program: string;
-  /** The Lesson video whose sound is asked about. */
+  /** The Lesson video asked about. */
   readonly input: string;
+  /** Aborting it stops ffmpeg, and the probe rejects. */
   readonly signal: AbortSignal;
 }
 
@@ -196,7 +198,13 @@ export interface Converter {
    * The codec of the video's first sound track, as ffmpeg names it (`aac`, `mp3`, `opus`, …), or
    * `undefined` when the video has no sound. Rejects when the video cannot be read.
    */
-  soundCodec(probe: SoundProbe): Promise<string | undefined>;
+  soundCodec(probe: LessonProbe): Promise<string | undefined>;
+  /**
+   * The Lesson's length in seconds, or `undefined` when ffmpeg reads the video but reports no
+   * length (a WebM muxed to a pipe says `Duration: N/A`), never 0. Rejects when the video cannot be
+   * read.
+   */
+  lessonLength(probe: LessonProbe): Promise<number | undefined>;
   /**
    * Writes `output` and resolves, or rejects with the reason it could not. `output` appears only
    * once it is whole, so a file found there is a finished conversion. Aborting `signal` stops the

@@ -22,7 +22,7 @@ import {
   type Clock,
   Config,
   ConversionRequest,
-  SoundProbe,
+  LessonProbe,
   Converter,
   Disposable,
   FileDialog,
@@ -195,14 +195,40 @@ export class FakeConverter implements Converter {
   audioCodec: string | undefined = 'aac';
 
   /** Every probe asked for, so a test can see which program ran it and whether it was aborted. */
-  readonly probes: SoundProbe[] = [];
+  readonly probes: LessonProbe[] = [];
 
   /** Set to make every probe hang for good, as ffmpeg does on a stalled mount, even when aborted. */
   stallProbes = false;
 
-  soundCodec(probe: SoundProbe): Promise<string | undefined> {
+  soundCodec(probe: LessonProbe): Promise<string | undefined> {
     this.probes.push(probe);
     return this.stallProbes ? new Promise(() => undefined) : Promise.resolve(this.audioCodec);
+  }
+
+  /**
+   * Each Lesson video's length in seconds, by its path, as ffmpeg reads it: `undefined` for a
+   * video whose length ffmpeg reports as N/A. A path not here cannot be read, so its probe rejects.
+   */
+  readonly lengths = new Map<string, number | undefined>();
+
+  /** Every length probe asked for, so a test can see which Lessons were read and with what. */
+  readonly lengthProbes: LessonProbe[] = [];
+
+  /** Set to make every length probe hang for good, as ffmpeg does on a stalled mount. */
+  stallLengths = false;
+
+  lessonLength(probe: LessonProbe): Promise<number | undefined> {
+    this.lengthProbes.push(probe);
+    if (this.stallLengths) {
+      return new Promise(() => undefined);
+    }
+    if (probe.signal.aborted) {
+      return Promise.reject(new Error('The length probe was stopped.'));
+    }
+    if (!this.lengths.has(probe.input)) {
+      return Promise.reject(new Error(`ffmpeg could not read the Lesson: ${probe.input}`));
+    }
+    return Promise.resolve(this.lengths.get(probe.input));
   }
 
   readonly requests: {
