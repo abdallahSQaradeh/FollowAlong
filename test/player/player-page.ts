@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import type { Page, PageScreenshotOptions } from '@playwright/test';
+import type { Page, PageScreenshotOptions, Route } from '@playwright/test';
 
 import { renderPlayerHtml } from '../../src/player/page.js';
 import type { PlayerTuning } from '../../src/player/tuning.js';
@@ -188,15 +188,10 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       path === '/media/sidecar.mp4' ||
       path === '/media/sidecar.mp3'
     ) {
-      const contentType = path.endsWith('.mp4')
-        ? 'video/mp4'
-        : path.endsWith('.mp3')
-          ? 'audio/mpeg'
-          : 'video/webm';
-      const body = readFileSync(join(root, 'test', 'fixtures', path));
-      // Byte ranges, as VS Code's webview resource loader answers them (research 01: 206).
-      const range = /^bytes=(\d+)-(\d*)$/.exec(requestedRange ?? '');
-      if (range === null) {
+      const contentType = fixtureType(path);
+      const body = fixture(path);
+      const range = byteRange(requestedRange, body.length);
+      if (range === undefined) {
         await route.fulfill({ contentType, body });
         return;
       }
@@ -204,17 +199,7 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
         await route.fulfill({ status: 206, contentType, body: 'changed on disk' });
         return;
       }
-      const start = Number(range[1]);
-      const end = range[2] === '' ? body.length - 1 : Math.min(Number(range[2]), body.length - 1);
-      await route.fulfill({
-        status: 206,
-        contentType,
-        headers: {
-          'Accept-Ranges': 'bytes',
-          'Content-Range': `bytes ${String(start)}-${String(end)}/${String(body.length)}`,
-        },
-        body: body.subarray(start, end + 1),
-      });
+      await fulfillRange(route, path, range);
     } else if (path === '/media/empty.webm') {
       await route.fulfill({ contentType: 'video/webm', body: '' });
     } else if (path === '/media/not-a-video.webm') {
@@ -475,9 +460,70 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
   };
 }
 
-const mp4File = readFileSync(join(root, 'test', 'fixtures', 'media', 'sample.mp4'));
+/** The bytes of each media fixture, by its path on the fake origin, read from disk once. */
+const fixtures = new Map<string, Buffer>();
+
+function fixture(path: string): Buffer {
+  let body = fixtures.get(path);
+  if (body === undefined) {
+    body = readFileSync(join(root, 'test', 'fixtures', path));
+    fixtures.set(path, body);
+  }
+  return body;
+}
+
+function fixtureType(path: string): string {
+  if (path.endsWith('.mp4')) {
+    return 'video/mp4';
+  }
+  return path.endsWith('.mp3') ? 'audio/mpeg' : 'video/webm';
+}
+
+/** The bytes a `bytes=start-end` Range header asks of a file of `size` bytes; none for another header. */
+function byteRange(
+  header: string | undefined,
+  size: number,
+): { readonly start: number; readonly end: number } | undefined {
+  const range = /^bytes=(\d+)-(\d*)$/.exec(header ?? '');
+  if (range === null) {
+    return undefined;
+  }
+  const end = range[2] === '' ? size - 1 : Math.min(Number(range[2]), size - 1);
+  return { start: Number(range[1]), end };
+}
+
+/** Answers a Range request for the fixture at `path`, as VS Code's webview resource loader does (research 01: 206). */
+function fulfillRange(
+  route: Route,
+  path: string,
+  { start, end }: { readonly start: number; readonly end: number },
+): Promise<void> {
+  const body = fixture(path);
+  return route.fulfill({
+    status: 206,
+    contentType: fixtureType(path),
+    headers: {
+      'Accept-Ranges': 'bytes',
+      'Content-Range': `bytes ${String(start)}-${String(end)}/${String(body.length)}`,
+    },
+    body: body.subarray(start, end + 1),
+  });
+}
+
+/** A promise and the function that resolves it. */
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve = () => {
+    // Replaced right below.
+  };
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+const mp4Path = new URL(media.mp4).pathname;
 /** The size of the faststart MP4 (sample.mp4), whose bytes run in step with its time. */
-export const mp4Bytes = mp4File.length;
+export const mp4Bytes = fixture(mp4Path).length;
 
 /** How {@link readMp4InParts} answers the faststart MP4's Range requests. */
 export interface PartReadOptions {
@@ -485,9 +531,8 @@ export interface PartReadOptions {
   readonly partBytes: number;
   /** Holds back the first read that starts at or after this offset, until `release()`. */
   readonly holdFrom?: number;
-  /** Every read that starts at or after this offset takes `slowMs` to arrive. */
-  readonly slowFrom?: number;
-  readonly slowMs?: number;
+  /** Every read that starts at or after `from` takes `ms` to arrive. */
+  readonly slow?: { readonly from: number; readonly ms: number };
 }
 
 export interface PartReads {
@@ -504,50 +549,29 @@ export interface PartReads {
  * its picture (ticket #140). Overrides `openPlayer`'s route for that file only.
  */
 export async function readMp4InParts(page: Page, options: PartReadOptions): Promise<PartReads> {
-  const body = mp4File;
-  let release = () => {
-    // Replaced right below.
-  };
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let onHeld = () => {
-    // Replaced right below.
-  };
-  const held = new Promise<void>((resolve) => {
-    onHeld = resolve;
-  });
-  let holding = options.holdFrom !== undefined;
-  await page.route(`${origin}/media/sample.mp4`, async (route) => {
-    const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? '');
-    if (range === null) {
+  const { holdFrom, slow } = options;
+  const held = deferred();
+  const released = deferred();
+  let holding = holdFrom !== undefined;
+  await page.route(media.mp4, async (route) => {
+    const range = byteRange(route.request().headers().range, mp4Bytes);
+    if (range === undefined) {
       await route.fallback();
       return;
     }
-    const start = Number(range[1]);
-    const asked = range[2] === '' ? body.length - 1 : Math.min(Number(range[2]), body.length - 1);
-    const end = Math.min(asked, start + options.partBytes - 1);
-    if (holding && options.holdFrom !== undefined && start >= options.holdFrom) {
+    const { start } = range;
+    if (holding && start >= (holdFrom ?? 0)) {
       holding = false;
-      onHeld();
-      await released;
-    } else if (options.slowFrom !== undefined && start >= options.slowFrom) {
-      await new Promise((resolve) => setTimeout(resolve, options.slowMs ?? 0));
+      held.resolve();
+      await released.promise;
+    } else if (slow !== undefined && start >= slow.from) {
+      await new Promise((resolve) => setTimeout(resolve, slow.ms));
     }
+    const end = Math.min(range.end, start + options.partBytes - 1);
     // The player may have given up on a read it no longer needs (a seek elsewhere).
-    await route
-      .fulfill({
-        status: 206,
-        contentType: 'video/mp4',
-        headers: {
-          'Accept-Ranges': 'bytes',
-          'Content-Range': `bytes ${String(start)}-${String(end)}/${String(body.length)}`,
-        },
-        body: body.subarray(start, end + 1),
-      })
-      .catch(() => undefined);
+    await fulfillRange(route, mp4Path, { start, end }).catch(() => undefined);
   });
-  return { held, release };
+  return { held: held.promise, release: released.resolve };
 }
 
 type Evaluate = <Result, Arg>(run: (arg: Arg) => Result, arg: Arg) => Promise<Awaited<Result>>;

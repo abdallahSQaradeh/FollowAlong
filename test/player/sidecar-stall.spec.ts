@@ -8,7 +8,14 @@ import type { Page } from '@playwright/test';
 
 import type { PlayerCommand, PlayerEvent } from '../../src/protocol/player-messages.js';
 import { expect, test } from './fixtures.js';
-import { media, mp4Bytes, openPlayer, readMp4InParts, spots } from './player-page.js';
+import {
+  media,
+  mp4Bytes,
+  openPlayer,
+  readMp4InParts,
+  spots,
+  type PlayerHarness,
+} from './player-page.js';
 
 const lessonId = 'Section 1/05 Hoisting.mp4';
 /** How far the sound may be from the picture (spec #12: drift correction above about 0.1 s). */
@@ -111,6 +118,16 @@ function typesAfter(events: readonly PlayerEvent[], from: number): string[] {
   return events.slice(from).map((event) => event.type);
 }
 
+/**
+ * Checks that the player posted no `paused`, `played` or `userInteracted` after the first `from`
+ * events: Progress and auto-pause see nothing of a stall.
+ */
+async function expectNothingPostedAfter(player: PlayerHarness, from: number): Promise<void> {
+  expect(typesAfter(await player.events(), from)).not.toEqual(
+    expect.arrayContaining([expect.stringMatching(/^(paused|played|userInteracted)$/)]),
+  );
+}
+
 /** Waits until the picture is starved: it waits for data while it is not paused. */
 async function waitForStall(page: Page): Promise<void> {
   await expect.poll(async () => (await watched(page)).waiting).toBeGreaterThan(0);
@@ -144,10 +161,7 @@ test('stops the sound while a held-back read starves the picture, then plays bot
 
   expect((await player.sound()).paused).toBe(false);
   expectInStep(await watched(page));
-  // Progress and auto-pause see nothing of the stall.
-  expect(typesAfter(await player.events(), sent)).not.toEqual(
-    expect.arrayContaining([expect.stringMatching(/^(paused|played|userInteracted)$/)]),
-  );
+  await expectNothingPostedAfter(player, sent);
 });
 
 test("a learner's pause during a stall stays a pause when the data arrives", async ({ page }) => {
@@ -184,7 +198,7 @@ test('keeps the sound with the picture after a seek into data that is slow to ar
   page,
 }) => {
   const player = await openPlayer(page, { aac: false });
-  await readMp4InParts(page, { partBytes, slowFrom: Math.floor(mp4Bytes * 0.4), slowMs: 800 });
+  await readMp4InParts(page, { partBytes, slow: { from: Math.floor(mp4Bytes * 0.4), ms: 800 } });
   await player.postAll([loadMp4, soundReady]);
   await player.waitForEvent({ type: 'played', lessonId });
   await watchDrift(page);
@@ -201,7 +215,5 @@ test('keeps the sound with the picture after a seek into data that is slow to ar
   const watch = await watched(page);
   expect(watch.waiting).toBeGreaterThan(0);
   expectInStep(watch);
-  expect(typesAfter(await player.events(), sent)).not.toEqual(
-    expect.arrayContaining([expect.stringMatching(/^(paused|played|userInteracted)$/)]),
-  );
+  await expectNothingPostedAfter(player, sent);
 });
