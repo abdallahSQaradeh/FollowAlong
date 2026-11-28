@@ -164,6 +164,28 @@ test('stops the sound while a held-back read starves the picture, then plays bot
   await expectNothingPostedAfter(player, sent);
 });
 
+test('holds the sound at the first frame while the Lesson is slow to arrive from the start', async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
+  await readMp4InParts(page, { partBytes, slow: { from: 0, ms: 600 } });
+  // From before the load: the first play comes before the picture's data.
+  await watchDrift(page);
+  await player.postAll([loadMp4, soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+  const sent = (await player.events()).length;
+
+  // Checked before the Lesson ends, which posts its own `paused`.
+  await expect
+    .poll(async () => (await player.video()).currentTime, { intervals: [50], timeout: 15_000 })
+    .toBeGreaterThan(1);
+
+  const watch = await watched(page);
+  expect(watch.waiting).toBeGreaterThan(0);
+  expectInStep(watch);
+  await expectNothingPostedAfter(player, sent);
+});
+
 test("a learner's pause during a stall stays a pause when the data arrives", async ({ page }) => {
   const player = await openPlayer(page, { aac: false });
   const reads = await readMp4InParts(page, { partBytes, holdFrom: Math.floor(mp4Bytes / 2) });

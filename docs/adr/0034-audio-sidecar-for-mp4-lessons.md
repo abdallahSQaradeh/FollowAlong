@@ -58,15 +58,16 @@ future VS Code that ships AAC turns this off with no code change (spec #12, tick
   - `seeking` (the sidecar seeks to the video's position);
   - the rate (the speed ladder, ADR 0015);
   - the volume and mute (below);
-  - its stalls (ticket #140): while a video whose picture has moved since its last `play` is not
-    paused but starved (`waiting`, or `readyState` below `HAVE_FUTURE_DATA`; a seek into data that
-    has not arrived is `waiting` too), the sidecar is paused. Once the picture can play on
-    (`playing`, `canplay`, `seeked`, `timeupdate`) the sound starts at the video's playhead and
-    rate. Before the picture first moves, the sound leads on purpose, as above: stopping it for a
-    video still loading would start it again after the picture, behind it. A paused video is left
-    to its `pause`, so a learner's pause during a stall stays a pause. The stall posts nothing: the
-    video fires no `pause` or `play`, and `played` is posted once per play, so Progress, auto-pause
-    and the interaction count see nothing of it;
+  - its stalls (ticket #140): while the video is not paused but starved (`readyState` below
+    `HAVE_FUTURE_DATA`: `waiting`, a seek into data that has not arrived, or a `play` before the
+    picture's data, as the first play from a slow drive, a play after a seek while paused, or a
+    resume during a stall), the sidecar is held: paused. Once the picture can play on (`canplay`,
+    `playing`, `seeked`, `timeupdate`) the held sound starts at the video's playhead and rate. Only
+    a held sound starts again so: one the learner paused, one that ended before the picture (a
+    shorter MP3), or one whose `play()` was refused stays stopped. A paused video is left to its
+    `pause`, so a learner's pause during a stall stays a pause. The stall posts nothing: the video
+    fires no `pause` or `play`, and `played` is posted once per play, so Progress, auto-pause and
+    the interaction count see nothing of it;
   - drift above 0.1 s, checked whenever the picture moves (each `timeupdate`, and the events
     above), but not while the sidecar is still seeking, because moving it again would restart that
     seek.

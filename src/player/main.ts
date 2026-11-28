@@ -644,8 +644,8 @@ function reportMediaEvents(media: HTMLVideoElement): void {
 }
 
 /**
- * Whether the video lacks the data to play on: once it has played, it is `waiting`, and its
- * picture stands still, though it fires no `pause` (ticket #140).
+ * Whether the video lacks the data to play on: its picture stands still, though it fires no
+ * `pause` (ticket #140).
  */
 function starved(media: HTMLVideoElement): boolean {
   return media.readyState < HTMLMediaElement.HAVE_FUTURE_DATA;
@@ -658,53 +658,48 @@ function starved(media: HTMLVideoElement): boolean {
 function followWithSound(media: HTMLVideoElement): void {
   const following = () => current?.sound === 'sidecar';
   /**
-   * Whether the picture has moved since the video's last `play`. Until then the sound leads on
-   * purpose (`play` starts it first), and stopping it for a video still loading would only start
-   * it again after the picture, behind it.
+   * Whether the sound is paused for a stall of the picture: only that pause ends when the picture
+   * can play on. Not one by the learner's pause, nor the end of a sound shorter than the picture.
    */
-  let moved = false;
+  let held = false;
   /**
-   * While the picture that moved is starved and not paused, its sound stops, and once the picture
-   * can play on, the sound starts again at its playhead and rate. A paused video is left to its
-   * `pause`, so a learner's pause during a stall stays a pause. Nothing here posts or counts as
-   * the learner's: a stall is neither a pause nor a play (ticket #140).
+   * The one place that keeps the sound with a playing picture, whenever the picture may have
+   * stopped or started moving. While it is starved its sound is held, and once it can play on the
+   * sound starts again at its playhead and rate; otherwise the sound only keeps in step. A paused
+   * video is left to its `pause`, so a learner's pause during a stall stays a pause. Nothing here
+   * posts or counts as the learner's: a stall is neither a pause nor a play (ticket #140).
    */
   const keepWithPicture = () => {
-    if (!following() || media.paused || !moved) {
+    if (!following() || media.paused) {
       return;
     }
     if (starved(media)) {
+      held = true;
       sidecar.pause();
-    } else if (sidecar.paused) {
+    } else if (held) {
+      held = false;
+      // A refused or failed sound stays stopped: it is not tried again on each `timeupdate`.
       startSound(media).catch(() => undefined);
-    } else if (!sidecar.seeking) {
+    } else if (!sidecar.paused && !sidecar.seeking) {
       // Not while the sound is still seeking: moving it again would only restart that seek.
       alignSound(media);
     }
   };
   media.addEventListener('play', () => {
-    moved = false;
-    // The native control bar's play button, a gesture in the page: the sound joins in.
+    // The native control bar's play button, a gesture in the page: the sound joins in, at once
+    // when the picture can play on, otherwise once it can. The first play, a seek while paused or
+    // a resume during a stall comes before the picture's data, so the sound waits for it too.
     if (following() && sidecar.paused) {
-      startSound(media).catch(() => undefined);
+      held = true;
     }
-  });
-  media.addEventListener('playing', () => {
-    moved = true;
     keepWithPicture();
   });
   // A seek into data that has not arrived is `waiting` too.
-  for (const type of ['waiting', 'canplay', 'seeked']) {
+  for (const type of ['waiting', 'canplay', 'playing', 'seeked', 'timeupdate']) {
     media.addEventListener(type, keepWithPicture);
   }
-  media.addEventListener('timeupdate', () => {
-    if (moved) {
-      keepWithPicture();
-    } else if (following() && !media.paused && !sidecar.seeking) {
-      alignSound(media);
-    }
-  });
   media.addEventListener('pause', () => {
+    held = false;
     sidecar.pause();
   });
   media.addEventListener('seeking', () => {
