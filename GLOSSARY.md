@@ -33,7 +33,7 @@ The Courses the last scan of the Courses roots found, kept on this machine (not 
 _Avoid_: Course data, library index, scan results
 
 **Lesson length cache**:
-The length read from each Lesson's file for the Courses opened most recently (50 at most), kept on this machine (not in any Course folder) so the Lesson picker shows lengths at once and an unchanged file is not read again. Each length is kept with the file's size and last change, and is not used once the file changes; a Lesson whose file has no length is kept as read, with none. A copy that cannot be read is ignored (ADR 0109).
+The length read from each Lesson's file for the Courses opened most recently (50 at most), kept on this machine (not in any Course folder) so the Lesson picker shows lengths at once and an unchanged file is not read again. Each length is kept with the file's size and last change, and is not used once the file changes; a Lesson whose file has no length is kept as read, with none. A copy that cannot be read is ignored. It is filled by the length job, which reads the open Course's Lessons in the background, one at a time, from when the Course opens until another Course opens or the window closes (ADR 0109).
 _Avoid_: Duration cache, probe cache, metadata
 
 **Section**:
