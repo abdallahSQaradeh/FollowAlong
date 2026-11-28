@@ -6,8 +6,8 @@
  */
 import { formatClock } from './clock-text.js';
 import type { Lesson, Outline } from './course-model.js';
-import { lessonGlyphs, playheadText } from './lesson-tree.js';
-import { lessonEntry, lessonStatus, type CourseProgress } from './progress.js';
+import { knownLength, lessonGlyphs, playheadText, type LessonLengths } from './lesson-tree.js';
+import { lessonStatus, type CourseProgress } from './progress.js';
 import type { QuickPickEntry, QuickPickModel } from './quick-pick.js';
 
 /**
@@ -22,37 +22,18 @@ export type LessonPickerIntent =
 
 type Entry = QuickPickEntry<LessonPickerIntent>;
 
-/**
- * Lesson lengths found other than by playing, in seconds, by Lesson id (ADR 0109). A Lesson with
- * no entry, or an entry that is not above 0, has no length from here.
- */
-export type LessonLengths = ReadonlyMap<string, number>;
-
 /** Where the picker finds a Lesson's length: its Progress, then the lengths found otherwise. */
 interface Lengths {
   readonly progress: CourseProgress;
   readonly lengths: LessonLengths;
 }
 
-/**
- * A Lesson's length in seconds, or `undefined` while it is unknown. The length the player measured
- * (the Progress `duration`) wins over any other (ADR 0109).
- */
-function knownLength({ progress, lengths }: Lengths, lessonId: string): number | undefined {
-  const played = lessonEntry(progress.lessons, lessonId)?.duration ?? 0;
-  if (played > 0) {
-    return played;
-  }
-  const found = lengths.get(lessonId) ?? 0;
-  return found > 0 ? found : undefined;
-}
-
 /** `12:30 / 40:05` for a Lesson in progress; `40:05` for any other Lesson whose length is known. */
-function lengthText(known: Lengths, lessonId: string): string {
-  if (lessonStatus(known.progress, lessonId) === 'inProgress') {
-    return playheadText(known.progress, lessonId);
+function lengthText({ progress, lengths }: Lengths, lessonId: string): string {
+  if (lessonStatus(progress, lessonId) === 'inProgress') {
+    return playheadText(progress, lengths, lessonId);
   }
-  const length = knownLength(known, lessonId);
+  const length = knownLength(progress, lengths, lessonId);
   return length === undefined ? '' : formatClock(length);
 }
 

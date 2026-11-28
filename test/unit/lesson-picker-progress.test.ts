@@ -159,4 +159,30 @@ describe('Progress in the Lesson picker', () => {
     ]);
     expect(h.ui.picker).toBeUndefined();
   });
+
+  it('shows the length read from the file beside the saved position, in the picker and the tree alike, when Progress has none', async () => {
+    const h = await createHarness();
+    const course = await h.folder('Course', {
+      'Part/02 Limits.mp4': 'v',
+      'Other/04 Extra.mp4': 'v',
+      '.followalong/progress.json': progressFile({
+        'Part/02 Limits.mp4': saved(750, 'inProgress', 0),
+      }),
+    });
+    h.converter.lengths.set(join(course, 'Part', '02 Limits.mp4'), 2405);
+    await h.core.openCourse(course);
+    await h.settle();
+    await h.core.close();
+
+    // A new window knows the length from the Lesson length cache when it draws the tree.
+    h.restart();
+    await h.core.openCourse(course);
+    void h.core.goToLesson();
+
+    expect(items(h)).toEqual(['○ Extra | Other', '◐ Limits | Part  ·  12:30 / 40:05']);
+    const part = h.ui.lessonTree?.nodes.find((node) => node.label === 'Part');
+    expect(part?.kind === 'section' ? part.children : []).toEqual([
+      expect.objectContaining({ label: 'Limits', description: '12:30 / 40:05' }),
+    ]);
+  });
 });

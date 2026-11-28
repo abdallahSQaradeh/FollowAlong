@@ -109,6 +109,7 @@ interface TreeSource {
   /** The ids of the Resources whose file is not where they point. */
   readonly missing: ReadonlySet<string>;
   readonly progress: CourseProgress;
+  readonly lengths: LessonLengths;
 }
 
 function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode {
@@ -133,15 +134,46 @@ function resourceNode(source: TreeSource, record: ResourceRecord): ResourceNode 
   };
 }
 
-/** `12:30 / 40:05`: where the Lesson was saved and how long it is; just the position while its length is unknown. */
-export function playheadText(progress: CourseProgress, lessonId: string): string {
+/**
+ * Lesson lengths found other than by playing, in seconds, by Lesson id (ADR 0109). A Lesson with
+ * no entry, or an entry that is not above 0, has no length from here.
+ */
+export type LessonLengths = ReadonlyMap<string, number>;
+
+/**
+ * A Lesson's length in seconds, or `undefined` while it is unknown. The length the player measured
+ * (the Progress `duration`) wins over one found otherwise (ADR 0109).
+ */
+export function knownLength(
+  progress: CourseProgress,
+  lengths: LessonLengths,
+  lessonId: string,
+): number | undefined {
+  const played = lessonEntry(progress.lessons, lessonId)?.duration ?? 0;
+  if (played > 0) {
+    return played;
+  }
+  const found = lengths.get(lessonId) ?? 0;
+  return found > 0 ? found : undefined;
+}
+
+/**
+ * `12:30 / 40:05`: where the Lesson was saved and how long it is, the one rule for the tree and the
+ * Lesson picker (ADR 0079); just the position while its length is unknown.
+ */
+export function playheadText(
+  progress: CourseProgress,
+  lengths: LessonLengths,
+  lessonId: string,
+): string {
   const saved = lessonEntry(progress.lessons, lessonId);
   if (saved === undefined) {
     return '';
   }
-  return saved.duration > 0
-    ? `${formatClock(saved.position)} / ${formatClock(saved.duration)}`
-    : formatClock(saved.position);
+  const length = knownLength(progress, lengths, lessonId);
+  return length === undefined
+    ? formatClock(saved.position)
+    : `${formatClock(saved.position)} / ${formatClock(length)}`;
 }
 
 /** `3/12`: how many of the Lessons are done, of how many. */
@@ -198,7 +230,8 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
         label: lesson.title,
         status,
         glyph: lessonGlyphs[status],
-        description: status === 'inProgress' ? playheadText(source.progress, lesson.id) : '',
+        description:
+          status === 'inProgress' ? playheadText(source.progress, source.lengths, lesson.id) : '',
         resources: (source.resources.lessons[lesson.id] ?? []).map((record) =>
           resourceNode(source, record),
         ),
@@ -210,7 +243,7 @@ function nodesOf(outline: Outline, source: TreeSource): LessonTreeNode[] {
 
 /**
  * The Lesson tree of a Course: a pure function of the Course, what is attached to it (and which
- * of that is missing) and its Progress. The states come from `lessonStatus`; nothing here decides
+ * of that is missing), its Progress and the Lesson lengths found other than by playing. The states come from `lessonStatus`; nothing here decides
  * what done means (ADR 0030). Only called for a Course with at least one Lesson.
  */
 export function buildLessonTree(
@@ -218,8 +251,9 @@ export function buildLessonTree(
   resources: ResourcesData,
   progress: CourseProgress,
   missing: ReadonlySet<string>,
+  lengths: LessonLengths = new Map(),
 ): LessonTreeModel {
-  const source: TreeSource = { folder: course.folder, resources, missing, progress };
+  const source: TreeSource = { folder: course.folder, resources, missing, progress, lengths };
   return {
     course: {
       kind: 'course',

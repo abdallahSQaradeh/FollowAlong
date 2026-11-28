@@ -211,6 +211,7 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       store.current(),
       progress.current(),
       store.missing(),
+      lengthJob?.lengths(),
     );
     if (JSON.stringify(model) !== shownTree) {
       drawTree(model);
@@ -398,7 +399,15 @@ export function createFollowAlong(ports: Ports): FollowAlong {
       resourceStore = store;
       progress = recorder;
       openBackgroundWorkOf(course);
-      drawTree(buildLessonTree(course, store.current(), recorder.current(), store.missing()));
+      drawTree(
+        buildLessonTree(
+          course,
+          store.current(),
+          recorder.current(),
+          store.missing(),
+          lengthJob?.lengths(),
+        ),
+      );
       logger.log({ level: 'info', message: `Opened Course ${folder}` });
       await rememberRecent(folder);
       const saved = recorder.current();
