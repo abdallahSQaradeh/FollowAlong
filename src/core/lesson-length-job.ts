@@ -14,7 +14,7 @@ import {
   saveLessonLengths,
   type ProbedLength,
 } from './lesson-length-cache.js';
-import type { LessonLengths } from './lesson-picker.js';
+import type { LessonLengths } from './lesson-tree.js';
 import { messageOf } from './logger.js';
 import type { FileStat, Ports } from './ports.js';
 

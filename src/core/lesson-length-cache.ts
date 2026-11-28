@@ -5,7 +5,7 @@
  * folders and holds only what a probe can find again, so a damaged or outdated copy is ignored.
  */
 import { folderKey } from './folder-identity.js';
-import type { LessonLengths } from './lesson-picker.js';
+import type { LessonLengths } from './lesson-tree.js';
 import { messageOf } from './logger.js';
 import type { FileStat, KeyValueStore, Ports } from './ports.js';
 
