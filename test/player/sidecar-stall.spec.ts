@@ -216,6 +216,36 @@ test("a learner's pause during a stall stays a pause when the data arrives", asy
   expect(typesAfter(await player.events(), sent)).not.toContain('played');
 });
 
+test('keeps the sound held when the learner plays again during a stall', async ({ page }) => {
+  const player = await openPlayer(page, { aac: false });
+  const reads = await readMp4InParts(page, { partBytes, holdFrom: Math.floor(mp4Bytes / 2) });
+  await player.postAll([loadMp4, soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+  await watchDrift(page);
+
+  await reads.held;
+  await waitForStall(page);
+  const { picture } = await spots(page);
+  await page.mouse.click(picture.x, picture.y);
+  await player.waitForEvent({ type: 'paused', lessonId, byUser: true });
+  const frozen = (await player.video()).currentTime;
+  await page.mouse.click(picture.x, picture.y);
+  await expect.poll(async () => (await player.video()).paused).toBe(false);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  expect((await player.video()).currentTime).toBe(frozen);
+  expect((await player.sound()).paused).toBe(true);
+
+  reads.release();
+  // Checked before the Lesson ends, which posts its own `paused`.
+  await expect
+    .poll(async () => (await player.video()).currentTime, { intervals: [50] })
+    .toBeGreaterThan(frozen + 0.5);
+
+  expect((await player.sound()).paused).toBe(false);
+  expectInStep(await watched(page));
+});
+
 test('keeps the sound with the picture after a seek into data that is slow to arrive', async ({
   page,
 }) => {
@@ -238,4 +268,46 @@ test('keeps the sound with the picture after a seek into data that is slow to ar
   expect(watch.waiting).toBeGreaterThan(0);
   expectInStep(watch);
   await expectNothingPostedAfter(player, sent);
+});
+
+test('keeps the sound with the picture when it plays after a seek while paused into slow data', async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
+  await readMp4InParts(page, { partBytes, slow: { from: Math.floor(mp4Bytes * 0.4), ms: 800 } });
+  await player.postAll([loadMp4, soundReady]);
+  await player.waitForEvent({ type: 'played', lessonId });
+  await watchDrift(page);
+  await player.post({ type: 'pause' });
+  await player.waitForEvent({ type: 'paused', lessonId });
+
+  // The learner plays before the seek's data has arrived.
+  await player.postAll([{ type: 'seekBy', seconds: 1.5 }, { type: 'play' }]);
+  await player.waitForEvent({ type: 'seeked', lessonId });
+  const target = (await player.video()).currentTime;
+  // Checked before the Lesson ends, which posts its own `paused`.
+  await expect
+    .poll(async () => (await player.video()).currentTime, { intervals: [50] })
+    .toBeGreaterThan(target + 0.3);
+
+  const watch = await watched(page);
+  expect(watch.waiting).toBeGreaterThan(0);
+  expectInStep(watch);
+});
+
+test('leaves a sound that ended before the picture stopped, as no stall started it', async ({
+  page,
+}) => {
+  const player = await openPlayer(page, { aac: false });
+  await player.postAll([loadMp4, { type: 'soundReady', audioUri: media.shortMp3 }]);
+  await player.waitForEvent({ type: 'played', lessonId });
+  // The sound ends at about 2 s; the picture plays on to 3 s.
+  await expect.poll(async () => (await player.sound()).paused, { intervals: [50] }).toBe(true);
+  const end = await player.playheads();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
+  expect((await player.video()).paused).toBe(false);
+  const sound = await player.sound();
+  expect(sound.paused).toBe(true);
+  expect(sound.currentTime).toBeGreaterThanOrEqual(end.sound);
 });

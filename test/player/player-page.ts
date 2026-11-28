@@ -37,6 +37,8 @@ export const media = {
   sidecarMp4: `${origin}/media/sidecar.mp4`,
   /** sidecar.mp4's sound as the audio sidecar converts it (MP3). */
   sidecarMp3: `${origin}/media/sidecar.mp3`,
+  /** sidecar.mp3 cut to its first quarter: a sound that ends at about 2 s, before sample.mp4's picture. */
+  shortMp3: `${origin}/media/short.mp3`,
 } as const;
 export const webmDuration = 3;
 
@@ -186,7 +188,8 @@ export async function openPlayer(page: Page, options: PlayerOptions = {}): Promi
       path === '/media/no-duration.webm' ||
       path === '/media/sample.mp4' ||
       path === '/media/sidecar.mp4' ||
-      path === '/media/sidecar.mp3'
+      path === '/media/sidecar.mp3' ||
+      path === '/media/short.mp3'
     ) {
       const contentType = fixtureType(path);
       const body = fixture(path);
@@ -466,7 +469,12 @@ const fixtures = new Map<string, Buffer>();
 function fixture(path: string): Buffer {
   let body = fixtures.get(path);
   if (body === undefined) {
-    body = readFileSync(join(root, 'test', 'fixtures', path));
+    if (path === new URL(media.shortMp3).pathname) {
+      const whole = fixture(new URL(media.sidecarMp3).pathname);
+      body = whole.subarray(0, Math.floor(whole.length / 4));
+    } else {
+      body = readFileSync(join(root, 'test', 'fixtures', path));
+    }
     fixtures.set(path, body);
   }
   return body;
